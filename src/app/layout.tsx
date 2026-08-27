@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Todos — Next.js + Convex + Convex Auth",
+  title: "todosst",
   description: "A minimal, fast todo app built with Next.js, Convex, and Convex Auth (email/password)",
 };
 
