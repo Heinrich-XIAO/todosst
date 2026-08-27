@@ -52,6 +52,7 @@ export const updateTitle = mutation({
     if (todo.userId !== identity.subject) throw new Error("Unauthorized");
     const title = args.title.trim();
     if (!title) throw new Error("Title cannot be empty");
+    if (title.length > 200) throw new Error("Title too long (max 200 chars)");
     await ctx.db.patch(args.id, { title });
   },
 });

@@ -4,11 +4,12 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { SignedIn, SignedOut, SignInButton } from "@clerk/nextjs";
+import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+import { AuthForm } from "./AuthForm";
 
 type Filter = "all" | "active" | "completed";
 
-export function TodoApp() {
+function TodoList() {
   const todos = useQuery(api.todos.list);
   const createTodo = useMutation(api.todos.create);
   const toggleTodo = useMutation(api.todos.toggle);
@@ -22,8 +23,6 @@ export function TodoApp() {
   const [editValue, setEditValue] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  const isClerkConfigured = !!process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
 
   const isLoading = todos === undefined;
   const list = todos ?? [];
@@ -41,6 +40,10 @@ export function TodoApp() {
     e.preventDefault();
     const title = newTitle.trim();
     if (!title) return;
+    if (title.length > 200) {
+      alert("Title too long (max 200)");
+      return;
+    }
     setIsCreating(true);
     try {
       await createTodo({ title });
@@ -79,6 +82,10 @@ export function TodoApp() {
       setEditingId(null);
       return;
     }
+    if (v.length > 200) {
+      alert("Title too long");
+      return;
+    }
     try {
       await updateTitle({ id, title: v });
     } catch (err) {
@@ -87,39 +94,7 @@ export function TodoApp() {
     setEditingId(null);
   }
 
-  if (!isClerkConfigured) {
-    return (
-      <div className="w-full max-w-[640px]">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-amber-900">
-          <h3 className="font-semibold">Clerk not configured</h3>
-          <p className="mt-2 text-sm leading-6 opacity-80">
-            Add your Clerk keys to{" "}
-            <code className="rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs">.env.local</code> to enable authentication and persistence. Your Convex backend is running at{" "}
-            <code className="font-mono text-xs">{process.env.NEXT_PUBLIC_CONVEX_URL}</code>.
-          </p>
-          <pre className="mt-4 overflow-x-auto rounded-lg bg-zinc-900 p-4 text-xs leading-5 text-zinc-100">
-{`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_...
-CLERK_SECRET_KEY=sk_test_...
-NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
-NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
-CLERK_JWT_ISSUER_DOMAIN=https://your-clerk-domain.clerk.accounts.dev`}
-          </pre>
-          <p className="mt-3 text-xs opacity-60">
-            Create a free Clerk app at clerk.com, then add the Convex JWT template (convex) in Clerk dashboard → JWT Templates.
-          </p>
-        </div>
-        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm opacity-60">
-          <div className="flex items-center gap-3">
-            <div className="h-5 w-5 rounded-full border-2 border-zinc-300" />
-            <div className="h-4 w-48 rounded bg-zinc-100" />
-          </div>
-          <p className="mt-4 text-center text-sm text-zinc-500">Preview — sign in to create real todos stored in Convex</p>
-        </div>
-      </div>
-    );
-  }
-
-  const TodoListContent = (
+  return (
     <div className="w-full max-w-[640px]">
       <form
         onSubmit={handleCreate}
@@ -166,7 +141,7 @@ CLERK_JWT_ISSUER_DOMAIN=https://your-clerk-domain.clerk.accounts.dev`}
             </div>
             <h3 className="mt-4 text-[15px] font-semibold text-zinc-900">No todos yet</h3>
             <p className="mt-1 max-w-sm text-sm leading-6 text-zinc-500">
-              Add your first task above. Tasks sync in real-time via Convex and are private to your Clerk account.
+              Add your first task above. Tasks sync in real-time via Convex and are private to your account.
             </p>
           </div>
         ) : (
@@ -250,32 +225,31 @@ CLERK_JWT_ISSUER_DOMAIN=https://your-clerk-domain.clerk.accounts.dev`}
           </>
         )}
       </div>
-      <p className="mt-4 text-center text-xs leading-5 text-zinc-400">Double-click a task to edit • Real-time sync with Convex • Private per Clerk user</p>
+      <p className="mt-4 text-center text-xs leading-5 text-zinc-400">Double-click a task to edit • Real-time sync with Convex • Private per account</p>
     </div>
   );
+}
 
+export function TodoApp() {
   return (
     <>
-      <SignedOut>
-        <div className="w-full max-w-[640px]">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-10 text-center shadow-sm">
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-zinc-900 text-white">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M3 8.5L6.5 12L13 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <h3 className="mt-4 text-lg font-semibold text-zinc-900">Sign in to manage your todos</h3>
-            <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-zinc-500">
-              Your tasks are stored securely in Convex and private to your Clerk account. Sign in to start creating.
-            </p>
-            <SignInButton mode="modal">
-              <button className="mt-6 rounded-full bg-zinc-900 px-6 py-2.5 text-sm font-medium text-white hover:bg-zinc-800">Sign in to continue</button>
-            </SignInButton>
-          </div>
-          <p className="mt-4 text-center text-xs text-zinc-400">Real-time sync • End-to-end private • Built with Convex + Clerk</p>
+      <AuthLoading>
+        <div className="w-full max-w-[640px] rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto h-5 w-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900" />
+          <p className="mt-3 text-sm text-zinc-500">Loading…</p>
         </div>
-      </SignedOut>
-      <SignedIn>{TodoListContent}</SignedIn>
+      </AuthLoading>
+      <Unauthenticated>
+        <div className="flex w-full flex-col items-center">
+          <AuthForm />
+          <p className="mt-4 max-w-[420px] text-center text-xs leading-5 text-zinc-400">
+            Works on any <code className="rounded bg-zinc-100 px-1 py-0.5">.vercel.app</code> domain — no custom domain required. Passwords are hashed, cookies are HttpOnly and SameSite=Lax.
+          </p>
+        </div>
+      </Unauthenticated>
+      <Authenticated>
+        <TodoList />
+      </Authenticated>
     </>
   );
 }
