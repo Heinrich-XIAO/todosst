@@ -285,6 +285,7 @@ function TodoQueue() {
   const [nodes, setNodes] = useState<DecryptedNode[] | null>(null);
   const [decryptError, setDecryptError] = useState<string | null>(null);
   const [isDecrypting, setIsDecrypting] = useState(false);
+  const [fadingIds, setFadingIds] = useState<Set<string>>(new Set());
 
   const isLoading = todos === undefined;
 
@@ -362,7 +363,38 @@ function TodoQueue() {
 
   const listFlat = nodes ?? [];
   const activeCount = listFlat.filter((n) => !n.isCompleted).length;
-  const completedCount = listFlat.filter((n) => n.isCompleted).length;
+
+  // completed tasks fade out 10s after being checked — not removed
+  useEffect(() => {
+    if (!nodes) return;
+    const timers: number[] = [];
+    const currentCompleted = new Set(nodes.filter((n) => n.isCompleted).map((n) => n._id as string));
+    // schedule fading for newly completed
+    for (const n of nodes) {
+      const idStr = n._id as string;
+      if (n.isCompleted && !fadingIds.has(idStr)) {
+        const t = window.setTimeout(() => {
+          setFadingIds((prev) => {
+            const next = new Set(prev);
+            next.add(idStr);
+            return next;
+          });
+        }, 10000);
+        timers.push(t);
+      }
+    }
+    // un-fade if toggled back to active
+    for (const id of Array.from(fadingIds)) {
+      if (!currentCompleted.has(id as string)) {
+        setFadingIds((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
+    return () => timers.forEach((t) => clearTimeout(t));
+  }, [nodes, fadingIds]);
 
   // filter helper for tree: keep node if matches or has matching descendant
   const matches = useCallback(
@@ -460,12 +492,6 @@ function TodoQueue() {
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
   }
 
-  async function handleClearCompleted() {
-    if (completedCount === 0) return;
-    const ids = listFlat.filter((n) => n.isCompleted).map((n) => n._id);
-    await clearCompleted({ ids });
-  }
-
   async function handleUpdateMetadata(id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) {
     if (!key || !nodes) return;
     const cur = nodes.find((n) => n._id === id);
@@ -552,6 +578,7 @@ function TodoQueue() {
     const hasChildren = node.children.length > 0;
     const show = matches(node);
     if (!show) return null;
+    const isFading = node.isCompleted && fadingIds.has(node._id as string);
     return (
       <li
         draggable={!isEditing}
@@ -570,7 +597,7 @@ function TodoQueue() {
           handleMove(dragId, node._id, node.children.length);
           setDragId(null);
         }}
-        className={`border-b border-foreground/10 last:border-b-0 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""}`}
+        className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
         style={{ paddingLeft: `${node.depth * 16 + 12}px` }}
       >
         <div className="flex items-center gap-2 py-2 pr-3 text-sm">
@@ -741,9 +768,6 @@ function TodoQueue() {
           ))}
         </span>
         <span className="opacity-60">{activeCount} left</span>
-        <button onClick={handleClearCompleted} disabled={completedCount === 0} className="opacity-60 hover:opacity-100 disabled:opacity-20">
-          clear completed ({completedCount})
-        </button>
       </div>
 
       {/* drag hint */}
