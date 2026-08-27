@@ -4,9 +4,11 @@ import { Authenticated, Unauthenticated, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
+import { useEncryption } from "./EncryptionContext";
 
 export function Header() {
   const { signOut } = useAuthActions();
+  const { clearKey } = useEncryption();
   const viewer = useQuery(api.users.viewer);
 
   return (
@@ -23,7 +25,13 @@ export function Header() {
           </Unauthenticated>
           <Authenticated>
             <span className="hidden max-w-[180px] truncate opacity-60 sm:inline">{viewer?.email}</span>
-            <button onClick={() => void signOut()} className="opacity-60 hover:opacity-100">
+            <button
+              onClick={() => {
+                clearKey();
+                void signOut();
+              }}
+              className="opacity-60 hover:opacity-100"
+            >
               sign out
             </button>
           </Authenticated>

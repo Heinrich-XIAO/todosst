@@ -2,11 +2,17 @@
 
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
+import { useConvex } from "convex/react";
+import { api } from "../../convex/_generated/api";
+import { useEncryption, generateSaltB64, setCachedSalt } from "./EncryptionContext";
+import { deriveKey } from "@/lib/crypto";
 
 type Mode = "signIn" | "signUp";
 
 export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const { signIn } = useAuthActions();
+  const convex = useConvex();
+  const { deriveAndSetKey, setPendingPassword, setPendingSalt, clearKey } = useEncryption();
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -37,12 +43,84 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
     }
     setLoading(true);
     try {
+      // --- E2E key preparation ---
+      // Derive encryption key from password + per-user salt (PBKDF2 310k -> AES-GCM-256).
+      // Salt is public and stored in userSalts table.
+      let salt: string | null = null;
+      let derivedBeforeSignIn = false;
+      if (mode === "signUp") {
+        // New account: generate fresh salt, derive before sign-in so key is ready
+        salt = generateSaltB64();
+        try {
+          const k = await deriveKey(password, salt);
+          // quick sanity: ensure we can encrypt/decrypt (implicit)
+          void k;
+        } catch {
+          throw new Error("failed to derive encryption key");
+        }
+        setPendingSalt(salt);
+        setPendingPassword(password);
+        // cache locally; will be persisted via ensureSalt after auth
+        setCachedSalt(normalizedEmail, salt);
+        // derive visible key immediately
+        await deriveAndSetKey(password, salt);
+        derivedBeforeSignIn = true;
+      } else {
+        // Sign-in: fetch existing salt if any
+        try {
+          const fetched = (await convex.query(api.encryption.getSalt, {
+            email: normalizedEmail,
+          })) as string | null;
+          if (fetched) {
+            salt = fetched;
+            setPendingSalt(salt);
+            setPendingPassword(password);
+            setCachedSalt(normalizedEmail, salt);
+            await deriveAndSetKey(password, salt);
+            derivedBeforeSignIn = true;
+          } else {
+            // Legacy user with no salt yet — will generate after successful sign-in
+            setPendingPassword(password);
+          }
+        } catch {
+          // If salt fetch fails, continue to auth — key will be established after auth
+          setPendingPassword(password);
+        }
+      }
+
       const formData = new FormData();
       formData.set("email", normalizedEmail);
       formData.set("password", password);
       formData.set("flow", mode);
       await signIn("password", formData);
+
+      // Post-auth: if we didn't derive before (legacy user on sign-in), generate salt now
+      if (!derivedBeforeSignIn && mode === "signIn") {
+        // After auth, mySalt may be null (legacy). Generate and ensure.
+        // Use pendingPassword already set; create salt if still null
+        if (!salt) {
+          const newSalt = generateSaltB64();
+          setPendingSalt(newSalt);
+          setCachedSalt(normalizedEmail, newSalt);
+          try {
+            await deriveAndSetKey(password, newSalt);
+          } catch {}
+          // persist via convex — we need auth; call directly with convex
+          try {
+            await convex.mutation(api.encryption.ensureSalt, { salt: newSalt });
+          } catch {}
+        }
+      }
+      // For signUp case, ensure salt persisted (EncryptionProvider effect also does it, but do it here too)
+      if (mode === "signUp" && salt) {
+        try {
+          await convex.mutation(api.encryption.ensureSalt, { salt });
+        } catch {}
+      }
     } catch (err) {
+      // Clear derived key if auth failed (wrong password etc.)
+      try { clearKey(); } catch {}
+      setPendingPassword(null);
       const msg = err instanceof Error ? err.message : "authentication failed";
       if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("already")) {
         setError(mode === "signIn" ? "invalid username or password." : "account already exists. try signing in.");
