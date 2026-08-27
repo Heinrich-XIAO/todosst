@@ -1,10 +1,9 @@
 "use client";
 
-// Utilities for the `!cd` command. Must handle:
-// - absolute vs relative, "." and ".."
-// - spaces without escaping, plus quoted forms cd "host hackathon"
-// - trailing slash preservation: input ending with "/" -> output with "/" (except root)
-// - encoding: each segment encoded for URL but keep "/" separators
+// Utilities for the `!cd` command. Canonical representation is a list of path segments
+// (string[] with no "/" symbols) — e.g. "/haven" and "/haven/" both normalize to ["haven"].
+// Handles: absolute vs relative, "." and "..", spaces without escaping,
+// quoted forms cd "host hackathon", and // collapse.
 
 export function parseCdArg(rawAfterCd: string | null | undefined): string | null {
   if (rawAfterCd == null) return null;
@@ -29,85 +28,75 @@ export function parseCdArg(rawAfterCd: string | null | undefined): string | null
   return s;
 }
 
+/** Shared representation: list of segments with no "/" — e.g. [] for "/", ["haven"], ["host hackathon"] */
+export function decodePathToParts(pathname: string): string[] {
+  return pathname
+    .split("/")
+    .map((s) => {
+      try {
+        return decodeURIComponent(s).trim();
+      } catch {
+        return s.trim();
+      }
+    })
+    .filter((s) => s.length > 0);
+}
+
+export function partsToPath(parts: string[]): string {
+  if (parts.length === 0) return "/";
+  return "/" + parts.map((p) => encodeURIComponent(p)).join("/");
+}
+
+export function partsToDecodedPath(parts: string[]): string {
+  if (parts.length === 0) return "/";
+  return "/" + parts.join("/");
+}
+
 /**
  * Resolve a cd target against currentPath.
  * currentPath: decoded pathname, e.g. "/a/b" or "/host hackathon"
  * target: decoded path string from user, e.g. "host hackathon", "../x", "/host hackathon/", "./xyz"
- * Returns absolute decoded pathname (possibly with trailing slash if requested or needed), always starts with "/".
+ * Returns canonical absolute decoded pathname (no trailing-slash distinction), always starts with "/".
  */
 export function resolveCdPath(currentPath: string, target: string | null): string {
+  return partsToDecodedPath(resolveCdParts(currentPath, target));
+}
+
+/** Canonical resolver returning parts (no "/" in elements) — shared representation */
+export function resolveCdParts(currentPath: string, target: string | null): string[] {
   if (target == null || target.trim() === "") {
-    return "/";
+    return [];
   }
-  const wantsTrailingSlash = target.endsWith("/");
   const isAbsolute = target.startsWith("/");
 
-  let baseParts: string[];
-  let targetParts: string[];
-
-  if (isAbsolute) {
-    baseParts = [];
-    // drop leading "/" for target
-    targetParts = target.split("/").map((p) => p);
-    // first element will be "" due to leading slash
-    if (targetParts.length && targetParts[0] === "") targetParts.shift();
-  } else {
-    // currentPath "/a/b" -> ["a","b"]
-    const cur = currentPath.split("/").filter((p) => p.length > 0);
-    // decode each part (usePathname already decoded, but be safe)
-    baseParts = cur.map((p) => {
-      try {
-        return decodeURIComponent(p);
-      } catch {
-        return p;
-      }
-    });
-    targetParts = target.split("/");
-  }
-
-  // Decode target parts except we need to keep "." ".." literal
-  const decodedTargetParts = targetParts.map((p) => {
-    // empty segments from "//" will be ""
+  const baseParts = isAbsolute ? [] : decodePathToParts(currentPath);
+  const rawTargetParts = target.split("/").map((p) => {
     try {
-      // don't decode "." or ".." though they have no encoding anyway
       return decodeURIComponent(p);
     } catch {
       return p;
     }
   });
+  // Drop leading "" from absolute ("/a" -> ["","a"])
+  const targetParts = isAbsolute && rawTargetParts.length && rawTargetParts[0] === "" ? rawTargetParts.slice(1) : rawTargetParts;
 
-  const stack: string[] = isAbsolute ? [] : [...baseParts];
-  for (const seg of decodedTargetParts) {
-    if (seg === "" || seg === ".") {
-      // collapse // and .
-      // but if seg is "" from double slash, ignore
-      // For "./xyz" -> first seg "." ignored, next "xyz" pushed
-      continue;
-    }
-    if (seg === "..") {
+  const stack: string[] = [...baseParts];
+  if (isAbsolute) stack.length = 0;
+  for (const seg of targetParts) {
+    const trimmed = seg.trim();
+    if (trimmed === "" || trimmed === ".") continue;
+    if (trimmed === "..") {
       if (stack.length > 0) stack.pop();
       continue;
     }
-    stack.push(seg);
+    stack.push(trimmed);
   }
-
-  let resolved = "/" + stack.join("/");
-  if (resolved !== "/" && wantsTrailingSlash) {
-    resolved += "/";
-  }
-  // normalize multiple slashes? already handled
-  // ensure "/" for empty
-  if (resolved === "") resolved = "/";
-  return resolved;
+  return stack;
 }
 
 /** Encode a decoded path for history.pushState: encode each segment but keep slashes */
 export function encodePathForUrl(decodedPath: string): string {
-  const hasTrailingSlash = decodedPath.endsWith("/") && decodedPath !== "/";
-  const parts = decodedPath.split("/").filter((p) => p.length > 0);
-  const encoded = "/" + parts.map((p) => encodeURIComponent(p)).join("/");
-  if (encoded !== "/" && hasTrailingSlash) return encoded + "/";
-  return encoded;
+  return partsToPath(decodePathToParts(decodedPath));
 }
 
 export function decodePath(pathname: string): string {

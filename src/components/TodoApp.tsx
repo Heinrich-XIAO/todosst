@@ -545,27 +545,20 @@ function TodoQueue() {
     return { id: found!._id as Id<"todos">, exists: true, parts };
   }, [nodes, decodedPath]);
 
-  // Auto-expand ancestors of current dir so the pwd node is visible after !cd
-  useEffect(() => {
-    if (!currentDirInfo.id) return;
-    const chain = getAncestors(currentDirInfo.id as string, tree.map);
-    if (chain.length === 0) return;
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      for (const a of chain) {
-        const key = a._id as string;
-        if (!next.has(key)) {
-          next.add(key);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [currentDirInfo.id, tree.map]);
-
   const selectedNode = selectedId ? (tree.map.get(selectedId) ?? null) : null;
   const ancestors = selectedId ? getAncestors(selectedId, tree.map) : [];
+
+  const currentDirDepth = useMemo(() => {
+    if (!currentDirInfo.id) return -1;
+    return tree.map.get(currentDirInfo.id as string)?.depth ?? -1;
+  }, [tree.map, currentDirInfo.id]);
+
+  const visibleRoots = useMemo(() => {
+    if (!currentDirInfo.exists) return [] as TreeNode[];
+    if (currentDirInfo.id === null) return tree.roots;
+    const dir = tree.map.get(currentDirInfo.id as string);
+    return dir ? dir.children : [];
+  }, [tree, currentDirInfo]);
 
   // slash-path intellisense: autocomplete for "/..." input
   const slashComplete = useMemo(() => {
@@ -712,16 +705,17 @@ function TodoQueue() {
       setNewRootTitle("");
       return;
     }
-    // fallback: single task/queue
+    // fallback: single task/queue — creates in current directory (pwd) when scoped
     const title = raw;
     if (title.length > 200) return;
-    const roots = tree.roots;
-    if (roots.some((r) => r.title === title)) {
+    const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
+    const siblings = targetParentId === null ? tree.roots : (tree.map.get(targetParentId as string)?.children ?? []);
+    if (siblings.some((r) => r.title === title)) {
       alert("a task with that path already exists");
       return;
     }
-    const order = roots.length ? Math.max(...roots.map((r) => r.order)) + 1 : 0;
-    const node: PlainNode = { v: 2, title, isCompleted: false, parentId: null, order, metadata: {} };
+    const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
+    const node: PlainNode = { v: 2, title, isCompleted: false, parentId: targetParentId, order, metadata: {} };
     const { ciphertext, iv } = await cryptoEncNode(node);
     await createTodo({ ciphertext, iv });
     setNewRootTitle("");
@@ -896,7 +890,6 @@ function TodoQueue() {
     const isExpanded = expanded.has(node._id) || !!search; // auto expand when searching
     const isEditing = editingId === node._id;
     const isSelected = selectedId === node._id;
-    const isCurrentDir = currentDirInfo.id === node._id;
     const hasChildren = node.children.length > 0;
     const show = matches(node);
     if (!show) return null;
@@ -921,8 +914,8 @@ function TodoQueue() {
           handleMove(dragId, node._id, node.children.length);
           setDragId(null);
         }}
-        className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isCurrentDir ? "bg-foreground/[0.04] border-l-2 border-l-foreground" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
-        style={{ paddingLeft: `${node.depth * 16 + 12}px` }}
+        className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
+        style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
       >
         <div className="flex items-center gap-2 py-2 pr-3 text-sm">
           <button
@@ -962,7 +955,6 @@ function TodoQueue() {
             >
               <span className="mr-1 opacity-40">{node.children.length ? `[${node.children.length}]` : ""}</span>
               {node.title}
-              {isCurrentDir && <span className="ml-2 text-[10px] border border-foreground bg-foreground px-1 text-background">pwd</span>}
               {node.metadata.priority ? <span className="ml-2 text-[10px] border border-foreground/20 px-1">{node.metadata.priority}</span> : null}
               {node.metadata.dueAt ? (
                 <span className="ml-1 text-[10px] opacity-60">
@@ -1009,7 +1001,7 @@ function TodoQueue() {
         </div>
 
         {addChildParent === node._id && (
-          <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth + 1) * 16 + 28}px` }}>
+          <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 16 + 28}px` }}>
             <input
               autoFocus
               value={addChildTitle}
@@ -1082,14 +1074,6 @@ function TodoQueue() {
         <span className="opacity-40">pwd</span>
         <span className="font-mono truncate">{decodedPath || "/"}</span>
         {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40">(not found)</span>}
-        {currentDirInfo.id && (
-          <button
-            onClick={() => setSelectedId(currentDirInfo.id)}
-            className="ml-auto shrink-0 opacity-60 hover:opacity-100 underline underline-offset-4"
-          >
-            select
-          </button>
-        )}
       </div>
 
       {/* breadcrumb */}
@@ -1226,10 +1210,12 @@ function TodoQueue() {
         onDrop={(e) => {
           e.preventDefault();
           if (!dragId) return;
-          // drop on root area
+          // drop on empty area — move to current directory (root or pwd)
+          const targetParentId = currentDirInfo.id as string | null;
           const dragged = nodes?.find((n) => n._id === dragId);
-          if (dragged && dragged.parentId !== null) {
-            handleMove(dragId, null, tree.roots.length);
+          if (dragged && (dragged.parentId ?? null) !== targetParentId) {
+            const siblings = targetParentId === null ? tree.roots : (tree.map.get(targetParentId)?.children ?? []);
+            handleMove(dragId, targetParentId, siblings.length);
           }
           setDragId(null);
         }}
@@ -1241,15 +1227,19 @@ function TodoQueue() {
             <p>queue empty — add a top-level queue.</p>
             <p className="mt-1 text-xs opacity-60">later add children via +child</p>
           </div>
-        ) : tree.roots.length === 0 ? (
-          <p className="px-3 py-8 text-sm opacity-60">no matching queues.</p>
+        ) : !currentDirInfo.exists ? (
+          <p className="px-3 py-8 text-sm opacity-60">directory not found.</p>
+        ) : visibleRoots.length === 0 ? (
+          <div className="px-3 py-8 text-sm opacity-60">
+            {currentDirInfo.id === null ? "no matching queues." : "empty — add a task in this directory."}
+          </div>
         ) : decryptError ? (
           <div className="border-b border-foreground bg-background px-3 py-2 text-xs">{decryptError}</div>
         ) : null}
 
-        {!isLoading && !isDecrypting && listFlat.length > 0 && (
+        {!isLoading && !isDecrypting && listFlat.length > 0 && currentDirInfo.exists && visibleRoots.length > 0 && (
           <ul>
-            {tree.roots.map((root) => (
+            {visibleRoots.map((root) => (
               <RenderNode key={root._id} node={root} />
             ))}
           </ul>
