@@ -6,18 +6,18 @@ export function Logo({ className }: { className?: string }) {
       aria-hidden="true"
       className={className}
     >
-      {/* git-style diamond container */}
+      {/* git-style diamond container — 45° edges */}
       <path
-        d="M12 2L22 12L12 22L2 12Z"
+        d="M12 1.5L22.5 12L12 22.5L1.5 12Z"
         stroke="currentColor"
         strokeWidth="2"
         strokeLinejoin="round"
       />
-      {/* todoist-style check, tip plugs into the diamond edge */}
+      {/* todoist-style check — 45° strokes, 90° vertex, clear of the frame */}
       <path
-        d="M7.5 12.5L11 16L17 8.5"
+        d="M7.5 12L10.5 15L15.5 10"
         stroke="currentColor"
-        strokeWidth="3"
+        strokeWidth="2.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
