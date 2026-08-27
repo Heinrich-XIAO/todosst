@@ -16,6 +16,15 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_completed", ["userId", "isCompleted"]),
 
+  // per-todo E2E encrypted completion history (recurring-task counts).
+  // payload: JSON {v:1,todoId,c:"d1240:3;d1241:1"} -> AES-GCM — todoId lives inside
+  // the ciphertext, so the server never sees which record belongs to which todo.
+  todoHistory: defineTable({
+    ciphertext: v.string(),
+    iv: v.string(),
+    userId: v.string(),
+  }).index("by_user", ["userId"]),
+
   // per-user PBKDF2 salt (public, not secret) for E2E key derivation
   userSalts: defineTable({
     userId: v.string(),
