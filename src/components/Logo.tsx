@@ -13,12 +13,12 @@ export function Logo({ className }: { className?: string }) {
         strokeWidth="2"
         strokeLinejoin="round"
       />
-      {/* todoist-style check — 45° strokes, 90° vertex, clear of the frame */}
+      {/* check — 45° strokes, 90° vertex, tip meets the frame edge */}
       <path
-        d="M7.5 12L10.5 15L15.5 10"
+        d="M7.5 12L10.5 15L17.29 8.21"
         stroke="currentColor"
-        strokeWidth="2.5"
-        strokeLinecap="round"
+        strokeWidth="2"
+        strokeLinecap="butt"
         strokeLinejoin="round"
       />
     </svg>
