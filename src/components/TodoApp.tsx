@@ -331,9 +331,8 @@ function TodoQueue() {
 
   const pathname = usePathname() ?? "/";
   const [newRootTitle, setNewRootTitle] = useState("");
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
-  const [showCompleted, setShowCompleted] = useState(false);
   const [editingId, setEditingId] = useState<Id<"todos"> | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedId, setSelectedId] = useState<Id<"todos"> | null>(null);
@@ -426,8 +425,6 @@ function TodoQueue() {
   }, [nodes]);
 
   const listFlat = nodes ?? [];
-  const activeCount = listFlat.filter((n) => !n.isCompleted).length;
-  const completedCount = listFlat.filter((n) => n.isCompleted).length;
 
   // completed tasks fade out 10s after being checked — not removed
   useEffect(() => {
@@ -902,8 +899,6 @@ function TodoQueue() {
     const show = matches(node);
     if (!show) return null;
     const isFading = node.isCompleted && fadingIds.has(node._id as string);
-    // after 3s completed items are hidden by default; button shows them (always below active)
-    if (isFading && !showCompleted && filter !== "completed") return null;
     return (
       <li
         draggable={!isEditing}
@@ -1224,11 +1219,6 @@ function TodoQueue() {
             </button>
           ))}
         </span>
-        {completedCount > 0 && (
-          <button onClick={() => setShowCompleted((v) => !v)} className="underline underline-offset-4 hover:opacity-60">
-            {showCompleted ? `hide completed (${completedCount})` : `show completed (${completedCount})`}
-          </button>
-        )}
       </div>
 
       {/* drag hint */}
