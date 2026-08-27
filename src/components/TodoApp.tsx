@@ -338,6 +338,7 @@ function TodoQueue() {
   const [addChildParent, setAddChildParent] = useState<Id<"todos"> | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
+  const newRootInputRef = useRef<HTMLInputElement>(null);
 
   const [nodes, setNodes] = useState<DecryptedNode[] | null>(null);
   const [decryptError, setDecryptError] = useState<string | null>(null);
@@ -453,6 +454,42 @@ function TodoQueue() {
     }
     return () => timers.forEach((t) => clearTimeout(t));
   }, [nodes, fadingIds]);
+
+  // If no input/textarea/select is focused, typing should go straight into the new-task box
+  useEffect(() => {
+    if (isLocked) return;
+    function isTypingTarget(el: Element | null) {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if ((el as HTMLElement).isContentEditable) return true;
+      return false;
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // allow shortcuts / navigation keys
+      if (e.key.length !== 1) return;
+      const target = e.target as Element | null;
+      const active = document.activeElement as Element | null;
+      if (isTypingTarget(target) || isTypingTarget(active)) return;
+      // ignore if a modal/dialog with its own input is present? input check above covers it
+      const input = newRootInputRef.current;
+      if (!input) return;
+      e.preventDefault();
+      input.focus();
+      // Append the pressed key via React state; input is controlled by newRootTitle
+      setNewRootTitle((prev) => prev + e.key);
+      // ensure cursor at end after React renders
+      requestAnimationFrame(() => {
+        const len = input.value.length;
+        try {
+          input.setSelectionRange(len, len);
+        } catch {}
+      });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isLocked]);
 
   // filter helper for tree: keep node if matches or has matching descendant
   const matches = useCallback(
@@ -818,6 +855,8 @@ function TodoQueue() {
       <div className="flex flex-wrap gap-2 border-b border-foreground p-3">
         <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
           <input
+            ref={newRootInputRef}
+            autoFocus
             value={newRootTitle}
             onChange={(e) => setNewRootTitle(e.target.value)}
             placeholder="new queue… (e.g. host hackathon)"
