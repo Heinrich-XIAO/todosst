@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -105,6 +105,11 @@ function UnlockScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const convex = useConvex();
+  const passwordRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isReady) passwordRef.current?.focus();
+  }, [isReady]);
 
   // initialize checkbox from existing stored key (if user previously opted in)
   useEffect(() => {
@@ -168,6 +173,8 @@ function UnlockScreen() {
       </p>
       <form onSubmit={handleUnlock} className="mt-4 space-y-3">
         <input
+          ref={passwordRef}
+          autoFocus
           type="password"
           autoComplete="current-password"
           placeholder="password"
