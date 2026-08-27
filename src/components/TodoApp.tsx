@@ -509,11 +509,90 @@ function TodoQueue() {
   const selectedNode = selectedId ? (tree.map.get(selectedId) ?? null) : null;
   const ancestors = selectedId ? getAncestors(selectedId, tree.map) : [];
 
+  function parseSlashPath(input: string): string[] | null {
+    const trimmed = input.trim();
+    if (!trimmed.startsWith("/")) return null;
+    const parts = trimmed
+      .split("/")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (parts.length === 0) return null;
+    if (parts.some((p) => p.length > 200)) return null;
+    return parts;
+  }
+
   async function handleCreateRoot(e: React.FormEvent) {
     e.preventDefault();
-    const title = newRootTitle.trim();
-    if (!title || title.length > 200 || !key) return;
+    const raw = newRootTitle.trim();
+    if (!raw || !key) return;
+    const slashParts = parseSlashPath(raw);
+    if (slashParts) {
+      if (!nodes) return;
+      // Build slash-separated hierarchy: each "/" segment may contain spaces.
+      // e.g. "/host hackathon/outreach write email template" -> ["host hackathon","outreach write email template"]
+      // Reuse existing nodes by exact title + parentId match; create missing.
+      let parentId: string | null = null;
+      const maxOrderByParent = new Map<string | null, number>();
+      for (const n of nodes) {
+        const pid = n.parentId ?? null;
+        const cur = maxOrderByParent.get(pid);
+        if (cur === undefined || n.order > cur) maxOrderByParent.set(pid, n.order);
+      }
+      // virtualNodes includes newly created nodes for reuse within this slash operation
+      const virtualNodes: DecryptedNode[] = [...nodes];
+      const chainIds: string[] = [];
+      let createdCount = 0;
+      for (const title of slashParts) {
+        const existing = virtualNodes.find((n) => n.title === title && (n.parentId ?? null) === parentId);
+        if (existing) {
+          parentId = existing._id as string;
+          chainIds.push(parentId);
+          continue;
+        }
+        const curMax = maxOrderByParent.get(parentId);
+        const order = curMax !== undefined ? curMax + 1 : 0;
+        maxOrderByParent.set(parentId, order);
+        const node: PlainNode = { v: 2, title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata: {} };
+        const { ciphertext, iv } = await cryptoEncNode(node);
+        const newId = await createTodo({ ciphertext, iv });
+        virtualNodes.push({
+          v: 2,
+          title,
+          isCompleted: false,
+          parentId,
+          order,
+          metadata: {},
+          _id: newId as Id<"todos">,
+          _creationTime: Date.now(),
+          _raw: { ciphertext, iv },
+        } as DecryptedNode);
+        chainIds.push(newId as string);
+        parentId = newId as string;
+        createdCount++;
+      }
+      if (createdCount === 0) {
+        alert("a task with that path already exists");
+        return;
+      }
+      // expand all ancestors so newly created path is visible
+      if (chainIds.length > 1) {
+        setExpanded((prev) => {
+          const next = new Set(prev);
+          for (let i = 0; i < chainIds.length - 1; i++) next.add(chainIds[i]);
+          return next;
+        });
+      }
+      setNewRootTitle("");
+      return;
+    }
+    // fallback: single task/queue
+    const title = raw;
+    if (title.length > 200) return;
     const roots = tree.roots;
+    if (roots.some((r) => r.title === title)) {
+      alert("a task with that path already exists");
+      return;
+    }
     const order = roots.length ? Math.max(...roots.map((r) => r.order)) + 1 : 0;
     const node: PlainNode = { v: 2, title, isCompleted: false, parentId: null, order, metadata: {} };
     const { ciphertext, iv } = await cryptoEncNode(node);
@@ -526,6 +605,10 @@ function TodoQueue() {
     if (!title || title.length > 200 || !key) return;
     const parent = tree.map.get(parentId);
     if (!parent) return;
+    if (parent.children.some((c) => c.title === title)) {
+      alert("a task with that path already exists");
+      return;
+    }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
     const node: PlainNode = { v: 2, title, isCompleted: false, parentId, order, metadata: {} };
     const { ciphertext, iv } = await cryptoEncNode(node);
@@ -567,6 +650,10 @@ function TodoQueue() {
     const cur = nodes?.find((n) => n._id === id);
     if (!cur) {
       setEditingId(null);
+      return;
+    }
+    if (v !== cur.title && nodes?.some((n) => n._id !== id && (n.parentId ?? null) === (cur.parentId ?? null) && n.title === v)) {
+      alert("a task with that path already exists");
       return;
     }
     const updated: PlainNode = { v: 2, title: v, isCompleted: cur.isCompleted, parentId: cur.parentId, order: cur.order, metadata: cur.metadata };
@@ -626,6 +713,10 @@ function TodoQueue() {
     }
     // siblings excluding dragged if same parent
     const filtered = siblings.filter((s) => s._id !== draggedId);
+    if (filtered.some((s) => s.title === dragged.title)) {
+      alert("a task with that path already exists at the destination");
+      return;
+    }
     let newOrder: number;
     if (filtered.length === 0) newOrder = 0;
     else if (targetIndex <= 0) newOrder = filtered[0].order - 1;
@@ -823,7 +914,6 @@ function TodoQueue() {
           <button onClick={() => lock()} className="opacity-60 hover:opacity-100 underline underline-offset-4">
             lock
           </button>
-          <span className="opacity-60">{tree.roots.length} queues</span>
         </span>
       </div>
 
@@ -859,12 +949,12 @@ function TodoQueue() {
             autoFocus
             value={newRootTitle}
             onChange={(e) => setNewRootTitle(e.target.value)}
-            placeholder="new queue… (e.g. host hackathon)"
-            maxLength={200}
+            placeholder="/host hackathon/outreach write email template"
+            maxLength={500}
             className="flex-1 bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
           />
           <button type="submit" disabled={!newRootTitle.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20">
-            add queue
+            add task
           </button>
         </form>
       </div>
