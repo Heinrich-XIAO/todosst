@@ -965,7 +965,14 @@ function TodoQueue() {
           ) : (
             <button
               onClick={() => setSelectedId(node._id)}
-              onDoubleClick={() => startEdit(node)}
+              onDoubleClick={() => {
+                // folders open on double-click; leaves rename
+                if (hasChildren) {
+                  navigateToPwd([...getAncestors(node._id, tree.map).map((a) => a.title), node.title]);
+                } else {
+                  startEdit(node);
+                }
+              }}
               className={`flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
               title={node.title}
             >
@@ -1314,7 +1321,7 @@ function TodoQueue() {
 
       {/* footer drop zone for root */}
       <div className="border-t border-foreground/10 px-3 py-2 text-xs opacity-60">
-        drag any row onto another to nest • drop on empty area to move to root • double-click title to edit
+        drag any row onto another to nest • drop on empty area to move to root • double-click folder to open • double-click task to edit
       </div>
     </div>
   );
