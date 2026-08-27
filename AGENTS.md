@@ -1,3 +1,7 @@
+# Git
+
+- When you commit, also push so the branch stays up to date.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know
