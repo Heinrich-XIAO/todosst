@@ -545,6 +545,9 @@ function TodoQueue() {
   const selectedNode = selectedId ? (tree.map.get(selectedId) ?? null) : null;
   const ancestors = selectedId ? getAncestors(selectedId, tree.map) : [];
 
+  const confirmNode = confirmDeleteId ? (tree.map.get(confirmDeleteId) ?? null) : null;
+  const confirmCount = confirmNode ? collectDescendants(confirmNode).length : 0;
+
   const currentDirDepth = useMemo(() => {
     if (!currentDirInfo.id) return -1;
     return tree.map.get(currentDirInfo.id as string)?.depth ?? -1;
@@ -885,6 +888,16 @@ function TodoQueue() {
     return () => window.clearTimeout(t);
   }, [confirmDeleteId]);
 
+  // Esc cancels delete confirmation
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmDeleteId(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [confirmDeleteId]);
+
   if (isLocked) {
     if (!isReady) return <p className="text-sm opacity-60">preparing vault…</p>;
     return <UnlockScreen />;
@@ -975,23 +988,7 @@ function TodoQueue() {
               edit
             </button>
             {confirmDeleteId === node._id ? (
-              <span className="flex items-center gap-1 border border-foreground bg-background px-1 py-0.5">
-                <span className="opacity-70">
-                  delete{collectDescendants(node).length > 1 ? ` ${collectDescendants(node).length}?` : "?"}
-                </span>
-                <button
-                  onClick={() => handleDelete(node)}
-                  className="bg-foreground px-1.5 py-0.5 text-background hover:opacity-90"
-                >
-                  yes
-                </button>
-                <button
-                  onClick={() => setConfirmDeleteId(null)}
-                  className="border border-foreground/20 px-1.5 py-0.5 hover:bg-foreground/10"
-                >
-                  no
-                </button>
-              </span>
+              <span className="font-mono opacity-100 underline underline-offset-4">confirm?</span>
             ) : (
               <button
                 onClick={() => setConfirmDeleteId(node._id)}
@@ -1265,6 +1262,51 @@ function TodoQueue() {
           </ul>
         )}
       </div>
+
+      {confirmNode && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4"
+          onClick={() => setConfirmDeleteId(null)}
+        >
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="delete-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[420px] border border-foreground bg-background p-6"
+          >
+            <p className="font-mono text-[11px] opacity-40">root@vault:~$</p>
+            <h2 id="delete-confirm-title" className="mt-1 font-mono text-sm font-medium break-words">
+              <span className="opacity-40">$</span> rm{" "}
+              <span className="underline decoration-dotted underline-offset-4">
+                {`"${confirmNode.title.length > 48 ? `${confirmNode.title.slice(0, 48)}…` : confirmNode.title}"`}
+              </span>
+            </h2>
+            <p className="mt-3 font-mono text-xs leading-relaxed opacity-70">
+              {confirmCount > 1
+                ? `// ${confirmCount - 1} nested node${confirmCount - 1 === 1 ? "" : "s"} terminated alongside it`
+                : "// queue will be purged"}
+              — this operation is irreversible.
+            </p>
+            <div className="mt-6 flex justify-end gap-2 font-mono text-xs">
+              <button
+                autoFocus
+                onClick={() => setConfirmDeleteId(null)}
+                className="border border-foreground bg-background px-4 py-2 hover:bg-foreground/10 focus:outline-none focus:ring-1 focus:ring-foreground"
+              >
+                cancel
+              </button>
+              <button
+                onClick={() => handleDelete(confirmNode)}
+                className="border border-foreground bg-foreground px-4 py-2 text-background hover:opacity-90 focus:outline-none"
+              >
+                delete
+              </button>
+            </div>
+            <p className="mt-3 text-right font-mono text-[11px] opacity-30">&gt; auto-abort in 4s • [esc] cancel</p>
+          </div>
+        </div>
+      )}
 
       {selectedNode && (
         <MetadataPanel node={selectedNode} onUpdateMetadata={handleUpdateMetadata} onClose={() => setSelectedId(null)} />
