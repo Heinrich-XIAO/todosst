@@ -6,8 +6,9 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import { AuthForm } from "./AuthForm";
-import { useEncryption } from "./EncryptionContext";
+import { useEncryption, getRememberedKey, setRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
+import { deriveExtractableKey, exportKeyB64 } from "@/lib/crypto";
 
 type Filter = "all" | "active" | "completed";
 
@@ -97,12 +98,21 @@ function getAncestors(
 }
 
 function UnlockScreen() {
-  const { unlock, isReady } = useEncryption();
+  const { unlock, setKeyFromStored, isReady, clearStoredKey } = useEncryption();
   const viewer = useQuery(api.users.viewer);
   const [password, setPassword] = useState("");
+  const [storeLocally, setStoreLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const convex = useConvex();
+
+  // initialize checkbox from existing stored key (if user previously opted in)
+  useEffect(() => {
+    try {
+      const remembered = getRememberedKey();
+      if (remembered) setStoreLocally(true);
+    } catch {}
+  }, []);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();
@@ -127,7 +137,18 @@ function UnlockScreen() {
         setError("no encryption salt found — try signing out and back in.");
         return;
       }
-      await unlock(password);
+      if (storeLocally) {
+        // Derive an extractable key with the fetched salt and persist it for auto-unlock.
+        // Use direct helpers to guarantee we use the freshly fetched salt.
+        const k = await deriveExtractableKey(password, salt);
+        const keyB64 = await exportKeyB64(k);
+        setRememberedKey({ salt, keyB64 });
+        setKeyFromStored(k, salt);
+      } else {
+        // ensure we don't keep a stale stored key when user explicitly opted out
+        clearStoredKey();
+        await unlock(password);
+      }
       setPassword("");
     } catch (err) {
       setError(err instanceof Error ? err.message.toLowerCase() : "failed to unlock");
@@ -154,6 +175,26 @@ function UnlockScreen() {
           onChange={(e) => setPassword(e.target.value)}
           className="w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
         />
+        <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={storeLocally}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setStoreLocally(checked);
+              if (!checked) clearStoredKey();
+            }}
+            className="h-3.5 w-3.5 border border-foreground bg-background accent-foreground"
+          />
+          <span className="opacity-80">store locally</span>
+          <span className="opacity-40 hidden sm:inline">— automatically unlock on this device</span>
+        </label>
+        {storeLocally && (
+          <p className="text-[11px] opacity-40 leading-tight">
+            stores the derived encryption key in localStorage on this device. anyone with access to this browser can open
+            your vault without the password. only use on a trusted device.
+          </p>
+        )}
         {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
         <button
           type="submit"
@@ -248,7 +289,15 @@ function MetadataPanel({
 }
 
 function TodoQueue() {
-  const { key, isLocked, isReady } = useEncryption();
+  const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
+  const [hasRemembered, setHasRemembered] = useState(false);
+  useEffect(() => {
+    try {
+      setHasRemembered(!!getRememberedKey());
+    } catch {
+      setHasRemembered(false);
+    }
+  }, [key]);
   const todos = useQuery(api.todos.list);
   const createTodo = useMutation(api.todos.create);
   const updateTodo = useMutation(api.todos.update);
@@ -714,7 +763,24 @@ function TodoQueue() {
           <span>🔒 fully encrypted tree</span>
           <span className="hidden sm:inline opacity-60">queues are nested — drag to move</span>
         </span>
-        <span className="opacity-60">{tree.roots.length} queues</span>
+        <span className="flex items-center gap-3">
+          {hasRemembered && (
+            <button
+              onClick={() => {
+                clearStoredKey();
+                setHasRemembered(false);
+              }}
+              className="opacity-60 hover:opacity-100 underline underline-offset-4"
+              title="remove locally stored key — you will need password next time"
+            >
+              forget device
+            </button>
+          )}
+          <button onClick={() => lock()} className="opacity-60 hover:opacity-100 underline underline-offset-4">
+            lock
+          </button>
+          <span className="opacity-60">{tree.roots.length} queues</span>
+        </span>
       </div>
 
       {/* breadcrumb */}
