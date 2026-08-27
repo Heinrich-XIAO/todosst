@@ -10,19 +10,23 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const normalizedEmail = email.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setError("enter a valid email.");
+    const raw = email.trim().toLowerCase();
+    if (raw.length < 3) {
+      setError("enter at least 3 characters.");
       return;
     }
+    if (raw.length > 64) {
+      setError("too long.");
+      return;
+    }
+    // allow username or email — if no @, treat as username and map to <username>@todosst.local
+    const normalizedEmail = raw.includes("@") ? raw : `${raw}@todosst.local`;
     if (password.length < 8) {
       setError("password must be at least 8 characters.");
       return;
@@ -38,76 +42,16 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       formData.set("password", password);
       formData.set("flow", mode);
       await signIn("password", formData);
-      if (mode === "signUp") {
-        setPendingEmail(normalizedEmail);
-        setError(null);
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "authentication failed";
       if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("already")) {
-        setError(mode === "signIn" ? "invalid email or password." : "account already exists. try signing in.");
+        setError(mode === "signIn" ? "invalid username or password." : "account already exists. try signing in.");
       } else {
         setError(msg.toLowerCase());
       }
     } finally {
       setLoading(false);
     }
-  }
-
-  async function handleVerification(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    const c = code.trim();
-    if (!/^\d{8}$/.test(c)) {
-      setError("code must be 8 digits.");
-      return;
-    }
-    if (!pendingEmail) return;
-    setLoading(true);
-    try {
-      const formData = new FormData();
-      formData.set("email", pendingEmail);
-      formData.set("code", c);
-      formData.set("flow", "email-verification");
-      await signIn("password", formData);
-      // on success, Authenticated will take over and show queue
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "verification failed";
-      setError(msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("expired") ? "invalid or expired code." : msg.toLowerCase());
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (pendingEmail) {
-    return (
-      <div className="w-full max-w-[420px] border border-foreground bg-background p-6">
-        <p className="text-sm">check your email.</p>
-        <p className="mt-1 text-sm opacity-60">we sent an 8-digit code to {pendingEmail}.</p>
-        <form onSubmit={handleVerification} className="mt-6 space-y-4">
-          <label className="block">
-            <span className="text-sm">code</span>
-            <input
-              autoFocus
-              type="text"
-              inputMode="numeric"
-              required
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
-              placeholder="00000000"
-              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm tracking-widest placeholder:text-foreground/40 focus:outline-none"
-            />
-          </label>
-          {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
-          <button type="submit" disabled={loading} className="w-full border border-foreground bg-foreground py-2.5 text-sm text-background hover:opacity-90 disabled:opacity-40">
-            {loading ? "please wait…" : "verify"}
-          </button>
-          <button type="button" onClick={() => setPendingEmail(null)} className="w-full py-2 text-sm opacity-60 hover:opacity-100">
-            back
-          </button>
-        </form>
-      </div>
-    );
   }
 
   return (
@@ -130,14 +74,16 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       <div className="p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block">
-            <span className="text-sm">email</span>
+            <span className="text-sm">username</span>
             <input
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               required
+              minLength={3}
+              maxLength={64}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
+              placeholder="your name"
               className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
             />
           </label>
