@@ -339,6 +339,8 @@ function TodoQueue() {
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const newRootInputRef = useRef<HTMLInputElement>(null);
+  const [isSlashFocused, setIsSlashFocused] = useState(false);
+  const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
 
   const [nodes, setNodes] = useState<DecryptedNode[] | null>(null);
   const [decryptError, setDecryptError] = useState<string | null>(null);
@@ -508,6 +510,53 @@ function TodoQueue() {
 
   const selectedNode = selectedId ? (tree.map.get(selectedId) ?? null) : null;
   const ancestors = selectedId ? getAncestors(selectedId, tree.map) : [];
+
+  // slash-path intellisense: autocomplete for "/..." input
+  const slashComplete = useMemo(() => {
+    if (!nodes) return { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "" };
+    if (!newRootTitle.startsWith("/")) return { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "" };
+    const withoutLeading = newRootTitle.slice(1);
+    const parts = withoutLeading.split("/");
+    const prefixRaw = parts[parts.length - 1] ?? "";
+    const dirPartsRaw = parts.slice(0, -1);
+    let parentId: string | null = null;
+    for (const raw of dirPartsRaw) {
+      const seg = raw.trim();
+      if (!seg) return { suggestions: [] as TreeNode[], prefix: prefixRaw, parentId: null as string | null, dirPath: "" };
+      const match = nodes.find((n) => n.title === seg && (n.parentId ?? null) === parentId);
+      if (!match) return { suggestions: [] as TreeNode[], prefix: prefixRaw, parentId: null as string | null, dirPath: "" };
+      parentId = match._id as string;
+    }
+    const dirPath = dirPartsRaw.length ? "/" + dirPartsRaw.map((s) => s.trim()).filter(Boolean).join("/") : "";
+    let siblings: TreeNode[];
+    if (parentId === null) siblings = tree.roots;
+    else {
+      const par = tree.map.get(parentId);
+      siblings = par ? par.children : [];
+    }
+    const prefix = prefixRaw.trim();
+    const lower = prefix.toLowerCase();
+    const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);
+    return { suggestions: filtered, prefix, parentId, dirPath };
+  }, [newRootTitle, nodes, tree]);
+
+  useEffect(() => {
+    setActiveSuggestIdx(0);
+  }, [slashComplete.suggestions]);
+
+  const applySlashSuggestion = useCallback(
+    (title: string) => {
+      const withoutLeading = newRootTitle.slice(1);
+      const parts = withoutLeading.split("/");
+      const dirParts = parts.slice(0, -1);
+      const dirPrefix = dirParts.length ? "/" + dirParts.map((s) => s.trim()).filter(Boolean).join("/") + "/" : "/";
+      const next = dirPrefix + title;
+      setNewRootTitle(next);
+      setActiveSuggestIdx(0);
+      requestAnimationFrame(() => newRootInputRef.current?.focus());
+    },
+    [newRootTitle]
+  );
 
   function parseSlashPath(input: string): string[] | null {
     const trimmed = input.trim();
@@ -944,16 +993,78 @@ function TodoQueue() {
       {/* top controls */}
       <div className="flex flex-wrap gap-2 border-b border-foreground p-3">
         <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
-          <input
-            ref={newRootInputRef}
-            autoFocus
-            value={newRootTitle}
-            onChange={(e) => setNewRootTitle(e.target.value)}
-            placeholder="/host hackathon/outreach write email template"
-            maxLength={500}
-            className="flex-1 bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
-          />
-          <button type="submit" disabled={!newRootTitle.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20">
+          <div className="flex-1 relative">
+            <input
+              ref={newRootInputRef}
+              autoFocus
+              value={newRootTitle}
+              onChange={(e) => setNewRootTitle(e.target.value)}
+              onFocus={() => setIsSlashFocused(true)}
+              onBlur={() => setTimeout(() => setIsSlashFocused(false), 150)}
+              onKeyDown={(e) => {
+                if (!isSlashFocused || slashComplete.suggestions.length === 0) return;
+                if (e.key === "ArrowDown") {
+                  e.preventDefault();
+                  setActiveSuggestIdx((i) => (i + 1) % slashComplete.suggestions.length);
+                } else if (e.key === "ArrowUp") {
+                  e.preventDefault();
+                  setActiveSuggestIdx((i) => (i - 1 + slashComplete.suggestions.length) % slashComplete.suggestions.length);
+                } else if (e.key === "Enter" || e.key === "Tab") {
+                  const chosen = slashComplete.suggestions[activeSuggestIdx];
+                  // if exact match, let Enter submit instead of re-applying same value
+                  if (e.key === "Enter" && chosen && chosen.title.toLowerCase() === slashComplete.prefix.toLowerCase() && slashComplete.prefix.length > 0) {
+                    setIsSlashFocused(false);
+                    return;
+                  }
+                  // autocomplete active suggestion instead of submitting
+                  e.preventDefault();
+                  if (chosen) applySlashSuggestion(chosen.title);
+                } else if (e.key === "Escape") {
+                  setIsSlashFocused(false);
+                }
+              }}
+              placeholder="/host hackathon/outreach write email template"
+              maxLength={500}
+              className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
+            />
+            {isSlashFocused && slashComplete.suggestions.length > 0 && newRootTitle.startsWith("/") && (
+              <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
+                <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
+                  {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
+                </div>
+                {slashComplete.suggestions.map((s, idx) => {
+                  const isActive = idx === activeSuggestIdx;
+                  const prefixLower = slashComplete.prefix.toLowerCase();
+                  const titleLower = s.title.toLowerCase();
+                  const matchLen = prefixLower && titleLower.startsWith(prefixLower) ? slashComplete.prefix.length : 0;
+                  return (
+                    <button
+                      key={s._id}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applySlashSuggestion(s.title);
+                      }}
+                      className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${isActive ? "bg-foreground text-background" : "hover:bg-foreground/10"}`}
+                    >
+                      <span className={`truncate ${isActive ? "" : ""}`}>
+                        {matchLen > 0 ? (
+                          <>
+                            <span className={isActive ? "opacity-60" : "opacity-40"}>{s.title.slice(0, matchLen)}</span>
+                            <span className="font-medium">{s.title.slice(matchLen)}</span>
+                          </>
+                        ) : (
+                          <span className="font-medium">{s.title}</span>
+                        )}
+                      </span>
+                      <span className={`ml-auto shrink-0 text-[10px] ${isActive ? "opacity-60" : "opacity-30"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <button type="submit" disabled={!newRootTitle.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
             add task
           </button>
         </form>
