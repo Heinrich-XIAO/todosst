@@ -337,7 +337,7 @@ function TodoQueue() {
   const [editingId, setEditingId] = useState<Id<"todos"> | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedId, setSelectedId] = useState<Id<"todos"> | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [addChildParent, setAddChildParent] = useState<Id<"todos"> | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
@@ -702,11 +702,11 @@ function TodoQueue() {
         alert("a task with that path already exists");
         return;
       }
-      // expand all ancestors so newly created path is visible
+      // ensure all ancestors of newly created path are un-collapsed (visible)
       if (chainIds.length > 1) {
-        setExpanded((prev) => {
+        setCollapsed((prev) => {
           const next = new Set(prev);
-          for (let i = 0; i < chainIds.length - 1; i++) next.add(chainIds[i]);
+          for (let i = 0; i < chainIds.length - 1; i++) next.delete(chainIds[i]);
           return next;
         });
       }
@@ -744,9 +744,9 @@ function TodoQueue() {
     await createTodo({ ciphertext, iv });
     setAddChildTitle("");
     setAddChildParent(null);
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
-      next.add(parentId);
+      next.delete(parentId);
       return next;
     });
   }
@@ -864,16 +864,16 @@ function TodoQueue() {
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: dragged._id as Id<"todos">, ciphertext, iv });
     if (targetParentId) {
-      setExpanded((prev) => {
+      setCollapsed((prev) => {
         const next = new Set(prev);
-        next.add(targetParentId);
+        next.delete(targetParentId);
         return next;
       });
     }
   }
 
   function toggleExpanded(id: string) {
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -895,7 +895,7 @@ function TodoQueue() {
 
   // Recursive renderer
   function RenderNode({ node }: { node: TreeNode }) {
-    const isExpanded = expanded.has(node._id) || !!search; // auto expand when searching
+    const isExpanded = !collapsed.has(node._id) || !!search; // folders open by default; search auto-expands
     const isEditing = editingId === node._id;
     const isSelected = selectedId === node._id;
     const hasChildren = node.children.length > 0;
