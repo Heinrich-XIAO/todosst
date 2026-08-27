@@ -1,13 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
   <style>
-    .s { stroke: #000; fill: none; stroke-width: 2; }
-    .f { fill: #000; }
+    .d { stroke: #000; fill: none; stroke-width: 2; stroke-linejoin: round; }
+    .c { stroke: #000; fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
     @media (prefers-color-scheme: dark) {
-      .s { stroke: #fff; }
-      .f { fill: #fff; }
+      .d { stroke: #fff; }
+      .c { stroke: #fff; }
     }
   </style>
-  <rect class="s" x="2" y="2" width="20" height="20"/>
-  <path class="s" d="M7.5 8l4.5 4-4.5 4"/>
-  <rect class="f" x="14" y="14.5" width="4" height="3.5"/>
+  <path class="d" d="M12 2L22 12L12 22L2 12Z"/>
+  <path class="c" d="M7.5 12.5L11 16L17 8.5"/>
 </svg>
