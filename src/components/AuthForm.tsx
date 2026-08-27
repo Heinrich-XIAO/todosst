@@ -66,9 +66,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       </div>
 
       <div className="p-6">
-        <p className="text-sm opacity-60">{mode === "signIn" ? "welcome back." : "works on any .vercel.app domain."}</p>
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <label className="block">
             <span className="text-sm">email</span>
             <input
@@ -102,8 +100,6 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
             {loading ? "please wait…" : mode === "signIn" ? "sign in" : "create account"}
           </button>
         </form>
-
-        <p className="mt-4 text-xs opacity-40">httponly · samesite=lax · scrypt</p>
       </div>
     </div>
   );

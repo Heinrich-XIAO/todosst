@@ -98,7 +98,6 @@ function TodoQueue() {
         ) : list.length === 0 ? (
           <div className="px-3 py-12 text-sm">
             <p>queue empty.</p>
-            <p className="mt-1 opacity-60">add your first item above. press enter to add.</p>
           </div>
         ) : (
           <>

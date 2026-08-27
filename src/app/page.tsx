@@ -9,7 +9,6 @@ export default function Home() {
       <Header />
       <main className="flex flex-1 flex-col items-center px-4 py-10 sm:px-0">
         <TodoApp />
-        <p className="mt-6 text-xs opacity-40">press enter to add · click text to edit</p>
       </main>
     </div>
   );
