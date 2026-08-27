@@ -341,6 +341,7 @@ function TodoQueue() {
   const [addChildParent, setAddChildParent] = useState<Id<"todos"> | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
   const newRootInputRef = useRef<HTMLInputElement>(null);
   const [isSlashFocused, setIsSlashFocused] = useState(false);
   const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
@@ -744,6 +745,7 @@ function TodoQueue() {
       await clearCompleted({ ids });
     }
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
+    setConfirmDeleteId(null);
   }
 
   async function handleUpdateMetadata(id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) {
@@ -822,6 +824,13 @@ function TodoQueue() {
       return next;
     });
   }
+
+  // Auto-dismiss delete confirmation after 4s
+  useEffect(() => {
+    if (!confirmDeleteId) return;
+    const t = window.setTimeout(() => setConfirmDeleteId(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [confirmDeleteId]);
 
   if (isLocked) {
     if (!isReady) return <p className="text-sm opacity-60">preparing vault…</p>;
@@ -907,16 +916,39 @@ function TodoQueue() {
             </button>
           )}
 
-          <span className="flex gap-2 text-xs shrink-0">
+          <span className="flex gap-2 text-xs shrink-0 items-center">
             <button onClick={() => setAddChildParent(node._id)} className="opacity-40 hover:opacity-100">
               +child
             </button>
             <button onClick={() => startEdit(node)} className="opacity-40 hover:opacity-100 hidden sm:inline">
               edit
             </button>
-            <button onClick={() => handleDelete(node)} className="opacity-40 hover:opacity-100">
-              delete
-            </button>
+            {confirmDeleteId === node._id ? (
+              <span className="flex items-center gap-1 border border-foreground bg-background px-1 py-0.5">
+                <span className="opacity-70">
+                  delete{collectDescendants(node).length > 1 ? ` ${collectDescendants(node).length}?` : "?"}
+                </span>
+                <button
+                  onClick={() => handleDelete(node)}
+                  className="bg-foreground px-1.5 py-0.5 text-background hover:opacity-90"
+                >
+                  yes
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  className="border border-foreground/20 px-1.5 py-0.5 hover:bg-foreground/10"
+                >
+                  no
+                </button>
+              </span>
+            ) : (
+              <button
+                onClick={() => setConfirmDeleteId(node._id)}
+                className="opacity-40 hover:opacity-100"
+              >
+                delete
+              </button>
+            )}
           </span>
         </div>
 
