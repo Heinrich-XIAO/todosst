@@ -3,7 +3,10 @@ import { Header } from "@/components/Header";
 
 export const dynamic = "force-dynamic";
 
-export default function Home() {
+// Handles all paths: "/", "/host hackathon", "/a/b/../c" etc.
+// Client `!cd` uses window.history.pushState to change URL without reload;
+// this catch-all ensures direct loads / refreshes render the same UI instead of 404.
+export default function CatchAllPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <Header />

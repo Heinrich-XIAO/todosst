@@ -9,6 +9,8 @@ import { AuthForm } from "./AuthForm";
 import { useEncryption, getRememberedKey, setRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
 import { deriveExtractableKey, exportKeyB64 } from "@/lib/crypto";
+import { usePathname } from "next/navigation";
+import { parseBangCd, resolveCdPath, encodePathForUrl } from "@/lib/cdPath";
 
 type Filter = "all" | "active" | "completed";
 
@@ -327,6 +329,7 @@ function TodoQueue() {
     [key]
   );
 
+  const pathname = usePathname() ?? "/";
   const [newRootTitle, setNewRootTitle] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -574,6 +577,26 @@ function TodoQueue() {
     e.preventDefault();
     const raw = newRootTitle.trim();
     if (!raw || !key) return;
+    // bang commands: !cd <path> — change window location without reload
+    if (raw.startsWith("!")) {
+      const { isCd, target } = parseBangCd(raw);
+      if (isCd) {
+        let decodedCurrent: string;
+        try {
+          decodedCurrent = decodeURIComponent(pathname);
+        } catch {
+          decodedCurrent = pathname;
+        }
+        const resolved = resolveCdPath(decodedCurrent, target);
+        const encoded = encodePathForUrl(resolved);
+        window.history.pushState(null, "", encoded);
+        setNewRootTitle("");
+        return;
+      }
+      // unknown bang command — just clear and ignore (don’t create a todo)
+      setNewRootTitle("");
+      return;
+    }
     const slashParts = parseSlashPath(raw);
     if (slashParts) {
       if (!nodes) return;
