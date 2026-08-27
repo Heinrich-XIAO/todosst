@@ -11,7 +11,6 @@ export default function Home() {
         <TodoApp />
         <p className="mt-6 text-xs opacity-40">press enter to add · click text to edit</p>
       </main>
-      <footer className="border-t border-foreground/10 py-4 text-center text-xs opacity-40">todosst · queue</footer>
     </div>
   );
 }
