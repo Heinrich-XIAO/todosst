@@ -567,34 +567,64 @@ function TodoQueue() {
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
 
-  // slash-path intellisense: autocomplete for "/..." input
+  // intellisense: autocomplete for "/..." paths and "!cd ..." commands
   const slashComplete = useMemo(() => {
-    if (!nodes) return { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "" };
-    if (!newRootTitle.startsWith("/")) return { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "" };
-    const withoutLeading = newRootTitle.slice(1);
-    const parts = withoutLeading.split("/");
-    const prefixRaw = parts[parts.length - 1] ?? "";
-    const dirPartsRaw = parts.slice(0, -1);
-    let parentId: string | null = null;
-    for (const raw of dirPartsRaw) {
+    const none = { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "", mode: "none" as const };
+    if (!nodes) return none;
+    if (newRootTitle.startsWith("/")) {
+      const withoutLeading = newRootTitle.slice(1);
+      const parts = withoutLeading.split("/");
+      const prefixRaw = parts[parts.length - 1] ?? "";
+      const dirPartsRaw = parts.slice(0, -1);
+      let parentId: string | null = null;
+      for (const raw of dirPartsRaw) {
+        const seg = raw.trim();
+        if (!seg) return { ...none, prefix: prefixRaw };
+        const match = nodes.find((n) => n.title === seg && (n.parentId ?? null) === parentId);
+        if (!match) return { ...none, prefix: prefixRaw };
+        parentId = match._id as string;
+      }
+      const dirPath = dirPartsRaw.length ? "/" + dirPartsRaw.map((s) => s.trim()).filter(Boolean).join("/") : "";
+      let siblings: TreeNode[];
+      if (parentId === null) siblings = tree.roots;
+      else {
+        const par = tree.map.get(parentId);
+        siblings = par ? par.children : [];
+      }
+      const prefix = prefixRaw.trim();
+      const lower = prefix.toLowerCase();
+      const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);
+      return { suggestions: filtered, prefix, parentId, dirPath, mode: "slash" as const };
+    }
+    // "!cd <path>" intellisense — segments are "/"-separated, resolved against pwd
+    const { isCd: isCdCmd, target: cdTarget } = parseBangCd(newRootTitle);
+    if (!isCdCmd) return none;
+    const segs = cdTarget ? cdTarget.split("/") : [];
+    const prefixRaw = segs.length ? segs[segs.length - 1] : "";
+    const dirSegs = segs.length ? segs.slice(0, -1) : [];
+    const absolute = !!cdTarget && cdTarget.startsWith("/");
+    const dirParts: string[] = absolute ? [] : decodePathToParts(decodedPath);
+    for (const raw of dirSegs) {
       const seg = raw.trim();
-      if (!seg) return { suggestions: [] as TreeNode[], prefix: prefixRaw, parentId: null as string | null, dirPath: "" };
-      const match = nodes.find((n) => n.title === seg && (n.parentId ?? null) === parentId);
-      if (!match) return { suggestions: [] as TreeNode[], prefix: prefixRaw, parentId: null as string | null, dirPath: "" };
+      if (!seg || seg === ".") continue;
+      if (seg === "..") {
+        dirParts.pop();
+        continue;
+      }
+      dirParts.push(seg);
+    }
+    let parentId: string | null = null;
+    for (const part of dirParts) {
+      const match = nodes.find((n) => n.title === part && (n.parentId ?? null) === parentId);
+      if (!match) return { ...none, prefix: prefixRaw };
       parentId = match._id as string;
     }
-    const dirPath = dirPartsRaw.length ? "/" + dirPartsRaw.map((s) => s.trim()).filter(Boolean).join("/") : "";
-    let siblings: TreeNode[];
-    if (parentId === null) siblings = tree.roots;
-    else {
-      const par = tree.map.get(parentId);
-      siblings = par ? par.children : [];
-    }
+    const siblings = parentId === null ? tree.roots : (tree.map.get(parentId)?.children ?? []);
     const prefix = prefixRaw.trim();
     const lower = prefix.toLowerCase();
     const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);
-    return { suggestions: filtered, prefix, parentId, dirPath };
-  }, [newRootTitle, nodes, tree]);
+    return { suggestions: filtered, prefix, parentId, dirPath: "/" + dirParts.join("/"), mode: "cd" as const };
+  }, [newRootTitle, nodes, tree, decodedPath]);
 
   useEffect(() => {
     setActiveSuggestIdx(0);
@@ -602,16 +632,32 @@ function TodoQueue() {
 
   const applySlashSuggestion = useCallback(
     (title: string) => {
-      const withoutLeading = newRootTitle.slice(1);
-      const parts = withoutLeading.split("/");
-      const dirParts = parts.slice(0, -1);
-      const dirPrefix = dirParts.length ? "/" + dirParts.map((s) => s.trim()).filter(Boolean).join("/") + "/" : "/";
-      const next = dirPrefix + title;
+      let next: string;
+      if (slashComplete.mode === "cd") {
+        // keep "!cd" + whatever dir portion was typed (up to the last "/"), append the suggestion
+        const m = /^!\s*cd/i.exec(newRootTitle);
+        if (m) {
+          const afterCd = newRootTitle.slice(m[0].length);
+          const lastSlash = afterCd.lastIndexOf("/");
+          next =
+            lastSlash >= 0
+              ? newRootTitle.slice(0, m[0].length) + afterCd.slice(0, lastSlash + 1) + title
+              : newRootTitle.slice(0, m[0].length) + " " + title;
+        } else {
+          next = "!cd " + title;
+        }
+      } else {
+        const withoutLeading = newRootTitle.slice(1);
+        const parts = withoutLeading.split("/");
+        const dirParts = parts.slice(0, -1);
+        const dirPrefix = dirParts.length ? "/" + dirParts.map((s) => s.trim()).filter(Boolean).join("/") + "/" : "/";
+        next = dirPrefix + title;
+      }
       setNewRootTitle(next);
       setActiveSuggestIdx(0);
       requestAnimationFrame(() => newRootInputRef.current?.focus());
     },
-    [newRootTitle]
+    [newRootTitle, slashComplete.mode]
   );
 
   function parseSlashPath(input: string): string[] | null {
@@ -1141,9 +1187,10 @@ function TodoQueue() {
               maxLength={500}
               className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
             />
-            {isSlashFocused && slashComplete.suggestions.length > 0 && newRootTitle.startsWith("/") && (
+            {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
               <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
                 <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
+                  {slashComplete.mode === "cd" ? "cd " : ""}
                   {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
                 </div>
                 {slashComplete.suggestions.map((s, idx) => {
