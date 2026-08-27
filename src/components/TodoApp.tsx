@@ -1340,11 +1340,6 @@ function TodoQueue() {
       {selectedNode && (
         <MetadataPanel node={selectedNode} onUpdateMetadata={handleUpdateMetadata} onClose={() => setSelectedId(null)} />
       )}
-
-      {/* footer drop zone for root */}
-      <div className="border-t border-foreground/10 px-3 py-2 text-xs opacity-60">
-        drag any row onto another to nest • drop on empty area to move to root • double-click folder to open • double-click task to edit
-      </div>
     </div>
   );
 }
