@@ -24,7 +24,7 @@ export const create = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("not authenticated");
     if (!args.ciphertext || !args.iv) throw new Error("missing ciphertext");
-    if (args.ciphertext.length > 4096) throw new Error("ciphertext too long");
+    if (args.ciphertext.length > 8192) throw new Error("ciphertext too long");
     if (args.iv.length > 64 || args.iv.length < 10) throw new Error("invalid iv");
     return await ctx.db.insert("todos", {
       ciphertext: args.ciphertext,
@@ -44,7 +44,7 @@ export const update = mutation({
     if (!todo) throw new Error("todo not found");
     if (todo.userId !== identity.subject) throw new Error("unauthorized");
     if (!args.ciphertext || !args.iv) throw new Error("missing ciphertext");
-    if (args.ciphertext.length > 4096) throw new Error("ciphertext too long");
+    if (args.ciphertext.length > 8192) throw new Error("ciphertext too long");
     await ctx.db.patch(args.id, { ciphertext: args.ciphertext, iv: args.iv });
   },
 });

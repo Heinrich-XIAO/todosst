@@ -124,7 +124,23 @@ export async function decryptString(
 }
 
 // Convenience: encrypt/decrypt todo object {title,isCompleted}
+// v1 = legacy flat todo, v2 = tree node with parent/order/metadata
 export type PlainTodo = { title: string; isCompleted: boolean };
+export type PlainNode = {
+  v: 2;
+  title: string;
+  isCompleted: boolean;
+  parentId: string | null; // Id<"todos"> as string, null = root
+  order: number;
+  metadata: {
+    description?: string;
+    dueAt?: number | null;
+    priority?: "low" | "med" | "high" | null;
+    tags?: string[];
+    icon?: string;
+    color?: string;
+  };
+};
 
 export async function encryptTodo(
   key: CryptoKey,
@@ -143,6 +159,50 @@ export async function decryptTodo(
   if (typeof parsed.title !== "string" || typeof parsed.isCompleted !== "boolean")
     throw new Error("invalid todo payload");
   return parsed;
+}
+
+export async function encryptNode(
+  key: CryptoKey,
+  node: PlainNode
+): Promise<EncryptedPayload> {
+  return encryptString(key, JSON.stringify(node));
+}
+
+export async function decryptNode(
+  key: CryptoKey,
+  iv: string,
+  ciphertext: string
+): Promise<PlainNode> {
+  const json = await decryptString(key, iv, ciphertext);
+  const raw = JSON.parse(json) as unknown;
+  if (!raw || typeof raw !== "object") throw new Error("invalid node payload");
+  const obj = raw as Record<string, unknown>;
+  // migrate v1 -> v2
+  if (obj.v !== 2) {
+    const v1 = raw as PlainTodo;
+    if (typeof v1.title !== "string" || typeof v1.isCompleted !== "boolean")
+      throw new Error("invalid todo payload");
+    return {
+      v: 2,
+      title: v1.title,
+      isCompleted: v1.isCompleted,
+      parentId: null,
+      order: 0,
+      metadata: {},
+    };
+  }
+  const n = raw as PlainNode;
+  if (typeof n.title !== "string" || typeof n.isCompleted !== "boolean")
+    throw new Error("invalid node payload");
+  if (n.parentId !== null && typeof n.parentId !== "string") throw new Error("invalid parentId");
+  if (typeof n.order !== "number" || !Number.isFinite(n.order)) n.order = 0;
+  if (!n.metadata || typeof n.metadata !== "object") n.metadata = {};
+  return n;
+}
+
+// helper to normalize parentId for comparisons
+export function nodeParentId(n: PlainNode): string | null {
+  return n.parentId ?? null;
 }
 
 // normalize email/username to the same key used by AuthForm + auth.ts
