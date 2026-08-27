@@ -18,15 +18,15 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
     setError(null);
     const normalizedEmail = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setError("Enter a valid email.");
+      setError("enter a valid email.");
       return;
     }
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError("password must be at least 8 characters.");
       return;
     }
     if (password.length > 128) {
-      setError("Password is too long.");
+      setError("password is too long.");
       return;
     }
     setLoading(true);
@@ -37,11 +37,11 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       formData.set("flow", mode);
       await signIn("password", formData);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Authentication failed";
+      const msg = err instanceof Error ? err.message : "authentication failed";
       if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("already")) {
-        setError(mode === "signIn" ? "Invalid email or password." : "Account already exists. Try signing in.");
+        setError(mode === "signIn" ? "invalid email or password." : "account already exists. try signing in.");
       } else {
-        setError(msg);
+        setError(msg.toLowerCase());
       }
     } finally {
       setLoading(false);
@@ -66,7 +66,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       </div>
 
       <div className="p-6">
-        <p className="text-sm opacity-60">{mode === "signIn" ? "Welcome back." : "Works on any .vercel.app domain."}</p>
+        <p className="text-sm opacity-60">{mode === "signIn" ? "welcome back." : "works on any .vercel.app domain."}</p>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <label className="block">
@@ -103,7 +103,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
           </button>
         </form>
 
-        <p className="mt-4 text-xs opacity-40">HttpOnly · SameSite=Lax · scrypt</p>
+        <p className="mt-4 text-xs opacity-40">httponly · samesite=lax · scrypt</p>
       </div>
     </div>
   );

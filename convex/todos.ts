@@ -18,10 +18,10 @@ export const create = mutation({
   args: { title: v.string() },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) throw new Error("not authenticated");
     const title = args.title.trim();
-    if (!title) throw new Error("Title cannot be empty");
-    if (title.length > 200) throw new Error("Title too long (max 200 chars)");
+    if (!title) throw new Error("title cannot be empty");
+    if (title.length > 200) throw new Error("title too long (max 200 chars)");
     return await ctx.db.insert("todos", {
       title,
       isCompleted: false,
@@ -34,10 +34,10 @@ export const toggle = mutation({
   args: { id: v.id("todos") },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
-    if (!todo) throw new Error("Todo not found");
-    if (todo.userId !== identity.subject) throw new Error("Unauthorized");
+    if (!todo) throw new Error("todo not found");
+    if (todo.userId !== identity.subject) throw new Error("unauthorized");
     await ctx.db.patch(args.id, { isCompleted: !todo.isCompleted });
   },
 });
@@ -46,13 +46,13 @@ export const updateTitle = mutation({
   args: { id: v.id("todos"), title: v.string() },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
-    if (!todo) throw new Error("Todo not found");
-    if (todo.userId !== identity.subject) throw new Error("Unauthorized");
+    if (!todo) throw new Error("todo not found");
+    if (todo.userId !== identity.subject) throw new Error("unauthorized");
     const title = args.title.trim();
-    if (!title) throw new Error("Title cannot be empty");
-    if (title.length > 200) throw new Error("Title too long (max 200 chars)");
+    if (!title) throw new Error("title cannot be empty");
+    if (title.length > 200) throw new Error("title too long (max 200 chars)");
     await ctx.db.patch(args.id, { title });
   },
 });
@@ -61,10 +61,10 @@ export const remove = mutation({
   args: { id: v.id("todos") },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
-    if (!todo) throw new Error("Todo not found");
-    if (todo.userId !== identity.subject) throw new Error("Unauthorized");
+    if (!todo) throw new Error("todo not found");
+    if (todo.userId !== identity.subject) throw new Error("unauthorized");
     await ctx.db.delete(args.id);
   },
 });
@@ -73,7 +73,7 @@ export const clearCompleted = mutation({
   args: {},
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Not authenticated");
+    if (!identity) throw new Error("not authenticated");
     const completed = await ctx.db
       .query("todos")
       .withIndex("by_user_completed", (q) =>

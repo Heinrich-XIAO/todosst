@@ -43,7 +43,7 @@ function TodoQueue() {
       await createTodo({ title });
       setNewTitle("");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed");
+      alert(err instanceof Error ? err.message.toLowerCase() : "failed");
     }
   }
 
@@ -51,7 +51,7 @@ function TodoQueue() {
     try {
       await toggleTodo({ id });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed");
+      alert(e instanceof Error ? e.message.toLowerCase() : "failed");
     }
   }
 
@@ -69,7 +69,7 @@ function TodoQueue() {
     try {
       await updateTitle({ id, title: v });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Failed");
+      alert(e instanceof Error ? e.message.toLowerCase() : "failed");
     }
     setEditingId(null);
   }
