@@ -16,11 +16,9 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-
-    // Client-side validation — never trust client alone, server validates via Password provider
     const normalizedEmail = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
-      setError("Please enter a valid email address.");
+      setError("Enter a valid email.");
       return;
     }
     if (password.length < 8) {
@@ -31,24 +29,17 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       setError("Password is too long.");
       return;
     }
-
     setLoading(true);
     try {
-      // Convex Auth Password provider: flow distinguishes sign-in vs sign-up
-      // Uses FormData under the hood via useAuthActions().signIn
       const formData = new FormData();
       formData.set("email", normalizedEmail);
       formData.set("password", password);
       formData.set("flow", mode);
-
       await signIn("password", formData);
-      // On success, ConvexAuthNextjsProvider will redirect / update state automatically
     } catch (err) {
-      // Generic error to avoid user enumeration — don't reveal if email exists
       const msg = err instanceof Error ? err.message : "Authentication failed";
-      // Map common Convex Auth errors to generic message
       if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("already")) {
-        setError(mode === "signIn" ? "Invalid email or password." : "Unable to create account. Try signing in instead.");
+        setError(mode === "signIn" ? "Invalid email or password." : "Account already exists. Try signing in.");
       } else {
         setError(msg);
       }
@@ -58,78 +49,62 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   }
 
   return (
-    <div className="w-full max-w-[420px] rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="flex gap-2 rounded-full bg-zinc-100 p-1">
+    <div className="w-full max-w-[420px] border border-foreground bg-background">
+      <div className="flex border-b border-foreground text-sm">
         <button
           onClick={() => setMode("signIn")}
-          className={`flex-1 rounded-full py-2 text-sm font-medium transition ${mode === "signIn" ? "bg-white shadow text-zinc-900" : "text-zinc-600 hover:text-zinc-900"}`}
+          className={`flex-1 py-3 text-center ${mode === "signIn" ? "bg-foreground text-background" : "bg-background text-foreground opacity-60 hover:opacity-100"}`}
         >
-          Sign in
+          sign in
         </button>
         <button
           onClick={() => setMode("signUp")}
-          className={`flex-1 rounded-full py-2 text-sm font-medium transition ${mode === "signUp" ? "bg-white shadow text-zinc-900" : "text-zinc-600 hover:text-zinc-900"}`}
+          className={`flex-1 py-3 text-center border-l border-foreground ${mode === "signUp" ? "bg-foreground text-background" : "bg-background text-foreground opacity-60 hover:opacity-100"}`}
         >
-          Create account
+          create account
         </button>
       </div>
 
-      <h2 className="mt-6 text-lg font-semibold tracking-tight text-zinc-900">
-        {mode === "signIn" ? "Welcome back" : "Create your account"}
-      </h2>
-      <p className="mt-1 text-sm text-zinc-500">
-        {mode === "signIn" ? "Sign in with your email and password." : "Use any email — works on *.vercel.app, no custom domain required."}
-      </p>
+      <div className="p-6">
+        <p className="text-sm opacity-60">{mode === "signIn" ? "Welcome back." : "Works on any .vercel.app domain."}</p>
 
-      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-        <div>
-          <label htmlFor="email" className="text-sm font-medium text-zinc-700">Email</label>
-          <input
-            id="email"
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10"
-          />
-        </div>
-        <div>
-          <label htmlFor="password" className="text-sm font-medium text-zinc-700">Password</label>
-          <input
-            id="password"
-            type="password"
-            autoComplete={mode === "signIn" ? "current-password" : "new-password"}
-            required
-            minLength={8}
-            maxLength={128}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="At least 8 characters"
-            className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-zinc-400 focus:ring-2 focus:ring-zinc-900/10"
-          />
-          <p className="mt-1.5 text-xs text-zinc-400">Passwords are hashed with scrypt — never stored in plain text.</p>
-        </div>
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="text-sm">email</span>
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="text-sm">password</span>
+            <input
+              type="password"
+              autoComplete={mode === "signIn" ? "current-password" : "new-password"}
+              required
+              minLength={8}
+              maxLength={128}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="at least 8 characters"
+              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+            />
+          </label>
 
-        {error && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700" role="alert">
-            {error}
-          </div>
-        )}
+          {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full rounded-full bg-zinc-900 py-2.5 text-sm font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50"
-        >
-          {loading ? "Please wait…" : mode === "signIn" ? "Sign in" : "Create account"}
-        </button>
-      </form>
+          <button type="submit" disabled={loading} className="w-full border border-foreground bg-foreground py-2.5 text-sm text-background hover:opacity-90 disabled:opacity-40">
+            {loading ? "please wait…" : mode === "signIn" ? "sign in" : "create account"}
+          </button>
+        </form>
 
-      <p className="mt-6 text-center text-xs leading-5 text-zinc-400">
-        Secure • HttpOnly cookies • Works on any Vercel domain
-      </p>
+        <p className="mt-4 text-xs opacity-40">HttpOnly · SameSite=Lax · scrypt</p>
+      </div>
     </div>
   );
 }
