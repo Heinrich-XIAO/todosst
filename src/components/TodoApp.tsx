@@ -10,7 +10,7 @@ import { useEncryption, getRememberedKey, setRememberedKey } from "./EncryptionC
 import type { PlainNode } from "@/lib/crypto";
 import { deriveExtractableKey, exportKeyB64 } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
-import { parseBangCd, resolveCdPath, encodePathForUrl } from "@/lib/cdPath";
+import { parseBangCd, resolveCdPath, encodePathForUrl, decodePathToParts, partsToPath } from "@/lib/cdPath";
 
 type Filter = "all" | "active" | "completed";
 
@@ -560,6 +560,14 @@ function TodoQueue() {
     return dir ? dir.children : [];
   }, [tree, currentDirInfo]);
 
+  const pwdParts = useMemo(() => decodePathToParts(decodedPath), [decodedPath]);
+
+  const navigateToPwd = useCallback((parts: string[]) => {
+    const encoded = partsToPath(parts);
+    window.history.pushState(null, "", encoded);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, []);
+
   // slash-path intellisense: autocomplete for "/..." input
   const slashComplete = useMemo(() => {
     if (!nodes) return { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "" };
@@ -1069,11 +1077,33 @@ function TodoQueue() {
         </span>
       </div>
 
-      {/* pwd — reflects window location after !cd */}
-      <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs">
-        <span className="opacity-40">pwd</span>
-        <span className="font-mono truncate">{decodedPath || "/"}</span>
-        {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40">(not found)</span>}
+      {/* pwd — clickable: pwd -> root, each segment -> that dir */}
+      <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
+        <button
+          onClick={() => navigateToPwd([])}
+          className="opacity-40 hover:opacity-100 hover:underline shrink-0"
+          title="go to root"
+        >
+          pwd
+        </button>
+        <span className="font-mono flex items-center gap-1 truncate">
+          <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
+            /
+          </button>
+          {pwdParts.map((part, idx) => (
+            <span key={`${part}-${idx}`} className="flex items-center gap-1">
+              <span className="opacity-20">/</span>
+              <button
+                onClick={() => navigateToPwd(pwdParts.slice(0, idx + 1))}
+                className="hover:underline hover:opacity-100 truncate max-w-[160px]"
+                title={part}
+              >
+                {part}
+              </button>
+            </span>
+          ))}
+        </span>
+        {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40 shrink-0">(not found)</span>}
       </div>
 
       {/* breadcrumb */}
