@@ -379,7 +379,7 @@ function TodoQueue() {
             next.add(idStr);
             return next;
           });
-        }, 10000);
+        }, 3000);
         timers.push(t);
       }
     }
