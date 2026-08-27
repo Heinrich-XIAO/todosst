@@ -139,6 +139,13 @@ export type PlainNode = {
     tags?: string[];
     icon?: string;
     color?: string;
+    // recurrence (see src/lib/recur.ts) — internally always counts,
+    // checkbox vs tally is a rendering mode only
+    recur?: string; // RFC 5545 RRULE string (jakubroztocil/rrule)
+    mode?: "check" | "count";
+    threshold?: number; // check mode: checked iff count >= threshold (default 1)
+    graceHours?: number; // window lock grace past midnight (default 4)
+    counts?: Record<string, number>; // current window only (day-index -> count); full history lives in todoHistory
   };
 };
 

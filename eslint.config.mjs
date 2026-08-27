@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // bun:test files run via `bun test` (bun types not installed)
+    "src/lib/**/*.test.ts",
   ]),
 ]);
 
