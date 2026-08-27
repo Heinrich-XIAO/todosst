@@ -543,7 +543,6 @@ function TodoQueue() {
   }, [nodes, decodedPath]);
 
   const selectedNode = selectedId ? (tree.map.get(selectedId) ?? null) : null;
-  const ancestors = selectedId ? getAncestors(selectedId, tree.map) : [];
 
   const confirmNode = confirmDeleteId ? (tree.map.get(confirmDeleteId) ?? null) : null;
   const confirmCount = confirmNode ? collectDescendants(confirmNode).length : 0;
@@ -1104,30 +1103,6 @@ function TodoQueue() {
         </span>
         {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40 shrink-0">(not found)</span>}
       </div>
-
-      {/* breadcrumb */}
-      {selectedNode && (
-        <div className="flex items-center gap-1 border-b border-foreground/10 px-3 py-2 text-xs overflow-x-auto">
-          <button onClick={() => setSelectedId(null)} className="opacity-60 hover:opacity-100">
-            root
-          </button>
-          {ancestors.map((a) => (
-            <span key={a._id} className="flex items-center gap-1">
-              <span className="opacity-20">/</span>
-              <button onClick={() => setSelectedId(a._id)} className="hover:underline">
-                {a.title}
-              </button>
-            </span>
-          ))}
-          <span className="opacity-20">/</span>
-          <span className="font-medium truncate">{selectedNode.title}</span>
-          <span className="ml-auto flex gap-2">
-            <button onClick={() => setSelectedId(null)} className="opacity-60 hover:opacity-100">
-              close
-            </button>
-          </span>
-        </div>
-      )}
 
       {/* top controls */}
       <div className="flex flex-wrap gap-2 border-b border-foreground p-3">
