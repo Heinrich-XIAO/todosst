@@ -1121,15 +1121,8 @@ function TodoQueue() {
         </span>
       </div>
 
-      {/* pwd — clickable: pwd -> root, each segment -> that dir */}
+      {/* breadcrumb path — clickable: each segment -> that dir */}
       <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
-        <button
-          onClick={() => navigateToPwd([])}
-          className="opacity-40 hover:opacity-100 hover:underline shrink-0"
-          title="go to root"
-        >
-          pwd
-        </button>
         <span className="font-mono flex items-center gap-1 truncate">
           <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
             /
