@@ -512,6 +512,58 @@ function TodoQueue() {
     [filter, search]
   );
 
+  const decodedPath = useMemo(() => {
+    try {
+      return decodeURIComponent(pathname);
+    } catch {
+      return pathname;
+    }
+  }, [pathname]);
+
+  const currentDirInfo = useMemo(() => {
+    if (!nodes) return { id: null as Id<"todos"> | null, exists: false, parts: [] as string[] };
+    const raw = decodedPath;
+    // normalize: split, trim, filter empty (handles // and trailing slash)
+    const parts = raw
+      .split("/")
+      .map((s) => {
+        try {
+          return decodeURIComponent(s).trim();
+        } catch {
+          return s.trim();
+        }
+      })
+      .filter((s) => s.length > 0);
+    if (parts.length === 0) return { id: null, exists: true, parts };
+    let parentId: string | null = null;
+    let found: DecryptedNode | null = null;
+    for (const title of parts) {
+      found = nodes.find((n) => n.title === title && (n.parentId ?? null) === parentId) ?? null;
+      if (!found) return { id: null, exists: false, parts };
+      parentId = found._id as string;
+    }
+    return { id: found!._id as Id<"todos">, exists: true, parts };
+  }, [nodes, decodedPath]);
+
+  // Auto-expand ancestors of current dir so the pwd node is visible after !cd
+  useEffect(() => {
+    if (!currentDirInfo.id) return;
+    const chain = getAncestors(currentDirInfo.id as string, tree.map);
+    if (chain.length === 0) return;
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      for (const a of chain) {
+        const key = a._id as string;
+        if (!next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [currentDirInfo.id, tree.map]);
+
   const selectedNode = selectedId ? (tree.map.get(selectedId) ?? null) : null;
   const ancestors = selectedId ? getAncestors(selectedId, tree.map) : [];
 
@@ -591,6 +643,8 @@ function TodoQueue() {
         const resolved = resolveCdPath(decodedCurrent, target);
         const encoded = encodePathForUrl(resolved);
         window.history.pushState(null, "", encoded);
+        // Ensure Next's usePathname syncs (pushState is patched but popstate helps in some builds)
+        window.dispatchEvent(new PopStateEvent("popstate"));
         setNewRootTitle("");
         return;
       }
@@ -842,6 +896,7 @@ function TodoQueue() {
     const isExpanded = expanded.has(node._id) || !!search; // auto expand when searching
     const isEditing = editingId === node._id;
     const isSelected = selectedId === node._id;
+    const isCurrentDir = currentDirInfo.id === node._id;
     const hasChildren = node.children.length > 0;
     const show = matches(node);
     if (!show) return null;
@@ -866,7 +921,7 @@ function TodoQueue() {
           handleMove(dragId, node._id, node.children.length);
           setDragId(null);
         }}
-        className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
+        className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isCurrentDir ? "bg-foreground/[0.04] border-l-2 border-l-foreground" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
         style={{ paddingLeft: `${node.depth * 16 + 12}px` }}
       >
         <div className="flex items-center gap-2 py-2 pr-3 text-sm">
@@ -907,6 +962,7 @@ function TodoQueue() {
             >
               <span className="mr-1 opacity-40">{node.children.length ? `[${node.children.length}]` : ""}</span>
               {node.title}
+              {isCurrentDir && <span className="ml-2 text-[10px] border border-foreground bg-foreground px-1 text-background">pwd</span>}
               {node.metadata.priority ? <span className="ml-2 text-[10px] border border-foreground/20 px-1">{node.metadata.priority}</span> : null}
               {node.metadata.dueAt ? (
                 <span className="ml-1 text-[10px] opacity-60">
@@ -1019,6 +1075,21 @@ function TodoQueue() {
             lock
           </button>
         </span>
+      </div>
+
+      {/* pwd — reflects window location after !cd */}
+      <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs">
+        <span className="opacity-40">pwd</span>
+        <span className="font-mono truncate">{decodedPath || "/"}</span>
+        {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40">(not found)</span>}
+        {currentDirInfo.id && (
+          <button
+            onClick={() => setSelectedId(currentDirInfo.id)}
+            className="ml-auto shrink-0 opacity-60 hover:opacity-100 underline underline-offset-4"
+          >
+            select
+          </button>
+        )}
       </div>
 
       {/* breadcrumb */}
