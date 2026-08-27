@@ -10,6 +10,8 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -36,6 +38,10 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       formData.set("password", password);
       formData.set("flow", mode);
       await signIn("password", formData);
+      if (mode === "signUp") {
+        setPendingEmail(normalizedEmail);
+        setError(null);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "authentication failed";
       if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("already")) {
@@ -46,6 +52,62 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleVerification(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    const c = code.trim();
+    if (!/^\d{8}$/.test(c)) {
+      setError("code must be 8 digits.");
+      return;
+    }
+    if (!pendingEmail) return;
+    setLoading(true);
+    try {
+      const formData = new FormData();
+      formData.set("email", pendingEmail);
+      formData.set("code", c);
+      formData.set("flow", "email-verification");
+      await signIn("password", formData);
+      // on success, Authenticated will take over and show queue
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "verification failed";
+      setError(msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("expired") ? "invalid or expired code." : msg.toLowerCase());
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (pendingEmail) {
+    return (
+      <div className="w-full max-w-[420px] border border-foreground bg-background p-6">
+        <p className="text-sm">check your email.</p>
+        <p className="mt-1 text-sm opacity-60">we sent an 8-digit code to {pendingEmail}.</p>
+        <form onSubmit={handleVerification} className="mt-6 space-y-4">
+          <label className="block">
+            <span className="text-sm">code</span>
+            <input
+              autoFocus
+              type="text"
+              inputMode="numeric"
+              required
+              value={code}
+              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              placeholder="00000000"
+              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm tracking-widest placeholder:text-foreground/40 focus:outline-none"
+            />
+          </label>
+          {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
+          <button type="submit" disabled={loading} className="w-full border border-foreground bg-foreground py-2.5 text-sm text-background hover:opacity-90 disabled:opacity-40">
+            {loading ? "please wait…" : "verify"}
+          </button>
+          <button type="button" onClick={() => setPendingEmail(null)} className="w-full py-2 text-sm opacity-60 hover:opacity-100">
+            back
+          </button>
+        </form>
+      </div>
+    );
   }
 
   return (
