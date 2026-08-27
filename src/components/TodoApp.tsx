@@ -8,9 +8,25 @@ import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import { AuthForm } from "./AuthForm";
 import { useEncryption, getRememberedKey, setRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
-import { deriveExtractableKey, exportKeyB64 } from "@/lib/crypto";
+import { deriveExtractableKey, exportKeyB64, encryptString, decryptString } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
 import { parseBangCd, resolveCdPath, encodePathForUrl, decodePathToParts, partsToPath } from "@/lib/cdPath";
+import {
+  COUNT_MAX,
+  DEFAULT_GRACE_HOURS,
+  dayIndexLocal,
+  decodeHistoryPayload,
+  encodeHistoryPayload,
+  mergeCounts,
+  modeOf,
+  nextCountOnClick,
+  parseRecurInput,
+  recurState,
+  thresholdOf,
+} from "@/lib/recur";
+import type { RecurState } from "@/lib/recur";
+import { Heatmap } from "./Heatmap";
+import { RruleEditor } from "./RruleEditor";
 
 type Filter = "all" | "active" | "completed";
 
@@ -221,12 +237,19 @@ function MetadataPanel({
   node,
   onUpdateMetadata,
   onClose,
+  nowTs,
+  historyCounts,
 }: {
   node: TreeNode | null;
   onUpdateMetadata: (id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) => void;
   onClose: () => void;
+  nowTs: number;
+  historyCounts: Map<number, number> | null;
 }) {
+  const [showRuleEditor, setShowRuleEditor] = useState(false);
   if (!node) return null;
+  const meta = node.metadata as PlainNode["metadata"];
+  const mode = modeOf(meta);
   return (
     <div className="border-t border-foreground bg-background p-3 text-xs">
       <div className="flex items-center justify-between">
@@ -236,6 +259,87 @@ function MetadataPanel({
         </button>
       </div>
       <div className="mt-3 space-y-2">
+        {/* recurrence */}
+        <div className="border border-foreground/20 p-2">
+          <div className="flex items-center justify-between">
+            <span className="opacity-60">recurrence</span>
+            {!showRuleEditor && (
+              <button onClick={() => setShowRuleEditor(true)} className="underline underline-offset-2 opacity-60 hover:opacity-100">
+                {meta.recur ? "edit rule" : "+ make recurring"}
+              </button>
+            )}
+          </div>
+          {!showRuleEditor && meta.recur ? <p className="mt-1 break-all font-mono text-[10px] opacity-60">{meta.recur}</p> : null}
+          {!showRuleEditor && !meta.recur ? <p className="mt-1 text-[10px] opacity-40">one-off task — no schedule</p> : null}
+          {showRuleEditor && (
+            <div className="mt-2">
+              <RruleEditor
+                ruleStr={meta.recur}
+                anchorTs={node._creationTime}
+                onApply={(s) => {
+                  onUpdateMetadata(node._id, { recur: s ?? undefined });
+                  setShowRuleEditor(false);
+                }}
+                onCancel={() => setShowRuleEditor(false)}
+              />
+            </div>
+          )}
+        </div>
+
+        {/* completion style + threshold + grace */}
+        <div className="flex flex-wrap gap-2">
+          <label className="flex-1 block">
+            <span className="opacity-60">completion style</span>
+            <select
+              value={mode}
+              onChange={(e) => onUpdateMetadata(node._id, { mode: e.target.value === "count" ? "count" : "check" })}
+              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+            >
+              <option value="check">checkbox</option>
+              <option value="count">tally count</option>
+            </select>
+          </label>
+          {mode === "check" && (
+            <label className="flex-1 block">
+              <span className="opacity-60">checkbox threshold</span>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={thresholdOf(meta)}
+                onChange={(e) => onUpdateMetadata(node._id, { threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
+                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              />
+            </label>
+          )}
+          {meta.recur && (
+            <label className="flex-1 block">
+              <span className="opacity-60">grace hours</span>
+              <input
+                type="number"
+                min={0}
+                max={48}
+                value={meta.graceHours ?? DEFAULT_GRACE_HOURS}
+                onChange={(e) => onUpdateMetadata(node._id, { graceHours: Math.min(48, Math.max(0, Number(e.target.value) || 0)) })}
+                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              />
+            </label>
+          )}
+        </div>
+        {meta.recur ? (
+          <p className="text-[10px] opacity-40 leading-tight">
+            recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
+          </p>
+        ) : null}
+
+        {/* past-year heatmap for this task */}
+        <div>
+          <span className="opacity-60">past year</span>
+          <div className="mt-1">
+            <Heatmap counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} />
+          </div>
+        </div>
+
         <label className="block">
           <span className="opacity-60">description</span>
           <textarea
@@ -423,6 +527,69 @@ function TodoQueue() {
     if (!nodes) return { roots: [] as TreeNode[], map: new Map<string, TreeNode>(), orphans: 0 };
     return buildTree(nodes);
   }, [nodes]);
+
+  // ---- recurrence: windowed counts ----
+  // wall clock ticks so occurrence windows roll over without a reload
+  const [nowTs, setNowTs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setNowTs(Date.now()), 30_000);
+    return () => window.clearInterval(t);
+  }, []);
+
+  const historyRecords = useQuery(api.history.list);
+  const historyPut = useMutation(api.history.put);
+  const historyRemove = useMutation(api.history.remove);
+  type HistoryStore = { byTodo: Map<string, Map<number, number>>; idByTodo: Map<string, Id<"todoHistory">> };
+  const [history, setHistory] = useState<HistoryStore | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!historyRecords || !key) {
+        if (!cancelled) setHistory(null);
+        return;
+      }
+      const byTodo = new Map<string, Map<number, number>>();
+      const idByTodo = new Map<string, Id<"todoHistory">>();
+      for (const r of historyRecords) {
+        try {
+          const json = await decryptString(key, r.iv, r.ciphertext);
+          const data = decodeHistoryPayload(json);
+          if (!data) continue;
+          byTodo.set(data.todoId, data.counts);
+          idByTodo.set(data.todoId, r._id);
+        } catch {}
+      }
+      if (!cancelled) setHistory({ byTodo, idByTodo });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [historyRecords, key]);
+
+  const [recurStates, setRecurStates] = useState<Map<string, RecurState> | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!nodes) {
+        if (!cancelled) setRecurStates(null);
+        return;
+      }
+      const m = new Map<string, RecurState>();
+      for (const n of nodes) {
+        m.set(n._id as string, await recurState(n.metadata as PlainNode["metadata"], n._creationTime, nowTs));
+      }
+      if (!cancelled) setRecurStates(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [nodes, nowTs]);
+
+  const globalCounts = useMemo(() => {
+    if (!history) return null;
+    const merged = mergeCounts(history.byTodo.values());
+    return merged.size > 0 ? merged : null;
+  }, [history]);
 
   const listFlat = nodes ?? [];
 
@@ -698,7 +865,15 @@ function TodoQueue() {
       setNewRootTitle("");
       return;
     }
-    const slashParts = parseSlashPath(raw);
+    // trailing "~…" token → recurrence on the created task
+    const parsedRecur = parseRecurInput(raw);
+    const base = parsedRecur.title;
+    if (!base) {
+      // recurrence token only — nothing to create
+      setNewRootTitle("");
+      return;
+    }
+    const slashParts = parseSlashPath(base);
     if (slashParts) {
       if (!nodes) return;
       // Build slash-separated hierarchy: each "/" segment may contain spaces.
@@ -715,7 +890,7 @@ function TodoQueue() {
       const virtualNodes: DecryptedNode[] = [...nodes];
       const chainIds: string[] = [];
       let createdCount = 0;
-      for (const title of slashParts) {
+      for (const [segIdx, title] of slashParts.entries()) {
         const existing = virtualNodes.find((n) => n.title === title && (n.parentId ?? null) === parentId);
         if (existing) {
           parentId = existing._id as string;
@@ -725,7 +900,10 @@ function TodoQueue() {
         const curMax = maxOrderByParent.get(parentId);
         const order = curMax !== undefined ? curMax + 1 : 0;
         maxOrderByParent.set(parentId, order);
-        const node: PlainNode = { v: 2, title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata: {} };
+        // recurrence applies to the final segment of the path
+        const isLast = segIdx === slashParts.length - 1;
+        const metadata: PlainNode["metadata"] = isLast && parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {};
+        const node: PlainNode = { v: 2, title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata };
         const { ciphertext, iv } = await cryptoEncNode(node);
         const newId = await createTodo({ ciphertext, iv });
         virtualNodes.push({
@@ -734,7 +912,7 @@ function TodoQueue() {
           isCompleted: false,
           parentId,
           order,
-          metadata: {},
+          metadata,
           _id: newId as Id<"todos">,
           _creationTime: Date.now(),
           _raw: { ciphertext, iv },
@@ -759,7 +937,7 @@ function TodoQueue() {
       return;
     }
     // fallback: single task/queue — creates in current directory (pwd) when scoped
-    const title = raw;
+    const title = base;
     if (title.length > 200) return;
     const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
     const siblings = targetParentId === null ? tree.roots : (tree.map.get(targetParentId as string)?.children ?? []);
@@ -768,14 +946,22 @@ function TodoQueue() {
       return;
     }
     const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
-    const node: PlainNode = { v: 2, title, isCompleted: false, parentId: targetParentId, order, metadata: {} };
+    const node: PlainNode = {
+      v: 2,
+      title,
+      isCompleted: false,
+      parentId: targetParentId,
+      order,
+      metadata: parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {},
+    };
     const { ciphertext, iv } = await cryptoEncNode(node);
     await createTodo({ ciphertext, iv });
     setNewRootTitle("");
   }
 
   async function handleAddChild(parentId: Id<"todos">) {
-    const title = addChildTitle.trim();
+    const parsedRecur = parseRecurInput(addChildTitle.trim());
+    const title = parsedRecur.title;
     if (!title || title.length > 200 || !key) return;
     const parent = tree.map.get(parentId);
     if (!parent) return;
@@ -784,7 +970,14 @@ function TodoQueue() {
       return;
     }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
-    const node: PlainNode = { v: 2, title, isCompleted: false, parentId, order, metadata: {} };
+    const node: PlainNode = {
+      v: 2,
+      title,
+      isCompleted: false,
+      parentId,
+      order,
+      metadata: parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {},
+    };
     const { ciphertext, iv } = await cryptoEncNode(node);
     await createTodo({ ciphertext, iv });
     setAddChildTitle("");
@@ -796,18 +989,81 @@ function TodoQueue() {
     });
   }
 
+  async function pushHistory(todoId: string, windowDay: number, count: number) {
+    if (!key) return;
+    const merged = new Map(history?.byTodo.get(todoId) ?? []);
+    if (count > 0) merged.set(windowDay, count);
+    else merged.delete(windowDay);
+    const payload = encodeHistoryPayload({ todoId, counts: merged });
+    const { ciphertext, iv } = await encryptString(key, payload);
+    const hid = history?.idByTodo.get(todoId);
+    await historyPut(hid ? { id: hid, ciphertext, iv } : { ciphertext, iv });
+  }
+
+  // Write a new count for the node's current window (recurring or tally mode).
+  // Node metadata keeps only the current window; the full history record keeps everything.
+  async function applyCountWrite(node: TreeNode, rs: RecurState | undefined, next: number) {
+    if (!key || !nodes) return;
+    const meta = node.metadata as PlainNode["metadata"];
+    const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
+    const clamped = Math.max(0, Math.min(Math.floor(next), COUNT_MAX));
+    const isRecurring = rs?.isRecurring ?? !!meta.recur;
+    const updated: PlainNode = {
+      v: 2,
+      title: node.title,
+      isCompleted: isRecurring ? false : clamped >= thresholdOf(meta),
+      parentId: node.parentId,
+      order: node.order,
+      metadata: { ...meta, counts: { [String(windowDay)]: clamped } },
+    };
+    const { ciphertext, iv } = await cryptoEncNode(updated);
+    await updateTodo({ id: node._id, ciphertext, iv });
+    await pushHistory(node._id as string, windowDay, clamped);
+  }
+
+  function currentCount(node: TreeNode, rs: RecurState | undefined): number {
+    if (rs) return rs.count;
+    const c = (node.metadata as PlainNode["metadata"]).counts?.[String(dayIndexLocal(node._creationTime))];
+    return typeof c === "number" && Number.isFinite(c) && c > 0 ? Math.floor(c) : 0;
+  }
+
   async function handleToggle(node: TreeNode) {
     if (!key) return;
+    const meta = node.metadata as PlainNode["metadata"];
+    const rs = recurStates?.get(node._id as string);
+    const isRecurring = rs?.isRecurring ?? !!meta.recur;
+    const mode = modeOf(meta);
+    if (isRecurring || mode === "count") {
+      // windowed count path — checkbox toggles threshold, tally increments
+      const next = nextCountOnClick(mode, currentCount(node, rs), thresholdOf(meta));
+      await applyCountWrite(node, rs, next);
+      return;
+    }
+    // plain checkbox task — same behavior as before, plus counts kept in sync
+    // for lossless check<->tally mode switching later
+    const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
+    const nextCount = node.isCompleted ? 0 : thresholdOf(meta);
     const updated: PlainNode = {
       v: 2,
       title: node.title,
       isCompleted: !node.isCompleted,
       parentId: node.parentId,
       order: node.order,
-      metadata: node.metadata,
+      metadata: { ...meta, counts: { [String(windowDay)]: nextCount } },
     };
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
+    await pushHistory(node._id as string, windowDay, nextCount);
+  }
+
+  async function handleCountUp(node: TreeNode) {
+    const rs = recurStates?.get(node._id as string);
+    await applyCountWrite(node, rs, Math.min(currentCount(node, rs) + 1, COUNT_MAX));
+  }
+
+  async function handleCountDown(node: TreeNode) {
+    const rs = recurStates?.get(node._id as string);
+    await applyCountWrite(node, rs, Math.max(currentCount(node, rs) - 1, 0));
   }
 
   function startEdit(node: TreeNode) {
@@ -838,12 +1094,21 @@ function TodoQueue() {
 
   async function handleDelete(node: TreeNode) {
     const ids = collectDescendants(node);
+    // purge history records for every deleted node that had one
+    const historyIds: Id<"todoHistory">[] = [];
+    for (const id of ids) {
+      const hid = history?.idByTodo.get(id as string);
+      if (hid) historyIds.push(hid);
+    }
     // single op if only self
     if (ids.length === 1) {
       await removeTodo({ id: node._id });
     } else {
       // use bulk clearCompleted pattern (client-computed ids)
       await clearCompleted({ ids });
+    }
+    for (const hid of historyIds) {
+      await historyRemove({ id: hid });
     }
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
     setConfirmDeleteId(null);
@@ -853,16 +1118,38 @@ function TodoQueue() {
     if (!key || !nodes) return;
     const cur = nodes.find((n) => n._id === id);
     if (!cur) return;
+    let metadata: PlainNode["metadata"] = { ...cur.metadata, ...patch };
+    let isCompleted = cur.isCompleted;
+    // plain task switching mode/threshold: keep rendered state stable.
+    // storage is always counts — checkbox rendering just compares count >= threshold.
+    if (!metadata.recur && ("mode" in patch || "threshold" in patch)) {
+      const windowDay = dayIndexLocal(cur._creationTime);
+      const c = metadata.counts?.[String(windowDay)] ?? 0;
+      const th = thresholdOf(metadata);
+      if (patch.mode === "count" && c === 0 && cur.isCompleted) {
+        // seed the tally from the checked state so nothing visually changes
+        metadata = { ...metadata, counts: { ...metadata.counts, [String(windowDay)]: th } };
+      } else if (metadata.counts) {
+        isCompleted = (metadata.counts[String(windowDay)] ?? 0) >= th;
+      }
+    }
     const updated: PlainNode = {
       v: 2,
       title: cur.title,
-      isCompleted: cur.isCompleted,
+      isCompleted,
       parentId: cur.parentId,
       order: cur.order,
-      metadata: { ...cur.metadata, ...patch },
+      metadata,
     };
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id, ciphertext, iv });
+    // push seeded counts into the history record too
+    if (metadata.counts && !metadata.recur) {
+      const windowDay = dayIndexLocal(cur._creationTime);
+      const before = cur.metadata.counts?.[String(windowDay)] ?? 0;
+      const after = metadata.counts[String(windowDay)] ?? 0;
+      if (before !== after) await pushHistory(id as string, windowDay, after);
+    }
   }
 
   async function handleMove(draggedId: string, targetParentId: string | null, targetIndex: number) {
@@ -957,6 +1244,12 @@ function TodoQueue() {
     const show = matches(node);
     if (!show) return null;
     const isFading = node.isCompleted && fadingIds.has(node._id as string);
+    const rs = recurStates?.get(node._id as string);
+    const meta = node.metadata as PlainNode["metadata"];
+    const mode = modeOf(meta);
+    const threshold = thresholdOf(meta);
+    const count = currentCount(node, rs);
+    const checked = rs?.isRecurring ? count >= threshold : node.isCompleted;
     return (
       <li
         draggable={!isEditing}
@@ -987,13 +1280,38 @@ function TodoQueue() {
             {hasChildren ? (isExpanded ? "▾" : "▸") : "•"}
           </button>
 
-          <button
-            onClick={() => handleToggle(node)}
-            className={`h-4 w-4 shrink-0 border flex items-center justify-center ${node.isCompleted ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"}`}
-            aria-label="toggle"
-          >
-            {node.isCompleted && <span className="text-[10px] leading-none">✓</span>}
-          </button>
+          {mode === "count" ? (
+            // tally rendering — storage underneath is still a count
+            <div className="flex h-4 shrink-0 items-center">
+              {count > 0 && (
+                <button
+                  onClick={() => handleCountDown(node)}
+                  className="h-4 w-4 border border-foreground text-[10px] leading-none opacity-60 hover:opacity-100"
+                  aria-label="decrement tally"
+                >
+                  −
+                </button>
+              )}
+              <button
+                onClick={() => handleCountUp(node)}
+                className={`h-4 min-w-[20px] border px-0.5 text-[10px] leading-none ${
+                  count > 0 ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"
+                }`}
+                aria-label="increment tally"
+                title="click to count +1"
+              >
+                {count}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => handleToggle(node)}
+              className={`h-4 w-4 shrink-0 border flex items-center justify-center ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"}`}
+              aria-label="toggle"
+            >
+              {checked && <span className="text-[10px] leading-none">✓</span>}
+            </button>
+          )}
 
           {isEditing ? (
             <input
@@ -1027,6 +1345,14 @@ function TodoQueue() {
               {node.metadata.dueAt ? (
                 <span className="ml-1 text-[10px] opacity-60">
                   {new Date(node.metadata.dueAt).toLocaleDateString()}
+                </span>
+              ) : null}
+              {meta.recur ? (
+                <span className="ml-1 text-[10px] opacity-50" title={meta.recur}>
+                  ↻ {rs?.summary || "recurring"}
+                  {rs?.isRecurring && rs.nextTs && dayIndexLocal(rs.nextTs) !== rs.windowDay
+                    ? ` · next ${new Date(rs.nextTs).toLocaleDateString()}`
+                    : ""}
                 </span>
               ) : null}
             </button>
@@ -1240,6 +1566,13 @@ function TodoQueue() {
         </span>
       </div>
 
+      {globalCounts && (
+        <div className="border-b border-foreground/10 px-3 py-2">
+          <div className="mb-1 text-[10px] uppercase opacity-40">activity — past year</div>
+          <Heatmap counts={globalCounts} nowTs={nowTs} />
+        </div>
+      )}
+
       {/* drag hint */}
       <div
         className="min-h-[180px]"
@@ -1331,7 +1664,13 @@ function TodoQueue() {
       )}
 
       {selectedNode && (
-        <MetadataPanel node={selectedNode} onUpdateMetadata={handleUpdateMetadata} onClose={() => setSelectedId(null)} />
+        <MetadataPanel
+          node={selectedNode}
+          onUpdateMetadata={handleUpdateMetadata}
+          onClose={() => setSelectedId(null)}
+          nowTs={nowTs}
+          historyCounts={history?.byTodo.get(selectedNode._id as string) ?? null}
+        />
       )}
     </div>
   );
