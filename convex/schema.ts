@@ -5,16 +5,11 @@ import { authTables } from "@convex-dev/auth/server";
 export default defineSchema({
   ...authTables,
   todos: defineTable({
-    // E2E encrypted payload: JSON {title,isCompleted} -> AES-GCM
+    // E2E encrypted payload: JSON {v:2,title,isCompleted,...} -> AES-GCM
     ciphertext: v.optional(v.string()),
     iv: v.optional(v.string()),
-    // legacy plaintext fields (kept for migration, new todos use ciphertext/iv)
-    title: v.optional(v.string()),
-    isCompleted: v.optional(v.boolean()),
     userId: v.string(),
-  })
-    .index("by_user", ["userId"])
-    .index("by_user_completed", ["userId", "isCompleted"]),
+  }).index("by_user", ["userId"]),
 
   // per-todo E2E encrypted completion history (recurring-task counts).
   // payload: JSON {v:1,todoId,c:"d1240:3;d1241:1"} -> AES-GCM — todoId lives inside

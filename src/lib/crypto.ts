@@ -162,9 +162,7 @@ export async function decryptString(
   return new TextDecoder().decode(pt);
 }
 
-// Convenience: encrypt/decrypt todo object {title,isCompleted}
-// v1 = legacy flat todo, v2 = tree node with parent/order/metadata
-export type PlainTodo = { title: string; isCompleted: boolean };
+// v2 tree node payload: parent/order/metadata
 export type PlainNode = {
   v: 2;
   title: string;
@@ -188,25 +186,6 @@ export type PlainNode = {
   };
 };
 
-export async function encryptTodo(
-  key: CryptoKey,
-  todo: PlainTodo
-): Promise<EncryptedPayload> {
-  return encryptString(key, JSON.stringify(todo));
-}
-
-export async function decryptTodo(
-  key: CryptoKey,
-  iv: string,
-  ciphertext: string
-): Promise<PlainTodo> {
-  const json = await decryptString(key, iv, ciphertext);
-  const parsed = JSON.parse(json) as PlainTodo;
-  if (typeof parsed.title !== "string" || typeof parsed.isCompleted !== "boolean")
-    throw new Error("invalid todo payload");
-  return parsed;
-}
-
 export async function encryptNode(
   key: CryptoKey,
   node: PlainNode
@@ -222,22 +201,8 @@ export async function decryptNode(
   const json = await decryptString(key, iv, ciphertext);
   const raw = JSON.parse(json) as unknown;
   if (!raw || typeof raw !== "object") throw new Error("invalid node payload");
-  const obj = raw as Record<string, unknown>;
-  // migrate v1 -> v2
-  if (obj.v !== 2) {
-    const v1 = raw as PlainTodo;
-    if (typeof v1.title !== "string" || typeof v1.isCompleted !== "boolean")
-      throw new Error("invalid todo payload");
-    return {
-      v: 2,
-      title: v1.title,
-      isCompleted: v1.isCompleted,
-      parentId: null,
-      order: 0,
-      metadata: {},
-    };
-  }
   const n = raw as PlainNode;
+  if (n.v !== 2) throw new Error("invalid node payload");
   if (typeof n.title !== "string" || typeof n.isCompleted !== "boolean")
     throw new Error("invalid node payload");
   if (n.parentId !== null && typeof n.parentId !== "string") throw new Error("invalid parentId");

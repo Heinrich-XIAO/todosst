@@ -53,9 +53,9 @@ type Filter = "all" | "active" | "completed";
 const DUPLICATE_MSG = "a task with that path already exists";
 
 // Cache key for decrypted rows: ciphertext (with its iv) uniquely identifies a
-// payload version; legacy plaintext rows key off their id.
+// payload version; rows without ciphertext key off their id.
 function cacheKeyFor(t: { _id: Id<"todos">; iv?: string; ciphertext?: string }): string {
-  return t.ciphertext ? `${t.iv}:${t.ciphertext}` : `legacy:${t._id}`;
+  return t.ciphertext ? `${t.iv}:${t.ciphertext}` : `row:${t._id}`;
 }
 
 // Everything the recursive row renderer needs from TodoTask. Passed as one
@@ -448,44 +448,30 @@ function TodoTask() {
         await Promise.all(
           misses.map(async (t) => {
             let result: DecryptedNode;
-            if (!t.ciphertext || !t.iv) {
-              // legacy
+            try {
+              if (!t.ciphertext || !t.iv) throw new Error("row has no ciphertext");
+              const plain = await cryptoDecNode(t.iv, t.ciphertext);
+              if (plain.title.length > 200) throw new Error("title too long");
+              result = {
+                ...plain,
+                // ensure order finite
+                order: typeof plain.order === "number" && Number.isFinite(plain.order) ? plain.order : t._creationTime,
+                _id: t._id,
+                _creationTime: t._creationTime,
+                _raw: { ciphertext: t.ciphertext, iv: t.iv },
+              } satisfies DecryptedNode;
+            } catch {
               result = {
                 v: 2 as const,
-                title: (t.title as string) ?? "(legacy)",
-                isCompleted: (t.isCompleted as boolean) ?? false,
+                title: "— unable to decrypt —",
+                isCompleted: false,
                 parentId: null,
                 order: t._creationTime,
                 metadata: {},
                 _id: t._id,
                 _creationTime: t._creationTime,
-                _raw: { title: t.title, isCompleted: t.isCompleted },
+                _raw: { ciphertext: t.ciphertext, iv: t.iv },
               } satisfies DecryptedNode;
-            } else {
-              try {
-                const plain = await cryptoDecNode(t.iv, t.ciphertext);
-                if (plain.title.length > 200) throw new Error("title too long");
-                result = {
-                  ...plain,
-                  // ensure order finite
-                  order: typeof plain.order === "number" && Number.isFinite(plain.order) ? plain.order : t._creationTime,
-                  _id: t._id,
-                  _creationTime: t._creationTime,
-                  _raw: { ciphertext: t.ciphertext, iv: t.iv },
-                } satisfies DecryptedNode;
-              } catch {
-                result = {
-                  v: 2 as const,
-                  title: "— unable to decrypt —",
-                  isCompleted: false,
-                  parentId: null,
-                  order: t._creationTime,
-                  metadata: {},
-                  _id: t._id,
-                  _creationTime: t._creationTime,
-                  _raw: { ciphertext: t.ciphertext, iv: t.iv },
-                } satisfies DecryptedNode;
-              }
             }
             decryptCacheRef.current.set(cacheKeyFor(t), result);
           })

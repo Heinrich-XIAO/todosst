@@ -44,30 +44,6 @@ export const update = mutation({
   },
 });
 
-// Legacy mutations kept for migration of old plaintext todos — they still work
-// but new clients should use `create`/`update` with ciphertext.
-export const toggle = mutation({
-  args: { id: v.id("todos") },
-  handler: async (ctx, args) => {
-    const todo = await requireOwnTodo(ctx, args.id);
-    // Only for legacy plaintext todos
-    if (todo.ciphertext) throw new Error("use encrypted update for e2e todos");
-    await ctx.db.patch(args.id, { isCompleted: !todo.isCompleted });
-  },
-});
-
-export const updateTitle = mutation({
-  args: { id: v.id("todos"), title: v.string() },
-  handler: async (ctx, args) => {
-    const todo = await requireOwnTodo(ctx, args.id);
-    if (todo.ciphertext) throw new Error("use encrypted update for e2e todos");
-    const title = args.title.trim();
-    if (!title) throw new Error("title cannot be empty");
-    if (title.length > 200) throw new Error("title too long (max 200 chars)");
-    await ctx.db.patch(args.id, { title });
-  },
-});
-
 export const remove = mutation({
   args: { id: v.id("todos") },
   handler: async (ctx, args) => {
@@ -76,33 +52,19 @@ export const remove = mutation({
   },
 });
 
-// Clear completed: for E2E todos, client filters decrypted list and sends ids.
-// Legacy fallback deletes plaintext completed todos.
+// Clear completed: the client filters its decrypted list and sends the ids.
 export const clearCompleted = mutation({
-  args: { ids: v.optional(v.array(v.id("todos"))) },
+  args: { ids: v.array(v.id("todos")) },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
-    if (args.ids && args.ids.length > 0) {
-      let count = 0;
-      for (const id of args.ids) {
-        const todo = await ctx.db.get(id);
-        if (!todo) continue;
-        if (todo.userId !== userId) throw new Error("unauthorized");
-        await ctx.db.delete(id);
-        count++;
-      }
-      return count;
+    let count = 0;
+    for (const id of args.ids) {
+      const todo = await ctx.db.get(id);
+      if (!todo) continue;
+      if (todo.userId !== userId) throw new Error("unauthorized");
+      await ctx.db.delete(id);
+      count++;
     }
-    // Legacy path: delete where isCompleted==true (plaintext only)
-    const completed = await ctx.db
-      .query("todos")
-      .withIndex("by_user_completed", (q) =>
-        q.eq("userId", userId).eq("isCompleted", true)
-      )
-      .collect();
-    for (const todo of completed) {
-      await ctx.db.delete(todo._id);
-    }
-    return completed.length;
+    return count;
   },
 });

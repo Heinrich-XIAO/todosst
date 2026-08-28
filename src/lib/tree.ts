@@ -11,7 +11,7 @@ import type { PlainNode } from "./crypto";
 export type DecryptedNode = PlainNode & {
   _id: Id<"todos">;
   _creationTime: number;
-  _raw: { ciphertext?: string; iv?: string; title?: string; isCompleted?: boolean };
+  _raw: { ciphertext?: string; iv?: string };
 };
 
 export type TreeNode = DecryptedNode & { children: TreeNode[]; depth: number };
