@@ -1,0 +1,103 @@
+"use client";
+
+// Pure tree helpers for the encrypted todo hierarchy: build parent/child
+// structure from the flat decrypted list, cycle/orphan-safe, with depth and
+// display ordering (active first, then by order/creationTime).
+
+import type { DragEvent } from "react";
+import type { Id } from "../../convex/_generated/dataModel";
+import type { PlainNode } from "./crypto";
+
+export type DecryptedNode = PlainNode & {
+  _id: Id<"todos">;
+  _creationTime: number;
+  _raw: { ciphertext?: string; iv?: string; title?: string; isCompleted?: boolean };
+};
+
+export type TreeNode = DecryptedNode & { children: TreeNode[]; depth: number };
+
+export type DropPos = "before" | "after" | "child";
+
+/** Upper half of the row inserts above, lower half below; Alt means "drop as child". */
+export function dropPosFor(e: DragEvent): DropPos {
+  if (e.altKey) return "child";
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
+
+export function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {
+  const map = new Map<string, TreeNode>();
+  // init
+  for (const n of nodes) {
+    map.set(n._id, { ...n, children: [], depth: 0 });
+  }
+  const roots: TreeNode[] = [];
+  let orphans = 0;
+  // attach, detect cycles (simple: if parent chain leads back to self, break)
+  for (const n of nodes) {
+    const tn = map.get(n._id)!;
+    const parentId = n.parentId;
+    if (!parentId || !map.has(parentId)) {
+      if (parentId && !map.has(parentId)) orphans++;
+      roots.push(tn);
+      continue;
+    }
+    // cycle check: walk up from parent
+    let cur: string | null = parentId;
+    let cyclic = false;
+    const seen = new Set<string>([n._id]);
+    while (cur) {
+      if (seen.has(cur)) { cyclic = true; break; }
+      seen.add(cur);
+      const p = map.get(cur);
+      if (!p) break;
+      cur = p.parentId;
+    }
+    if (cyclic) {
+      roots.push(tn);
+      orphans++;
+      continue;
+    }
+    const parent = map.get(parentId)!;
+    parent.children.push(tn);
+  }
+  // compute depth + sort: active first, then by order/creationTime (so completed always below)
+  function sortAndDepth(list: TreeNode[], depth: number) {
+    list.sort((a, b) => {
+      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+      if (a.order !== b.order) return a.order - b.order;
+      return a._creationTime - b._creationTime;
+    });
+    for (const n of list) {
+      n.depth = depth;
+      if (n.children.length) sortAndDepth(n.children, depth + 1);
+    }
+  }
+  sortAndDepth(roots, 0);
+  return { roots, map, orphans };
+}
+
+export function collectDescendants(node: TreeNode): Id<"todos">[] {
+  const out: Id<"todos">[] = [];
+  function dfs(n: TreeNode) {
+    out.push(n._id);
+    for (const c of n.children) dfs(c);
+  }
+  dfs(node);
+  return out;
+}
+
+export function getAncestors(
+  id: string,
+  map: Map<string, TreeNode>
+): TreeNode[] {
+  const out: TreeNode[] = [];
+  let cur = map.get(id);
+  while (cur?.parentId) {
+    const p = map.get(cur.parentId);
+    if (!p) break;
+    out.unshift(p);
+    cur = p;
+  }
+  return out;
+}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { useQuery, useMutation, useConvex } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
@@ -14,7 +14,6 @@ import { parseBangCd, resolveCdPath, encodePathForUrl, decodePathToParts, partsT
 import { parseSlashPath } from "@/lib/slashPath";
 import {
   COUNT_MAX,
-  DEFAULT_GRACE_HOURS,
   dayIndexLocal,
   decodeHistoryPayload,
   encodeHistoryPayload,
@@ -27,492 +26,23 @@ import {
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
 import { Heatmap } from "./Heatmap";
-import { RruleEditor } from "./RruleEditor";
 import { VaultPanel } from "./VaultPanel";
+import {
+  buildTree,
+  collectDescendants,
+  dropPosFor,
+  getAncestors,
+  type DecryptedNode,
+  type DropPos,
+  type TreeNode,
+} from "@/lib/tree";
+import { resolveSlashSuggest } from "@/lib/slashComplete";
+import { UnlockScreen } from "./UnlockScreen";
+import { MetadataPanel } from "./MetadataPanel";
+import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
+import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
 
 type Filter = "all" | "active" | "completed";
-
-type DecryptedNode = PlainNode & {
-  _id: Id<"todos">;
-  _creationTime: number;
-  _raw: { ciphertext?: string; iv?: string; title?: string; isCompleted?: boolean };
-};
-
-type TreeNode = DecryptedNode & { children: TreeNode[]; depth: number };
-
-// Snapshot of a deleted subtree, captured pre-delete so it can be recreated on undo.
-type UndoSnapshot = {
-  nodes: { oldId: string; plain: PlainNode }[]; // depth-first order: parents before children
-  history: { oldId: string; counts: [number, number][] }[];
-  count: number;
-};
-
-const UNDO_TTL_SECONDS = 10;
-
-type DropPos = "before" | "after" | "child";
-
-/** Upper half of the row inserts above, lower half below; Alt means "drop as child". */
-function dropPosFor(e: React.DragEvent): DropPos {
-  if (e.altKey) return "child";
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-  return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
-}
-
-function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {
-  const map = new Map<string, TreeNode>();
-  // init
-  for (const n of nodes) {
-    map.set(n._id, { ...n, children: [], depth: 0 });
-  }
-  const roots: TreeNode[] = [];
-  let orphans = 0;
-  // attach, detect cycles (simple: if parent chain leads back to self, break)
-  for (const n of nodes) {
-    const tn = map.get(n._id)!;
-    const parentId = n.parentId;
-    if (!parentId || !map.has(parentId)) {
-      if (parentId && !map.has(parentId)) orphans++;
-      roots.push(tn);
-      continue;
-    }
-    // cycle check: walk up from parent
-    let cur: string | null = parentId;
-    let cyclic = false;
-    const seen = new Set<string>([n._id]);
-    while (cur) {
-      if (seen.has(cur)) { cyclic = true; break; }
-      seen.add(cur);
-      const p = map.get(cur);
-      if (!p) break;
-      cur = p.parentId;
-    }
-    if (cyclic) {
-      roots.push(tn);
-      orphans++;
-      continue;
-    }
-    const parent = map.get(parentId)!;
-    parent.children.push(tn);
-  }
-  // compute depth + sort: active first, then by order/creationTime (so completed always below)
-  function sortAndDepth(list: TreeNode[], depth: number) {
-    list.sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
-      if (a.order !== b.order) return a.order - b.order;
-      return a._creationTime - b._creationTime;
-    });
-    for (const n of list) {
-      n.depth = depth;
-      if (n.children.length) sortAndDepth(n.children, depth + 1);
-    }
-  }
-  sortAndDepth(roots, 0);
-  return { roots, map, orphans };
-}
-
-function collectDescendants(node: TreeNode): Id<"todos">[] {
-  const out: Id<"todos">[] = [];
-  function dfs(n: TreeNode) {
-    out.push(n._id);
-    for (const c of n.children) dfs(c);
-  }
-  dfs(node);
-  return out;
-}
-
-function getAncestors(
-  id: string,
-  map: Map<string, TreeNode>
-): TreeNode[] {
-  const out: TreeNode[] = [];
-  let cur = map.get(id);
-  while (cur?.parentId) {
-    const p = map.get(cur.parentId);
-    if (!p) break;
-    out.unshift(p);
-    cur = p;
-  }
-  return out;
-}
-
-function UnlockScreen() {
-  const { resolveVaultPassword, resolveVaultRecovery, isReady, clearStoredKey } = useEncryption();
-  const viewer = useQuery(api.users.viewer);
-  const [mode, setMode] = useState<"password" | "recovery">("password");
-  const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
-  const [storeLocally, setStoreLocally] = useState(() => {
-    if (typeof window === "undefined") return false;
-    try {
-      return !!getRememberedKey();
-    } catch {
-      return false;
-    }
-  });
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const convex = useConvex();
-  const secretInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (isReady) secretInputRef.current?.focus();
-  }, [isReady]);
-
-  async function fetchSalt(): Promise<string | null> {
-    try {
-      const mine = (await convex.query(api.encryption.getMySalt, {})) as string | null;
-      if (mine) return mine;
-    } catch {}
-    if (viewer?.email) {
-      try {
-        const byEmail = (await convex.query(api.encryption.getSalt, { email: viewer.email })) as string | null;
-        if (byEmail) return byEmail;
-      } catch {}
-    }
-    return null;
-  }
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      const salt = await fetchSalt();
-      if (!salt) {
-        setError("no encryption salt found — try signing out and back in.");
-        return;
-      }
-      if (mode === "password") {
-        if (password.length < 8) {
-          setError("password must be at least 8 characters.");
-          return;
-        }
-        await resolveVaultPassword(password, salt, storeLocally);
-      } else {
-        if (code.trim().length < 10) {
-          setError("enter your recovery key.");
-          return;
-        }
-        await resolveVaultRecovery(code, salt, storeLocally);
-      }
-      setPassword("");
-      setCode("");
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message.toLowerCase().includes("decrypt") || err.message.toLowerCase().includes("gcm")
-            ? mode === "password"
-              ? "wrong password."
-              : "invalid recovery key."
-            : err.message.toLowerCase()
-          : mode === "password"
-            ? "failed to unlock"
-            : "failed to unlock with recovery key"
-      );
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  if (!isReady) return <p className="text-sm opacity-60">preparing vault…</p>;
-
-  return (
-    <div className="w-full max-w-[420px] border border-foreground bg-background p-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-medium">{mode === "password" ? "unlock vault" : "unlock with recovery key"}</h2>
-        <button
-          onClick={() => {
-            setMode(mode === "password" ? "recovery" : "password");
-            setError(null);
-          }}
-          className="text-xs underline underline-offset-2 opacity-60 hover:opacity-100"
-        >
-          {mode === "password" ? "use recovery key" : "use password"}
-        </button>
-      </div>
-      <p className="mt-1 text-xs opacity-60">
-        {mode === "password"
-          ? "your tasks are end-to-end encrypted — structure, titles, and metadata are opaque to the server. enter password to derive the key."
-          : "enter the recovery key you generated while unlocked. it unlocks both your account and the vault."}
-      </p>
-      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        {mode === "password" ? (
-          <input
-            ref={secretInputRef}
-            autoFocus
-            type="password"
-            autoComplete="current-password"
-            placeholder="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
-          />
-        ) : (
-          <input
-            ref={secretInputRef}
-            autoFocus
-            type="text"
-            spellCheck={false}
-            placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            className="w-full border-b border-foreground bg-transparent py-2 font-mono text-sm placeholder:text-foreground/40 focus:outline-none"
-          />
-        )}
-        <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={storeLocally}
-            onChange={(e) => {
-              const checked = e.target.checked;
-              setStoreLocally(checked);
-              if (!checked) clearStoredKey();
-            }}
-            className="h-3.5 w-3.5 border border-foreground bg-background accent-foreground"
-          />
-          <span className="opacity-80">store locally</span>
-          <span className="opacity-40 hidden sm:inline">— automatically unlock on this device</span>
-        </label>
-        {storeLocally && (
-          <p className="text-[11px] opacity-40 leading-tight">
-            stores the vault key in localStorage on this device. anyone with access to this browser can open your vault
-            without the password. only use on a trusted device.
-          </p>
-        )}
-        {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
-        <button
-          type="submit"
-          disabled={loading}
-          className="w-full border border-foreground bg-foreground py-2.5 text-sm text-background hover:opacity-90 disabled:opacity-40"
-        >
-          {loading ? "unlocking…" : "unlock"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function MetadataPanel({
-  node,
-  onUpdateMetadata,
-  onClose,
-  nowTs,
-  historyCounts,
-}: {
-  node: TreeNode | null;
-  onUpdateMetadata: (id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) => void;
-  onClose: () => void;
-  nowTs: number;
-  historyCounts: Map<number, number> | null;
-}) {
-  const [showRuleEditor, setShowRuleEditor] = useState(false);
-  if (!node) return null;
-  const meta = node.metadata as PlainNode["metadata"];
-  const mode = modeOf(meta);
-  return (
-    <div className="border-t border-foreground bg-background p-3 text-xs">
-      <div className="flex items-center justify-between">
-        <span className="font-medium">{node.title} — details</span>
-        <button onClick={onClose} className="opacity-60 hover:opacity-100">
-          close
-        </button>
-      </div>
-      <div className="mt-3 space-y-2">
-        {/* recurrence */}
-        <div className="border border-foreground/20 p-2">
-          <div className="flex items-center justify-between">
-            <span className="opacity-60">recurrence</span>
-            {!showRuleEditor && (
-              <button onClick={() => setShowRuleEditor(true)} className="underline underline-offset-2 opacity-60 hover:opacity-100">
-                {meta.recur ? "edit rule" : "+ make recurring"}
-              </button>
-            )}
-          </div>
-          {!showRuleEditor && meta.recur ? <p className="mt-1 break-all font-mono text-[10px] opacity-60">{meta.recur}</p> : null}
-          {!showRuleEditor && !meta.recur ? <p className="mt-1 text-[10px] opacity-40">one-off task — no schedule</p> : null}
-          {showRuleEditor && (
-            <div className="mt-2">
-              <RruleEditor
-                ruleStr={meta.recur}
-                anchorTs={node._creationTime}
-                onApply={(s) => {
-                  onUpdateMetadata(node._id, { recur: s ?? undefined });
-                  setShowRuleEditor(false);
-                }}
-                onCancel={() => setShowRuleEditor(false)}
-              />
-            </div>
-          )}
-        </div>
-
-        {/* completion style + threshold + grace */}
-        {meta.recur && (
-        <div className="flex flex-wrap gap-2">
-          <label className="flex-1 block">
-            <span className="opacity-60">completion style</span>
-            <select
-              value={mode}
-              onChange={(e) => onUpdateMetadata(node._id, { mode: e.target.value === "count" ? "count" : "check" })}
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
-            >
-              <option value="check">checkbox</option>
-              <option value="count">tally count</option>
-            </select>
-          </label>
-          {mode === "check" && (
-            <label className="flex-1 block">
-              <span className="opacity-60">checkbox threshold</span>
-              <input
-                type="number"
-                min={1}
-                max={999}
-                value={thresholdOf(meta)}
-                onChange={(e) => onUpdateMetadata(node._id, { threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
-                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
-              />
-            </label>
-          )}
-          {meta.recur && (
-            <label className="flex-1 block">
-              <span className="opacity-60">grace hours</span>
-              <input
-                type="number"
-                min={0}
-                max={48}
-                value={meta.graceHours ?? DEFAULT_GRACE_HOURS}
-                onChange={(e) => onUpdateMetadata(node._id, { graceHours: Math.min(48, Math.max(0, Number(e.target.value) || 0)) })}
-                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
-              />
-            </label>
-          )}
-        </div>
-        )}
-
-        {meta.recur ? (
-          <p className="text-[10px] opacity-40 leading-tight">
-            recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
-          </p>
-        ) : null}
-
-        {/* past-year heatmap for this task */}
-        {meta.recur ? (
-          <div>
-            <span className="opacity-60">past year</span>
-            <div className="mt-1">
-              <Heatmap counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} />
-            </div>
-          </div>
-        ) : null}
-
-        <label className="block">
-          <span className="opacity-60">description</span>
-          <textarea
-            defaultValue={node.metadata.description ?? ""}
-            placeholder="add notes…"
-            rows={2}
-            onBlur={(e) => onUpdateMetadata(node._id, { description: e.target.value })}
-            className="mt-1 w-full border border-foreground/20 bg-transparent p-2 text-xs focus:outline-none"
-          />
-        </label>
-        <div className="flex gap-2">
-          <label className="flex-1 block">
-            <span className="opacity-60">priority</span>
-            <select
-              value={node.metadata.priority ?? ""}
-              onChange={(e) => {
-                const v = e.target.value as PlainNode["metadata"]["priority"];
-                onUpdateMetadata(node._id, { priority: v || null });
-              }}
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
-            >
-              <option value="">none</option>
-              <option value="low">low</option>
-              <option value="med">med</option>
-              <option value="high">high</option>
-            </select>
-          </label>
-          <label className="flex-1 block">
-            <span className="opacity-60">due</span>
-            <input
-              type="date"
-              value={node.metadata.dueAt ? new Date(node.metadata.dueAt).toISOString().slice(0, 10) : ""}
-              onChange={(e) => {
-                const dueAt = e.target.value ? new Date(e.target.value).getTime() : null;
-                onUpdateMetadata(node._id, { dueAt });
-              }}
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
-            />
-          </label>
-        </div>
-        <label className="block">
-          <span className="opacity-60">tags (comma separated)</span>
-          <input
-            defaultValue={(node.metadata.tags ?? []).join(", ")}
-            placeholder="work, urgent"
-            onBlur={(e) => {
-              const tags = e.target.value
-                .split(",")
-                .map((s) => s.trim())
-                .filter(Boolean)
-                .slice(0, 8);
-              onUpdateMetadata(node._id, { tags });
-            }}
-            className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
-          />
-        </label>
-      </div>
-    </div>
-  );
-}
-
-const PLACEHOLDER_PHRASES = [
-  "/host hackathon/outreach write email template",
-  "!cd host hackathon",
-  "/side-quests finally learn how vim exits",
-  "/taxes reconcile the horror spreadsheet",
-  "/reading if anyone builds it, everyone dies ch. 3",
-  "/groceries coffee beans (the good ones)",
-  "!help",
-];
-
-function TypewriterPlaceholder({ phrases, active }: { phrases: string[]; active: boolean }) {
-  const [text, setText] = useState("");
-  const phraseIdx = useRef(0);
-  const charIdx = useRef(0);
-  const deleting = useRef(false);
-
-  useEffect(() => {
-    if (!active) return;
-    let timer: ReturnType<typeof setTimeout>;
-    const tick = () => {
-      const phrase = phrases[phraseIdx.current % phrases.length];
-      if (!deleting.current) {
-        charIdx.current += 1;
-        setText(phrase.slice(0, charIdx.current));
-        if (charIdx.current >= phrase.length) {
-          deleting.current = true;
-          timer = setTimeout(tick, 1700);
-        } else {
-          timer = setTimeout(tick, 38 + Math.random() * 36);
-        }
-      } else {
-        charIdx.current -= 1;
-        setText(phrase.slice(0, charIdx.current));
-        if (charIdx.current <= 0) {
-          deleting.current = false;
-          phraseIdx.current += 1;
-          timer = setTimeout(tick, 420);
-        } else {
-          timer = setTimeout(tick, 24);
-        }
-      }
-    };
-    timer = setTimeout(tick, 350);
-    return () => clearTimeout(timer);
-  }, [active, phrases]);
-
-  return <>{text}</>;
-}
 
 function TodoTask() {
   const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
@@ -869,71 +399,10 @@ function TodoTask() {
   }, []);
 
   // intellisense: autocomplete for "/..." paths and "!cd ..." commands
-  const slashComplete = useMemo(() => {
-    const none = { suggestions: [] as TreeNode[], prefix: "", parentId: null as string | null, dirPath: "", mode: "none" as const };
-    if (!nodes) return none;
-    if (newRootTitle.startsWith("/")) {
-      const withoutLeading = newRootTitle.slice(1);
-      const parts = withoutLeading.split("/");
-      let prefixRaw = parts[parts.length - 1] ?? "";
-      let dirPartsRaw = parts.slice(0, -1);
-      if (dirPartsRaw.length === 0) {
-        const m = /^(\S+)\s+(\S.*)$/.exec(prefixRaw.trim());
-        const first = m ? nodes.find((n) => n.title === m[1] && (n.parentId ?? null) === null) : undefined;
-        if (m && first) {
-          dirPartsRaw = [m[1]];
-          prefixRaw = m[2];
-        }
-      }
-      let parentId: string | null = null;
-      for (const raw of dirPartsRaw) {
-        const seg = raw.trim();
-        if (!seg) return { ...none, prefix: prefixRaw };
-        const match = nodes.find((n) => n.title === seg && (n.parentId ?? null) === parentId);
-        if (!match) return { ...none, prefix: prefixRaw };
-        parentId = match._id as string;
-      }
-      const dirPath = dirPartsRaw.length ? "/" + dirPartsRaw.map((s) => s.trim()).filter(Boolean).join("/") : "";
-      let siblings: TreeNode[];
-      if (parentId === null) siblings = tree.roots;
-      else {
-        const par = tree.map.get(parentId);
-        siblings = par ? par.children : [];
-      }
-      const prefix = prefixRaw.trim();
-      const lower = prefix.toLowerCase();
-      const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);
-      return { suggestions: filtered, prefix, parentId, dirPath, mode: "slash" as const };
-    }
-    // "!cd <path>" intellisense — segments are "/"-separated, resolved against pwd
-    const { isCd: isCdCmd, target: cdTarget } = parseBangCd(newRootTitle);
-    if (!isCdCmd) return none;
-    const segs = cdTarget ? cdTarget.split("/") : [];
-    const prefixRaw = segs.length ? segs[segs.length - 1] : "";
-    const dirSegs = segs.length ? segs.slice(0, -1) : [];
-    const absolute = !!cdTarget && cdTarget.startsWith("/");
-    const dirParts: string[] = absolute ? [] : decodePathToParts(decodedPath);
-    for (const raw of dirSegs) {
-      const seg = raw.trim();
-      if (!seg || seg === ".") continue;
-      if (seg === "..") {
-        dirParts.pop();
-        continue;
-      }
-      dirParts.push(seg);
-    }
-    let parentId: string | null = null;
-    for (const part of dirParts) {
-      const match = nodes.find((n) => n.title === part && (n.parentId ?? null) === parentId);
-      if (!match) return { ...none, prefix: prefixRaw };
-      parentId = match._id as string;
-    }
-    const siblings = parentId === null ? tree.roots : (tree.map.get(parentId)?.children ?? []);
-    const prefix = prefixRaw.trim();
-    const lower = prefix.toLowerCase();
-    const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);
-    return { suggestions: filtered, prefix, parentId, dirPath: "/" + dirParts.join("/"), mode: "cd" as const };
-  }, [newRootTitle, nodes, tree, decodedPath]);
+  const slashComplete = useMemo(
+    () => resolveSlashSuggest(newRootTitle, nodes, tree.roots, tree.map, decodedPath),
+    [newRootTitle, nodes, tree, decodedPath]
+  );
 
   useEffect(() => {
     setActiveSuggestIdx(0);
@@ -1882,65 +1351,24 @@ function TodoTask() {
       </div>
 
       {confirmNode && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4"
-          onClick={() => setConfirmDeleteId(null)}
-        >
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="delete-confirm-title"
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-[420px] border border-foreground bg-background p-6"
-          >
-            <p className="font-mono text-[11px] opacity-40">root@vault:~$</p>
-            <h2 id="delete-confirm-title" className="mt-1 font-mono text-sm font-medium break-words">
-              <span className="opacity-40">$</span> rm{" "}
-              <span className="underline decoration-dotted underline-offset-4">
-                {`"${confirmNode.title.length > 48 ? `${confirmNode.title.slice(0, 48)}…` : confirmNode.title}"`}
-              </span>
-            </h2>
-            <p className="mt-3 font-mono text-xs leading-relaxed opacity-70">
-              {confirmCount > 1
-                ? `// ${confirmCount - 1} nested node${confirmCount - 1 === 1 ? "" : "s"} terminated alongside it`
-                : "// task will be purged"}
-              — recoverable for {UNDO_TTL_SECONDS}s via undo.
-            </p>
-            <div className="mt-6 flex justify-end gap-2 font-mono text-xs">
-              <button
-                autoFocus
-                onClick={() => setConfirmDeleteId(null)}
-                className="border border-foreground bg-background px-4 py-2 hover:bg-foreground/10 focus:outline-none focus:ring-1 focus:ring-foreground"
-              >
-                cancel
-              </button>
-              <button
-                onClick={() => handleDelete(confirmNode)}
-                className="border border-foreground bg-foreground px-4 py-2 text-background hover:opacity-90 focus:outline-none"
-              >
-                delete
-              </button>
-            </div>
-            <p className="mt-3 text-right font-mono text-[11px] opacity-30">&gt; auto-abort in {confirmCountdown}s • [esc] cancel</p>
-          </div>
-        </div>
+        <DeleteConfirmDialog
+          node={confirmNode}
+          nestedCount={confirmCount}
+          countdown={confirmCountdown}
+          onClose={() => setConfirmDeleteId(null)}
+          onDelete={() => handleDelete(confirmNode)}
+        />
       )}
 
       {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
 
       {undoState && (
-        <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 border border-foreground bg-background px-4 py-2 text-xs shadow-sm">
-          <span>
-            deleted {undoState.snap.count} task{undoState.snap.count === 1 ? "" : "s"}
-          </span>
-          <button onClick={handleUndo} className="border border-foreground px-2 py-0.5 hover:bg-foreground hover:text-background">
-            undo
-          </button>
-          <span className="font-mono opacity-40">{undoState.ttl}s</span>
-          <button onClick={() => setUndoState(null)} className="opacity-60 hover:opacity-100" aria-label="dismiss undo">
-            ×
-          </button>
-        </div>
+        <UndoToast
+          snap={undoState.snap}
+          ttl={undoState.ttl}
+          onUndo={handleUndo}
+          onDismiss={() => setUndoState(null)}
+        />
       )}
 
       {selectedNode && (
