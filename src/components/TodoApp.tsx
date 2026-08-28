@@ -39,6 +39,15 @@ type DecryptedNode = PlainNode & {
 
 type TreeNode = DecryptedNode & { children: TreeNode[]; depth: number };
 
+// Snapshot of a deleted subtree, captured pre-delete so it can be recreated on undo.
+type UndoSnapshot = {
+  nodes: { oldId: string; plain: PlainNode }[]; // depth-first order: parents before children
+  history: { oldId: string; counts: [number, number][] }[];
+  count: number;
+};
+
+const UNDO_TTL_SECONDS = 10;
+
 function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {
   const map = new Map<string, TreeNode>();
   // init
@@ -499,6 +508,7 @@ function TodoTask() {
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
+  const [undoState, setUndoState] = useState<{ snap: UndoSnapshot; ttl: number } | null>(null);
   const newRootInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isSlashFocused, setIsSlashFocused] = useState(false);
@@ -1156,6 +1166,22 @@ function TodoTask() {
   }
 
   async function handleDelete(node: TreeNode) {
+    // capture a restorable snapshot of the subtree before purging
+    const snapNodes: UndoSnapshot["nodes"] = [];
+    const walk = (n: TreeNode) => {
+      snapNodes.push({
+        oldId: n._id as string,
+        plain: { v: 2, title: n.title, isCompleted: n.isCompleted, parentId: n.parentId, order: n.order, metadata: n.metadata },
+      });
+      for (const c of n.children) walk(c);
+    };
+    walk(node);
+    const snapHistory: UndoSnapshot["history"] = [];
+    for (const { oldId } of snapNodes) {
+      const counts = history?.byTodo.get(oldId);
+      if (counts && counts.size > 0) snapHistory.push({ oldId, counts: Array.from(counts.entries()) });
+    }
+
     const ids = collectDescendants(node);
     // purge history records for every deleted node that had one
     const historyIds: Id<"todoHistory">[] = [];
@@ -1175,7 +1201,56 @@ function TodoTask() {
     }
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
     setConfirmDeleteId(null);
+    setUndoState({ snap: { nodes: snapNodes, history: snapHistory, count: ids.length }, ttl: UNDO_TTL_SECONDS });
   }
+
+  // Recreate the deleted subtree with fresh ids: parents first so child
+  // parentIds can be remapped; history records are re-keyed to the new ids.
+  async function handleUndo() {
+    const snap = undoState?.snap;
+    setUndoState(null);
+    if (!snap || !key) return;
+    const idMap = new Map<string, Id<"todos">>();
+    for (const { oldId, plain } of snap.nodes) {
+      const restored: PlainNode = {
+        ...plain,
+        parentId: plain.parentId ? (idMap.get(plain.parentId) ?? null) : null,
+      };
+      const { ciphertext, iv } = await cryptoEncNode(restored);
+      const newId = await createTodo({ ciphertext, iv });
+      idMap.set(oldId, newId as Id<"todos">);
+    }
+    for (const h of snap.history) {
+      const newId = idMap.get(h.oldId);
+      if (!newId) continue;
+      const payload = encodeHistoryPayload({ todoId: newId as string, counts: new Map(h.counts) });
+      const { ciphertext, iv } = await encryptString(key, payload);
+      await historyPut({ ciphertext, iv });
+    }
+  }
+
+  // undo toast countdown
+  const undoSnap = undoState?.snap ?? null;
+  useEffect(() => {
+    if (!undoSnap) return;
+    const interval = window.setInterval(() => {
+      setUndoState((s) => {
+        if (!s) return null;
+        if (s.ttl <= 1) {
+          window.clearInterval(interval);
+          return null;
+        }
+        return { ...s, ttl: s.ttl - 1 };
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [undoSnap]);
+
+  // key changed (locked/unlocked/re-derived) — plaintext snapshot may no longer
+  // round-trip with the new key, drop it
+  useEffect(() => {
+    setUndoState(null);
+  }, [key]);
 
   async function handleUpdateMetadata(id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) {
     if (!key || !nodes) return;
@@ -1722,7 +1797,7 @@ function TodoTask() {
               {confirmCount > 1
                 ? `// ${confirmCount - 1} nested node${confirmCount - 1 === 1 ? "" : "s"} terminated alongside it`
                 : "// task will be purged"}
-              — this operation is irreversible.
+              — recoverable for {UNDO_TTL_SECONDS}s via undo.
             </p>
             <div className="mt-6 flex justify-end gap-2 font-mono text-xs">
               <button
@@ -1741,6 +1816,21 @@ function TodoTask() {
             </div>
             <p className="mt-3 text-right font-mono text-[11px] opacity-30">&gt; auto-abort in {confirmCountdown}s • [esc] cancel</p>
           </div>
+        </div>
+      )}
+
+      {undoState && (
+        <div className="fixed bottom-4 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 border border-foreground bg-background px-4 py-2 text-xs shadow-sm">
+          <span>
+            deleted {undoState.snap.count} task{undoState.snap.count === 1 ? "" : "s"}
+          </span>
+          <button onClick={handleUndo} className="border border-foreground px-2 py-0.5 hover:bg-foreground hover:text-background">
+            undo
+          </button>
+          <span className="font-mono opacity-40">{undoState.ttl}s</span>
+          <button onClick={() => setUndoState(null)} className="opacity-60 hover:opacity-100" aria-label="dismiss undo">
+            ×
+          </button>
         </div>
       )}
 
