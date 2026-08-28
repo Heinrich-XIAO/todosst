@@ -5,7 +5,6 @@ import {
 } from "@convex-dev/auth/nextjs/server";
 
 const isSignInPage = createRouteMatcher(["/signin"]);
-const isProtectedRoute = createRouteMatcher(["/"]);
 
 export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
   const isAuthenticated = await convexAuth.isAuthenticated();
@@ -14,10 +13,7 @@ export default convexAuthNextjsMiddleware(async (request, { convexAuth }) => {
     return nextjsMiddlewareRedirect(request, "/");
   }
   // Allow all routes - TodoApp handles unauthenticated UI.
-  // Uncomment to enforce auth on protected routes:
-  // if (isProtectedRoute(request) && !isAuthenticated) {
-  //   return nextjsMiddlewareRedirect(request, "/signin");
-  // }
+  // To enforce auth: createRouteMatcher(["/"]) and redirect to /signin when unauthenticated.
 });
 
 export const config = {

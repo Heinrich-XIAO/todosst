@@ -126,7 +126,7 @@ export function parseBangCd(input: string): { isCd: boolean; target: string | nu
   }
   // rawArg is rest trimmed start -- includes leading spaces etc.
   // We want everything after "cd" as arg; e.g. "cd /host hackathon/"
-  let rawArg = rest.trimStart();
+  const rawArg = rest.trimStart();
   // If rawArg starts with quoted string, parseCdArg handles.
   // But for "!cd \"host hackathon\"" rawArg = "\"host hackathon\"" -> parseCdArg strips quotes.
   const parsed = parseCdArg(rawArg === "" ? null : rawArg);

@@ -120,7 +120,14 @@ function UnlockScreen() {
   const { unlock, setKeyFromStored, isReady, clearStoredKey } = useEncryption();
   const viewer = useQuery(api.users.viewer);
   const [password, setPassword] = useState("");
-  const [storeLocally, setStoreLocally] = useState(false);
+  const [storeLocally, setStoreLocally] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return !!getRememberedKey();
+    } catch {
+      return false;
+    }
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const convex = useConvex();
@@ -129,14 +136,6 @@ function UnlockScreen() {
   useEffect(() => {
     if (isReady) passwordRef.current?.focus();
   }, [isReady]);
-
-  // initialize checkbox from existing stored key (if user previously opted in)
-  useEffect(() => {
-    try {
-      const remembered = getRememberedKey();
-      if (remembered) setStoreLocally(true);
-    } catch {}
-  }, []);
 
   async function handleUnlock(e: React.FormEvent) {
     e.preventDefault();

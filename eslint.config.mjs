@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Convex generated files carry their own eslint-disable directives
+    "convex/_generated/**",
     // bun:test files run via `bun test` (bun types not installed)
     "src/lib/**/*.test.ts",
   ]),
