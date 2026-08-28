@@ -518,15 +518,17 @@ function TodoTask() {
       }
       const byTodo = new Map<string, Map<number, number>>();
       const idByTodo = new Map<string, Id<"todoHistory">>();
-      for (const r of historyRecords) {
-        try {
-          const json = await decryptString(key, r.iv, r.ciphertext);
-          const data = decodeHistoryPayload(json);
-          if (!data) continue;
-          byTodo.set(data.todoId, data.counts);
-          idByTodo.set(data.todoId, r._id);
-        } catch {}
-      }
+      await Promise.all(
+        historyRecords.map(async (r) => {
+          try {
+            const json = await decryptString(key, r.iv, r.ciphertext);
+            const data = decodeHistoryPayload(json);
+            if (!data) return;
+            byTodo.set(data.todoId, data.counts);
+            idByTodo.set(data.todoId, r._id);
+          } catch {}
+        })
+      );
       if (!cancelled) setHistory({ byTodo, idByTodo });
     })();
     return () => {
@@ -1017,9 +1019,7 @@ function TodoTask() {
       // bulk delete of the subtree (client-computed ids)
       await removeMany({ ids });
     }
-    for (const hid of historyIds) {
-      await historyRemove({ id: hid });
-    }
+    await Promise.all(historyIds.map((hid) => historyRemove({ id: hid })));
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
     setConfirmDeleteId(null);
     setUndoState({ snap: { nodes: snapNodes, history: snapHistory, count: ids.length }, ttl: UNDO_TTL_SECONDS });
