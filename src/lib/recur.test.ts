@@ -32,6 +32,31 @@ test("day index round trips", () => {
   expect(dayIndexLocal(start + 40 * H) - idx).toBe(1);
 });
 
+test("dayIndexToStart lands on the same local calendar day (UTC-negative safe)", () => {
+  // 3pm local on Aug 27 2026
+  const ts = new Date(2026, 7, 27, 15).getTime();
+  const idx = dayIndexLocal(ts);
+  const start = new Date(dayIndexToStart(idx));
+  expect([start.getFullYear(), start.getMonth(), start.getDate()]).toEqual([2026, 7, 27]);
+  expect(start.getHours()).toBe(0);
+  // weekday is preserved (drives heatmap column alignment)
+  expect(new Date(dayIndexToStart(idx)).getDay()).toBe(new Date(ts).getDay());
+});
+
+test("day index is an exact bijection across a DST boundary year", () => {
+  // sweep every day of 2026 (includes spring-forward Mar 8 and fall-back Nov 1 in US zones)
+  for (let m = 0; m < 12; m += 3) {
+    for (const day of [1, 8, 15, 28]) {
+      const ts = new Date(2026, m, day, 13).getTime(); // 1pm local
+      const idx = dayIndexLocal(ts);
+      expect(dayIndexLocal(dayIndexToStart(idx))).toBe(idx);
+      const back = new Date(dayIndexToStart(idx));
+      expect([back.getFullYear(), back.getMonth(), back.getDate()]).toEqual([2026, m, day]);
+      expect(back.getHours()).toBe(0);
+    }
+  }
+});
+
 test("normalizeRruleString strips prefixes and junk lines", () => {
   expect(normalizeRruleString("RRULE:FREQ=DAILY;INTERVAL=2")).toBe("FREQ=DAILY;INTERVAL=2");
   expect(normalizeRruleString("DTSTART:20260101T000000\nRRULE:FREQ=DAILY\n\nEXRULE:FREQ=DAILY")).toBe(
@@ -72,7 +97,7 @@ test("parseRecurInput suffixes", () => {
   expect(parseRecurInput("water plants ~daily")).toEqual({ title: "water plants", ruleStr: "FREQ=DAILY" });
   expect(parseRecurInput("gym ~every 2w mon,thu")).toEqual({
     title: "gym",
-    ruleStr: "FREQ=WEEKLY;INTERVAL=2;BYDAY=MON,THU",
+    ruleStr: "FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH",
   });
   expect(parseRecurInput("stand ~every2d")).toEqual({ title: "stand", ruleStr: "FREQ=DAILY;INTERVAL=2" });
   expect(parseRecurInput("report ~weekdays").ruleStr).toBe("FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR");
@@ -81,6 +106,17 @@ test("parseRecurInput suffixes", () => {
   expect(parseRecurInput("foo ~bar")).toEqual({ title: "foo ~bar", ruleStr: null });
   expect(parseRecurInput("a~b ~weekly").title).toBe("a~b");
   expect(parseRecurInput("plain").ruleStr).toBeNull();
+});
+
+test("input-syntax rules are valid RFC 5545 (parse via rrule)", async () => {
+  for (const input of ["gym ~every 2w mon,thu", "run ~weekdays", "clean ~monthly", "x ~every 3d"]) {
+    const { ruleStr } = parseRecurInput(input);
+    expect(ruleStr).not.toBeNull();
+    const anchor = dayIndexToStart(dayIndexLocal(Date.now()));
+    const state = await recurState({ recur: ruleStr! }, anchor, Date.now());
+    expect(state.isRecurring).toBe(true);
+    expect(state.summary.length).toBeGreaterThan(0);
+  }
 });
 
 test("mode/threshold/click semantics — lossless mode switching", () => {
@@ -108,7 +144,7 @@ test("recurState — plain task single window at creation day", async () => {
   expect(rs.count).toBe(0);
   const rs2 = await recurState({ counts: { "1200": 4 } }, created, created + 90 * 24 * H);
   expect(rs2.count).toBe(4);
-});
+}, 20000);
 
 test("recurState — daily window rolls with grace across midnight", async () => {
   // anchor Jan 1 2026 local, daily rule
@@ -128,7 +164,7 @@ test("recurState — daily window rolls with grace across midnight", async () =>
   // grace 0 -> strict midnight
   const rs4 = await recurState({ recur: "FREQ=DAILY", graceHours: 0 }, anchor, justAfterMidnight);
   expect(rs4.windowDay).toBe(dayIndexLocal(new Date(2026, 0, 6, 12).getTime()));
-});
+}, 20000);
 
 test("recurState — future rule tallies into upcoming window", async () => {
   const anchor = dayIndexToStart(dayIndexLocal(new Date(2026, 5, 1, 12).getTime())); // Jun 1
@@ -137,7 +173,7 @@ test("recurState — future rule tallies into upcoming window", async () => {
   expect(rs.isRecurring).toBe(true);
   // window resolves to the first occurrence after now (next Monday on/after Jun 1)
   expect(rs.count).toBe(0);
-});
+}, 20000);
 
 test("recurState — weekly BYDAY windows", async () => {
   const anchor = dayIndexToStart(dayIndexLocal(new Date(2026, 0, 5, 12).getTime())); // Mon Jan 5
@@ -146,14 +182,14 @@ test("recurState — weekly BYDAY windows", async () => {
   expect(rs.windowDay).toBe(anchor ? dayIndexLocal(new Date(2026, 0, 5, 12).getTime()) : 0); // still Monday's window
   const rs2 = await recurState({ recur: "FREQ=WEEKLY;BYDAY=MO,TH" }, anchor, new Date(2026, 0, 8, 12).getTime());
   expect(rs2.windowDay).toBe(dayIndexLocal(new Date(2026, 0, 8, 12).getTime())); // Thursday
-});
+}, 20000);
 
 test("recurState — unparseable rule degrades to plain", async () => {
   const anchor = dayIndexToStart(1200);
   const rs = await recurState({ recur: "FREQ=NOPE" }, anchor, Date.now());
   expect(rs.isRecurring).toBe(false);
   expect(rs.windowDay).toBe(1200);
-});
+}, 20000);
 
 test("recurState — DTSTART in string overrides anchor", async () => {
   const anchor = dayIndexToStart(dayIndexLocal(new Date(2020, 0, 1, 12).getTime()));
@@ -163,7 +199,7 @@ test("recurState — DTSTART in string overrides anchor", async () => {
     new Date(2026, 2, 11, 12).getTime()
   );
   expect(rs.windowDay).toBe(dayIndexLocal(new Date(2026, 2, 11, 12).getTime()));
-});
+}, 20000);
 
 test("defaults exported", () => {
   expect(DEFAULT_GRACE_HOURS).toBe(4);

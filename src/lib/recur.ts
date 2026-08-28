@@ -25,23 +25,22 @@ export const DAY_MS = 86_400_000;
 
 // ---------- local day index (days since local epoch) ----------
 
+/** Days-since-epoch index of the local calendar day containing ts.
+ * Defined via local date parts — monotonic, DST-safe, no epoch rounding. */
+export function dayIndexLocal(ts: number): number {
+  const d = new Date(ts);
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / DAY_MS;
+}
+
+/** Local-midnight timestamp for a day index (exact inverse of dayIndexLocal). */
+export function dayIndexToStart(idx: number): number {
+  const base = new Date(idx * DAY_MS); // UTC midnight of day idx — used only for its Y/M/D parts
+  return new Date(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()).getTime();
+}
+
 /** Local midnight of the local day containing ts. */
 export function dayStartLocal(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
-/** Days-since-epoch index of the local day containing ts. */
-export function dayIndexLocal(ts: number): number {
-  return Math.round(dayStartLocal(ts) / DAY_MS);
-}
-
-/** Local-midnight timestamp for a day index (DST-safe). */
-export function dayIndexToStart(idx: number): number {
-  const d = new Date(idx * DAY_MS);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
+  return dayIndexToStart(dayIndexLocal(ts));
 }
 
 // ---------- rrule loading / caching ----------
@@ -237,6 +236,8 @@ export function decodeHistoryPayload(json: string): HistoryData | null {
 // "~every 3d" "~every 2w" "~every 2w mon,thu" "~every 3m" "~every 1y" (spaces optional)
 
 const WDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
+// RFC 5545 BYDAY uses two-letter codes
+const WDAYS_RFC = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
 const WDAYS_RE = WDAYS.join("|");
 const INPUT_RE = new RegExp(
   `~\\s*(?:(daily|weekly|monthly|yearly|weekdays)|(?:every\\s*(\\d{1,3})\\s*([dwmy])(?:\\s+((?:${WDAYS_RE})(?:\\s*,\\s*(?:${WDAYS_RE}))*))?))\\s*$`,
@@ -271,7 +272,7 @@ export function parseRecurInput(raw: string): ParsedInput {
             .filter((i) => i >= 0)
         )
       ).sort((a, b) => a - b);
-      if (days.length) parts.push(`BYDAY=${days.map((i) => WDAYS[i]!.toUpperCase()).join(",")}`);
+      if (days.length) parts.push(`BYDAY=${days.map((i) => WDAYS_RFC[i]).join(",")}`);
     }
   } else {
     return { title: raw, ruleStr: null };
