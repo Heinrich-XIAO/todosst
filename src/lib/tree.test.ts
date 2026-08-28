@@ -1,6 +1,6 @@
 // @ts-nocheck — runs under `bun test` (bun:test types not installed)
 import { test, expect } from "bun:test";
-import { buildTree, collectDescendants, getAncestors } from "./tree";
+import { buildTree, childrenOf, collectDescendants, findChildByTitle, getAncestors } from "./tree";
 
 let seq = 0;
 function node(overrides = {}) {
@@ -72,4 +72,24 @@ test("getAncestors walks root-first to the parent", () => {
   const chain = getAncestors(d._id, map);
   expect(chain.map((n) => n.title)).toEqual(["a", "b"]);
   expect(getAncestors(a._id, map)).toEqual([]);
+});
+
+test("findChildByTitle scopes the match to the given parent", () => {
+  const a = node({ title: "dup", order: 1 });
+  const b = node({ title: "b", order: 2 });
+  const child = node({ title: "dup", parentId: b._id, order: 1 });
+  const nodes = [a, b, child];
+  expect(findChildByTitle(nodes, null, "dup")).toBe(a);
+  expect(findChildByTitle(nodes, b._id, "dup")).toBe(child);
+  expect(findChildByTitle(nodes, a._id, "dup")).toBeUndefined();
+  expect(findChildByTitle(nodes, null, "missing")).toBeUndefined();
+});
+
+test("childrenOf returns roots for null parent and children otherwise", () => {
+  const a = node({ title: "a", order: 1 });
+  const b = node({ title: "b", parentId: a._id, order: 1 });
+  const { roots, map } = buildTree([a, b]);
+  expect(childrenOf(roots, map, null)).toBe(roots);
+  expect(childrenOf(roots, map, a._id).map((n) => n.title)).toEqual(["b"]);
+  expect(childrenOf(roots, map, "nope")).toEqual([]);
 });

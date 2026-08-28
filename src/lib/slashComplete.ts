@@ -5,7 +5,7 @@
 // be unit tested.
 
 import { decodePathToParts, parseBangCd } from "./cdPath";
-import type { DecryptedNode, TreeNode } from "./tree";
+import { childrenOf, findChildByTitle, type DecryptedNode, type TreeNode } from "./tree";
 
 export type SlashSuggestMode = "none" | "slash" | "cd";
 
@@ -34,7 +34,7 @@ export function resolveSlashSuggest(
     let dirPartsRaw = parts.slice(0, -1);
     if (dirPartsRaw.length === 0) {
       const m = /^(\S+)\s+(\S.*)$/.exec(prefixRaw.trim());
-      const first = m ? nodes.find((n) => n.title === m[1] && (n.parentId ?? null) === null) : undefined;
+      const first = m ? findChildByTitle(nodes, null, m[1]) : undefined;
       if (m && first) {
         dirPartsRaw = [m[1]];
         prefixRaw = m[2];
@@ -44,17 +44,12 @@ export function resolveSlashSuggest(
     for (const raw of dirPartsRaw) {
       const seg = raw.trim();
       if (!seg) return { ...NONE, prefix: prefixRaw };
-      const match = nodes.find((n) => n.title === seg && (n.parentId ?? null) === parentId);
+      const match = findChildByTitle(nodes, parentId, seg);
       if (!match) return { ...NONE, prefix: prefixRaw };
       parentId = match._id as string;
     }
     const dirPath = dirPartsRaw.length ? "/" + dirPartsRaw.map((s) => s.trim()).filter(Boolean).join("/") : "";
-    let siblings: TreeNode[];
-    if (parentId === null) siblings = roots;
-    else {
-      const par = map.get(parentId);
-      siblings = par ? par.children : [];
-    }
+    const siblings = childrenOf(roots, map, parentId);
     const prefix = prefixRaw.trim();
     const lower = prefix.toLowerCase();
     const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);
@@ -79,11 +74,11 @@ export function resolveSlashSuggest(
   }
   let parentId: string | null = null;
   for (const part of dirParts) {
-    const match = nodes.find((n) => n.title === part && (n.parentId ?? null) === parentId);
+    const match = findChildByTitle(nodes, parentId, part);
     if (!match) return { ...NONE, prefix: prefixRaw };
     parentId = match._id as string;
   }
-  const siblings = parentId === null ? roots : (map.get(parentId)?.children ?? []);
+  const siblings = childrenOf(roots, map, parentId);
   const prefix = prefixRaw.trim();
   const lower = prefix.toLowerCase();
   const filtered = !prefix ? siblings.slice(0, 8) : siblings.filter((s) => s.title.toLowerCase().startsWith(lower)).slice(0, 8);

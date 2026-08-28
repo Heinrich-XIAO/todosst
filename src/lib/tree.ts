@@ -101,3 +101,18 @@ export function getAncestors(
   }
   return out;
 }
+
+/** Find a node by exact title under a given parent in the flat decrypted list. */
+export function findChildByTitle(
+  nodes: DecryptedNode[],
+  parentId: string | null,
+  title: string
+): DecryptedNode | undefined {
+  return nodes.find((n) => n.title === title && (n.parentId ?? null) === parentId);
+}
+
+/** Siblings under parentId — the roots list for null (top level), else the parent's children. */
+export function childrenOf(roots: TreeNode[], map: Map<string, TreeNode>, parentId: string | null): TreeNode[] {
+  if (parentId === null) return roots;
+  return map.get(parentId)?.children ?? [];
+}

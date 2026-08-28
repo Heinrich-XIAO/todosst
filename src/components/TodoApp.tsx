@@ -10,7 +10,7 @@ import { useEncryption, getRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
 import { encryptString, decryptString } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
-import { parseBangCd, resolveCdPath, encodePathForUrl, decodePathToParts, partsToPath } from "@/lib/cdPath";
+import { parseBangCd, resolveCdPath, decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
 import { parseSlashPath } from "@/lib/slashPath";
 import {
   COUNT_MAX,
@@ -29,8 +29,10 @@ import { Heatmap } from "./Heatmap";
 import { VaultPanel } from "./VaultPanel";
 import {
   buildTree,
+  childrenOf,
   collectDescendants,
   dropPosFor,
+  findChildByTitle,
   getAncestors,
   type DecryptedNode,
   type DropPos,
@@ -43,6 +45,8 @@ import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlacehol
 import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
 
 type Filter = "all" | "active" | "completed";
+
+const DUPLICATE_MSG = "a task with that path already exists";
 
 function TodoTask() {
   const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
@@ -350,23 +354,13 @@ function TodoTask() {
 
   const currentDirInfo = useMemo(() => {
     if (!nodes) return { id: null as Id<"todos"> | null, exists: false, parts: [] as string[] };
-    const raw = decodedPath;
     // normalize: split, trim, filter empty (handles // and trailing slash)
-    const parts = raw
-      .split("/")
-      .map((s) => {
-        try {
-          return decodeURIComponent(s).trim();
-        } catch {
-          return s.trim();
-        }
-      })
-      .filter((s) => s.length > 0);
+    const parts = decodePathToParts(decodedPath);
     if (parts.length === 0) return { id: null, exists: true, parts };
     let parentId: string | null = null;
     let found: DecryptedNode | null = null;
     for (const title of parts) {
-      found = nodes.find((n) => n.title === title && (n.parentId ?? null) === parentId) ?? null;
+      found = findChildByTitle(nodes, parentId, title) ?? null;
       if (!found) return { id: null, exists: false, parts };
       parentId = found._id as string;
     }
@@ -392,11 +386,19 @@ function TodoTask() {
 
   const pwdParts = useMemo(() => decodePathToParts(decodedPath), [decodedPath]);
 
-  const navigateToPwd = useCallback((parts: string[]) => {
-    const encoded = partsToPath(parts);
-    window.history.pushState(null, "", encoded);
+  // Change the URL without a reload (breadcrumbs, "!cd"). The popstate dance
+  // ensures Next's usePathname syncs (pushState is patched but popstate helps in some builds).
+  const pushPath = useCallback((decodedPath: string) => {
+    window.history.pushState(null, "", encodePathForUrl(decodedPath));
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
+
+  const navigateToPwd = useCallback(
+    (parts: string[]) => {
+      pushPath(partsToDecodedPath(parts));
+    },
+    [pushPath]
+  );
 
   // intellisense: autocomplete for "/..." paths and "!cd ..." commands
   const slashComplete = useMemo(
@@ -449,10 +451,7 @@ function TodoTask() {
           decodedCurrent = pathname;
         }
         const resolved = resolveCdPath(decodedCurrent, target);
-        const encoded = encodePathForUrl(resolved);
-        window.history.pushState(null, "", encoded);
-        // Ensure Next's usePathname syncs (pushState is patched but popstate helps in some builds)
-        window.dispatchEvent(new PopStateEvent("popstate"));
+        pushPath(resolved);
         setNewRootTitle("");
         return;
       }
@@ -486,7 +485,7 @@ function TodoTask() {
       const chainIds: string[] = [];
       let createdCount = 0;
       for (const [segIdx, title] of slashParts.entries()) {
-        const existing = virtualNodes.find((n) => n.title === title && (n.parentId ?? null) === parentId);
+        const existing = findChildByTitle(virtualNodes, parentId, title);
         if (existing) {
           parentId = existing._id as string;
           chainIds.push(parentId);
@@ -517,7 +516,7 @@ function TodoTask() {
         createdCount++;
       }
       if (createdCount === 0) {
-        alert("a task with that path already exists");
+        alert(DUPLICATE_MSG);
         return;
       }
       // ensure all ancestors of newly created path are un-collapsed (visible)
@@ -535,9 +534,9 @@ function TodoTask() {
     const title = base;
     if (title.length > 200) return;
     const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
-    const siblings = targetParentId === null ? tree.roots : (tree.map.get(targetParentId as string)?.children ?? []);
+    const siblings = childrenOf(tree.roots, tree.map, targetParentId);
     if (siblings.some((r) => r.title === title)) {
-      alert("a task with that path already exists");
+      alert(DUPLICATE_MSG);
       return;
     }
     const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
@@ -561,7 +560,7 @@ function TodoTask() {
     const parent = tree.map.get(parentId);
     if (!parent) return;
     if (parent.children.some((c) => c.title === title)) {
-      alert("a task with that path already exists");
+      alert(DUPLICATE_MSG);
       return;
     }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
@@ -678,7 +677,7 @@ function TodoTask() {
       return;
     }
     if (v !== cur.title && nodes?.some((n) => n._id !== id && (n.parentId ?? null) === (cur.parentId ?? null) && n.title === v)) {
-      alert("a task with that path already exists");
+      alert(DUPLICATE_MSG);
       return;
     }
     const updated: PlainNode = { v: 2, title: v, isCompleted: cur.isCompleted, parentId: cur.parentId, order: cur.order, metadata: cur.metadata };
@@ -827,16 +826,11 @@ function TodoTask() {
     }
     if (draggedId === targetParentId) return;
     // compute new order fractional
-    let siblings: TreeNode[];
-    if (targetParentId === null) siblings = tree.roots;
-    else {
-      const p = tree.map.get(targetParentId);
-      siblings = p ? p.children : [];
-    }
+    const siblings = childrenOf(tree.roots, tree.map, targetParentId);
     // siblings excluding dragged if same parent
     const filtered = siblings.filter((s) => s._id !== draggedId);
     if (filtered.some((s) => s.title === dragged.title)) {
-      alert("a task with that path already exists at the destination");
+      alert(`${DUPLICATE_MSG} at the destination`);
       return;
     }
     let newOrder: number;
@@ -967,7 +961,7 @@ function TodoTask() {
               handleMove(dragId, node._id as string, node.children.length);
             } else {
               // sibling insertion — index computed against siblings excluding the dragged node
-              const siblings = node.parentId === null ? tree.roots : (tree.map.get(node.parentId)?.children ?? []);
+              const siblings = childrenOf(tree.roots, tree.map, node.parentId);
               const filtered = siblings.filter((s) => s._id !== dragId);
               const idx = filtered.findIndex((s) => s._id === node._id);
               handleMove(dragId, node.parentId, pos === "before" ? idx : idx + 1);
@@ -1318,7 +1312,7 @@ function TodoTask() {
           const targetParentId = currentDirInfo.id as string | null;
           const dragged = nodes?.find((n) => n._id === dragId);
           if (dragged && (dragged.parentId ?? null) !== targetParentId) {
-            const siblings = targetParentId === null ? tree.roots : (tree.map.get(targetParentId)?.children ?? []);
+            const siblings = childrenOf(tree.roots, tree.map, targetParentId);
             handleMove(dragId, targetParentId, siblings.length);
           }
           setDragId(null);
