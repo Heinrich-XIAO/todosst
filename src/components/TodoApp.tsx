@@ -366,7 +366,7 @@ function TodoTask() {
   const createTodo = useMutation(api.todos.create);
   const updateTodo = useMutation(api.todos.update);
   const removeTodo = useMutation(api.todos.remove);
-  const clearCompleted = useMutation(api.todos.clearCompleted);
+  const removeMany = useMutation(api.todos.removeMany);
   const cryptoEncNode = useCallback(
     async (n: PlainNode) => {
       const { encryptNode } = await import("@/lib/crypto");
@@ -1014,8 +1014,8 @@ function TodoTask() {
     if (ids.length === 1) {
       await removeTodo({ id: node._id });
     } else {
-      // use bulk clearCompleted pattern (client-computed ids)
-      await clearCompleted({ ids });
+      // bulk delete of the subtree (client-computed ids)
+      await removeMany({ ids });
     }
     for (const hid of historyIds) {
       await historyRemove({ id: hid });

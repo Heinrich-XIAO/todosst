@@ -52,8 +52,10 @@ export const remove = mutation({
   },
 });
 
-// Clear completed: the client filters its decrypted list and sends the ids.
-export const clearCompleted = mutation({
+// Bulk delete by id: the client computes the id list from its decrypted view
+// (e.g. completed-task cleanup or purging a deleted subtree). Missing ids are
+// skipped so concurrent deletes don't abort the batch.
+export const removeMany = mutation({
   args: { ids: v.array(v.id("todos")) },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
