@@ -1,6 +1,6 @@
 // @ts-nocheck — runs under `bun test` (bun:test types not installed)
 import { test, expect } from "bun:test";
-import { buildTree, childrenOf, collectDescendants, findChildByTitle, getAncestors } from "./tree";
+import { buildTree, childrenOf, collectDescendants, findChildByTitle, getAncestors, isValidDropTarget } from "./tree";
 
 let seq = 0;
 function node(overrides = {}) {
@@ -92,4 +92,23 @@ test("childrenOf returns roots for null parent and children otherwise", () => {
   expect(childrenOf(roots, map, null)).toBe(roots);
   expect(childrenOf(roots, map, a._id).map((n) => n.title)).toEqual(["b"]);
   expect(childrenOf(roots, map, "nope")).toEqual([]);
+});
+
+test("isValidDropTarget rejects the dragged row and its own subtree", () => {
+  const a = node({ title: "a", order: 1 });
+  const b = node({ title: "b", parentId: a._id, order: 1 });
+  const c = node({ title: "c", parentId: b._id, order: 1 });
+  const other = node({ title: "other", order: 2 });
+  const { roots, map } = buildTree([a, b, c, other]);
+  // no drag in progress
+  expect(isValidDropTarget(other, null, map)).toBe(false);
+  // the dragged row itself
+  expect(isValidDropTarget(a, a._id, map)).toBe(false);
+  // descendants of the dragged row
+  expect(isValidDropTarget(b, a._id, map)).toBe(false);
+  expect(isValidDropTarget(c, a._id, map)).toBe(false);
+  // sibling inside the dragged subtree (parent is a descendant)
+  expect(isValidDropTarget(c, b._id, map)).toBe(false);
+  // unrelated row is fine
+  expect(isValidDropTarget(other, a._id, map)).toBe(true);
 });

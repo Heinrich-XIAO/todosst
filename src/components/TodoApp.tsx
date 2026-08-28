@@ -1,6 +1,9 @@
 "use client";
+/* eslint-disable react-hooks/set-state-in-effect -- decrypt/history/timer-driven
+   state sync in effects is inherent to the encrypted vault lifecycle here;
+   same tradeoff as EncryptionContext.tsx */
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -8,7 +11,7 @@ import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import { AuthForm } from "./AuthForm";
 import { useEncryption, getRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
-import { encryptString, decryptString } from "@/lib/crypto";
+import { encryptString, decryptString, toPlainNode } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
 import { parseBangCd, resolveCdPath, decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
 import { parseSlashPath } from "@/lib/slashPath";
@@ -34,6 +37,7 @@ import {
   dropPosFor,
   findChildByTitle,
   getAncestors,
+  isValidDropTarget,
   type DecryptedNode,
   type DropPos,
   type TreeNode,
@@ -47,6 +51,306 @@ import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } f
 type Filter = "all" | "active" | "completed";
 
 const DUPLICATE_MSG = "a task with that path already exists";
+
+// Cache key for decrypted rows: ciphertext (with its iv) uniquely identifies a
+// payload version; legacy plaintext rows key off their id.
+function cacheKeyFor(t: { _id: Id<"todos">; iv?: string; ciphertext?: string }): string {
+  return t.ciphertext ? `${t.iv}:${t.ciphertext}` : `legacy:${t._id}`;
+}
+
+// Everything the recursive row renderer needs from TodoTask. Passed as one
+// bundle so RenderNode can live at module level — a component type defined
+// inside another component changes identity every render, which remounts the
+// whole tree (DOM state churn, lost focus, wasted layout).
+type RowCtx = {
+  tree: { roots: TreeNode[]; map: Map<string, TreeNode> };
+  matches: (n: TreeNode) => boolean;
+  recurStates: Map<string, RecurState> | null;
+  collapsed: Set<string>;
+  search: string;
+  editingId: Id<"todos"> | null;
+  editValue: string;
+  setEditValue: Dispatch<SetStateAction<string>>;
+  selectedId: Id<"todos"> | null;
+  addChildParent: Id<"todos"> | null;
+  addChildTitle: string;
+  dragId: string | null;
+  dropHint: { id: string; pos: DropPos } | null;
+  fadingIds: Set<string>;
+  confirmDeleteId: Id<"todos"> | null;
+  currentDirDepth: number;
+  currentCount: (node: TreeNode, rs: RecurState | undefined) => number;
+  handleToggle: (node: TreeNode) => Promise<void>;
+  handleCountUp: (node: TreeNode) => Promise<void>;
+  handleCountDown: (node: TreeNode) => Promise<void>;
+  handleMove: (draggedId: string, targetParentId: string | null, targetIndex: number) => Promise<void>;
+  handleAddChild: (parentId: Id<"todos">) => Promise<void>;
+  commitEdit: (id: Id<"todos">) => Promise<void>;
+  startEdit: (node: TreeNode) => void;
+  setEditingId: Dispatch<SetStateAction<Id<"todos"> | null>>;
+  setSelectedId: Dispatch<SetStateAction<Id<"todos"> | null>>;
+  setAddChildParent: Dispatch<SetStateAction<Id<"todos"> | null>>;
+  setAddChildTitle: Dispatch<SetStateAction<string>>;
+  setConfirmDeleteId: Dispatch<SetStateAction<Id<"todos"> | null>>;
+  toggleExpanded: (id: string) => void;
+  setDragId: Dispatch<SetStateAction<string | null>>;
+  setDropHint: Dispatch<SetStateAction<{ id: string; pos: DropPos } | null>>;
+  navigateToPwd: (parts: string[]) => void;
+};
+
+function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
+  const {
+    tree,
+    matches,
+    recurStates,
+    collapsed,
+    search,
+    editingId,
+    editValue,
+    setEditValue,
+    selectedId,
+    addChildParent,
+    addChildTitle,
+    dragId,
+    dropHint,
+    fadingIds,
+    confirmDeleteId,
+    currentDirDepth,
+    currentCount,
+    handleToggle,
+    handleCountUp,
+    handleCountDown,
+    handleMove,
+    handleAddChild,
+    commitEdit,
+    startEdit,
+    setEditingId,
+    setSelectedId,
+    setAddChildParent,
+    setAddChildTitle,
+    setConfirmDeleteId,
+    toggleExpanded,
+    setDragId,
+    setDropHint,
+    navigateToPwd,
+  } = ctx;
+  const isExpanded = !collapsed.has(node._id) || !!search; // folders open by default; search auto-expands
+  const isEditing = editingId === node._id;
+  const isSelected = selectedId === node._id;
+  const hasChildren = node.children.length > 0;
+  const show = matches(node);
+  if (!show) return null;
+  const isFading = node.isCompleted && fadingIds.has(node._id as string);
+  const rs = recurStates?.get(node._id as string);
+  const meta = node.metadata as PlainNode["metadata"];
+  const mode = modeOf(meta);
+  const threshold = thresholdOf(meta);
+  const count = currentCount(node, rs);
+  const checked = rs?.isRecurring ? count >= threshold : node.isCompleted;
+  return (
+    <li
+      draggable={!isEditing}
+      onDragStart={(e) => {
+        setDragId(node._id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={() => {
+        setDragId(null);
+        setDropHint(null);
+      }}
+      onDragOver={(e) => {
+        if (!dragId || !isValidDropTarget(node, dragId, tree.map)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const pos = dropPosFor(e);
+        setDropHint((prev) => (prev?.id === node._id && prev.pos === pos ? prev : { id: node._id as string, pos }));
+      }}
+      onDragLeave={(e) => {
+        const next = e.relatedTarget as Node | null;
+        if (!next || !(e.currentTarget as HTMLElement).contains(next)) {
+          setDropHint((prev) => (prev?.id === node._id ? null : prev));
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (dragId && isValidDropTarget(node, dragId, tree.map)) {
+          const pos = dropPosFor(e);
+          if (pos === "child") {
+            // nested under this node (append)
+            handleMove(dragId, node._id as string, node.children.length);
+          } else {
+            // sibling insertion — index computed against siblings excluding the dragged node
+            const siblings = childrenOf(tree.roots, tree.map, node.parentId);
+            const filtered = siblings.filter((s) => s._id !== dragId);
+            const idx = filtered.findIndex((s) => s._id === node._id);
+            handleMove(dragId, node.parentId, pos === "before" ? idx : idx + 1);
+          }
+        }
+        setDragId(null);
+        setDropHint(null);
+      }}
+      className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
+      style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
+    >
+      <div
+        className={`flex items-center gap-2 py-2 pr-3 text-sm ${
+          dropHint?.id === node._id
+            ? dropHint.pos === "child"
+              ? "bg-foreground/10"
+              : dropHint.pos === "before"
+                ? "border-t-2 border-t-foreground"
+                : "border-b-2 border-b-foreground"
+            : ""
+        }`}
+      >
+        <button
+          onClick={() => hasChildren && toggleExpanded(node._id)}
+          className={`h-4 w-4 shrink-0 flex items-center justify-center text-[10px] ${hasChildren ? "opacity-60 hover:opacity-100" : "opacity-0"}`}
+          aria-label="toggle children"
+        >
+          {hasChildren ? (isExpanded ? "▾" : "▸") : "•"}
+        </button>
+
+        {mode === "count" ? (
+          // tally rendering — storage underneath is still a count
+          <div className="flex h-4 shrink-0 items-center">
+            {count > 0 && (
+              <button
+                onClick={() => handleCountDown(node)}
+                className="h-4 w-4 border border-foreground text-[10px] leading-none opacity-60 hover:opacity-100"
+                aria-label="decrement tally"
+              >
+                −
+              </button>
+            )}
+            <button
+              onClick={() => handleCountUp(node)}
+              className={`h-4 min-w-[20px] border px-0.5 text-[10px] leading-none ${
+                count > 0 ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"
+              }`}
+              aria-label="increment tally"
+              title="click to count +1"
+            >
+              {count}
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => handleToggle(node)}
+            className={`h-4 w-4 shrink-0 border flex items-center justify-center ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"}`}
+            aria-label="toggle"
+          >
+            {checked && <span className="text-[10px] leading-none">✓</span>}
+          </button>
+        )}
+
+        {isEditing ? (
+          <input
+            autoFocus
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onBlur={() => commitEdit(node._id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commitEdit(node._id);
+              if (e.key === "Escape") setEditingId(null);
+            }}
+            className="flex-1 border-b border-foreground bg-transparent py-0.5 text-sm focus:outline-none"
+          />
+        ) : (
+          <button
+            onClick={() => setSelectedId(node._id)}
+            onDoubleClick={() => {
+              // folders open on double-click; leaves rename
+              if (hasChildren) {
+                navigateToPwd([...getAncestors(node._id, tree.map).map((a) => a.title), node.title]);
+              } else {
+                startEdit(node);
+              }
+            }}
+            className={`flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
+            title={node.title}
+          >
+            <span className="mr-1 opacity-40">{node.children.length ? `[${node.children.length}]` : ""}</span>
+            {node.title}
+            {node.metadata.priority ? <span className="ml-2 text-[10px] border border-foreground/20 px-1">{node.metadata.priority}</span> : null}
+            {node.metadata.dueAt ? (
+              <span className="ml-1 text-[10px] opacity-60">
+                {new Date(node.metadata.dueAt).toLocaleDateString()}
+              </span>
+            ) : null}
+            {meta.recur ? (
+              <span className="ml-1 text-[10px] opacity-50" title={meta.recur}>
+                ↻ {rs?.summary || "recurring"}
+                {rs?.isRecurring && rs.nextTs && dayIndexLocal(rs.nextTs) !== rs.windowDay
+                  ? ` · next ${new Date(rs.nextTs).toLocaleDateString()}`
+                  : ""}
+              </span>
+            ) : null}
+          </button>
+        )}
+
+        <span className="flex gap-2 text-xs shrink-0 items-center">
+          <button onClick={() => setAddChildParent(node._id)} className="opacity-40 hover:opacity-100">
+            +child
+          </button>
+          <button onClick={() => startEdit(node)} className="opacity-40 hover:opacity-100 hidden sm:inline">
+            edit
+          </button>
+          {confirmDeleteId === node._id ? (
+            <span className="font-mono opacity-100 underline underline-offset-4">confirm?</span>
+          ) : (
+            <button
+              onClick={() => setConfirmDeleteId(node._id)}
+              className="opacity-40 hover:opacity-100"
+            >
+              delete
+            </button>
+          )}
+        </span>
+      </div>
+
+      {addChildParent === node._id && (
+        <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 16 + 28}px` }}>
+          <input
+            autoFocus
+            value={addChildTitle}
+            onChange={(e) => setAddChildTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleAddChild(node._id);
+              if (e.key === "Escape") {
+                setAddChildParent(null);
+                setAddChildTitle("");
+              }
+            }}
+            placeholder="new sub-task…"
+            maxLength={200}
+            className="flex-1 border-b border-foreground bg-transparent py-1 text-xs focus:outline-none"
+          />
+          <button onClick={() => handleAddChild(node._id)} className="text-xs underline">
+            add
+          </button>
+          <button
+            onClick={() => {
+              setAddChildParent(null);
+              setAddChildTitle("");
+            }}
+            className="text-xs opacity-60"
+          >
+            cancel
+          </button>
+        </div>
+      )}
+
+      {hasChildren && isExpanded && (
+        <ul>
+          {node.children.map((child) => (
+            <RenderNode key={child._id} node={child} ctx={ctx} />
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
 
 function TodoTask() {
   const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
@@ -108,23 +412,45 @@ function TodoTask() {
 
   const isLoading = todos === undefined;
 
+  // The `todos` query re-fires on every mutation; decrypting every row again
+  // each time is wasteful. Results are cached per payload (iv+ciphertext) and
+  // the cache is dropped whenever the key changes.
+  const decryptCacheRef = useRef(new Map<string, DecryptedNode>());
+  const decryptKeyRef = useRef<CryptoKey | null>(null);
+
   useEffect(() => {
     if (todos === undefined) return;
     if (!key) {
+      decryptKeyRef.current = null;
+      decryptCacheRef.current.clear();
       setNodes(null);
       setDecryptError(null);
       return;
     }
+    if (decryptKeyRef.current !== key) {
+      decryptKeyRef.current = key;
+      decryptCacheRef.current.clear();
+    }
     let cancelled = false;
+    const misses = todos.filter((t) => !decryptCacheRef.current.has(cacheKeyFor(t)));
+    if (misses.length === 0) {
+      // fully cached — synchronous state update, no loading flash
+      const results = todos.map((t) => decryptCacheRef.current.get(cacheKeyFor(t))!);
+      const failed = results.some((r) => r.title === "— unable to decrypt —");
+      setDecryptError(failed ? "wrong password or corrupted vault — some items could not be decrypted." : null);
+      setNodes(results);
+      return;
+    }
     setIsDecrypting(true);
     setDecryptError(null);
     (async () => {
       try {
-        const results = await Promise.all(
-          todos.map(async (t) => {
+        await Promise.all(
+          misses.map(async (t) => {
+            let result: DecryptedNode;
             if (!t.ciphertext || !t.iv) {
               // legacy
-              return {
+              result = {
                 v: 2 as const,
                 title: (t.title as string) ?? "(legacy)",
                 isCompleted: (t.isCompleted as boolean) ?? false,
@@ -135,37 +461,41 @@ function TodoTask() {
                 _creationTime: t._creationTime,
                 _raw: { title: t.title, isCompleted: t.isCompleted },
               } satisfies DecryptedNode;
+            } else {
+              try {
+                const plain = await cryptoDecNode(t.iv, t.ciphertext);
+                if (plain.title.length > 200) throw new Error("title too long");
+                result = {
+                  ...plain,
+                  // ensure order finite
+                  order: typeof plain.order === "number" && Number.isFinite(plain.order) ? plain.order : t._creationTime,
+                  _id: t._id,
+                  _creationTime: t._creationTime,
+                  _raw: { ciphertext: t.ciphertext, iv: t.iv },
+                } satisfies DecryptedNode;
+              } catch {
+                result = {
+                  v: 2 as const,
+                  title: "— unable to decrypt —",
+                  isCompleted: false,
+                  parentId: null,
+                  order: t._creationTime,
+                  metadata: {},
+                  _id: t._id,
+                  _creationTime: t._creationTime,
+                  _raw: { ciphertext: t.ciphertext, iv: t.iv },
+                } satisfies DecryptedNode;
+              }
             }
-            try {
-              const plain = await cryptoDecNode(t.iv, t.ciphertext);
-              if (plain.title.length > 200) throw new Error("title too long");
-              return {
-                ...plain,
-                // ensure order finite
-                order: typeof plain.order === "number" && Number.isFinite(plain.order) ? plain.order : t._creationTime,
-                _id: t._id,
-                _creationTime: t._creationTime,
-                _raw: { ciphertext: t.ciphertext, iv: t.iv },
-              } satisfies DecryptedNode;
-            } catch {
-              return {
-                v: 2 as const,
-                title: "— unable to decrypt —",
-                isCompleted: false,
-                parentId: null,
-                order: t._creationTime,
-                metadata: {},
-                _id: t._id,
-                _creationTime: t._creationTime,
-                _raw: { ciphertext: t.ciphertext, iv: t.iv },
-              } satisfies DecryptedNode;
-            }
+            decryptCacheRef.current.set(cacheKeyFor(t), result);
           })
         );
+        if (cancelled) return;
+        const results = todos.map((t) => decryptCacheRef.current.get(cacheKeyFor(t))!);
         // detect if any decrypt failed
         const failed = results.some((r) => r.title === "— unable to decrypt —");
         if (failed) setDecryptError("wrong password or corrupted vault — some items could not be decrypted.");
-        if (!cancelled) setNodes(results);
+        setNodes(results);
       } finally {
         if (!cancelled) setIsDecrypting(false);
       }
@@ -329,20 +659,19 @@ function TodoTask() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isLocked]);
 
-  // filter helper for tree: keep node if matches or has matching descendant
-  const matches = useCallback(
-    (n: TreeNode): boolean => {
-      if (!search && filter === "all") return true;
-      const s = search.trim().toLowerCase();
-      const textMatch = !s || n.title.toLowerCase().includes(s) || (n.metadata.tags ?? []).join(" ").toLowerCase().includes(s);
-      const statusMatch = filter === "all" || (filter === "active" && !n.isCompleted) || (filter === "completed" && n.isCompleted);
-      if (textMatch && statusMatch) return true;
-      // check descendants
-      for (const c of n.children) if (matches(c)) return true;
-      return false;
-    },
-    [filter, search]
-  );
+  // filter helper for tree: keep node if matches or has matching descendant.
+  // A plain function declaration (not useCallback) — it recurses via its own
+  // hoisted binding.
+  function matches(n: TreeNode): boolean {
+    if (!search && filter === "all") return true;
+    const s = search.trim().toLowerCase();
+    const textMatch = !s || n.title.toLowerCase().includes(s) || (n.metadata.tags ?? []).join(" ").toLowerCase().includes(s);
+    const statusMatch = filter === "all" || (filter === "active" && !n.isCompleted) || (filter === "completed" && n.isCompleted);
+    if (textMatch && statusMatch) return true;
+    // check descendants
+    for (const c of n.children) if (matches(c)) return true;
+    return false;
+  }
 
   const decodedPath = useMemo(() => {
     try {
@@ -497,16 +826,11 @@ function TodoTask() {
         // recurrence applies to the final segment of the path
         const isLast = segIdx === slashParts.length - 1;
         const metadata: PlainNode["metadata"] = isLast && parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {};
-        const node: PlainNode = { v: 2, title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata };
+        const node = toPlainNode({ title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata });
         const { ciphertext, iv } = await cryptoEncNode(node);
         const newId = await createTodo({ ciphertext, iv });
         virtualNodes.push({
-          v: 2,
-          title,
-          isCompleted: false,
-          parentId,
-          order,
-          metadata,
+          ...toPlainNode({ title, isCompleted: false, parentId, order, metadata }),
           _id: newId as Id<"todos">,
           _creationTime: Date.now(),
           _raw: { ciphertext, iv },
@@ -540,14 +864,13 @@ function TodoTask() {
       return;
     }
     const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
-    const node: PlainNode = {
-      v: 2,
+    const node = toPlainNode({
       title,
       isCompleted: false,
       parentId: targetParentId,
       order,
       metadata: parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {},
-    };
+    });
     const { ciphertext, iv } = await cryptoEncNode(node);
     await createTodo({ ciphertext, iv });
     setNewRootTitle("");
@@ -564,14 +887,13 @@ function TodoTask() {
       return;
     }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
-    const node: PlainNode = {
-      v: 2,
+    const node = toPlainNode({
       title,
       isCompleted: false,
       parentId,
       order,
       metadata: parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {},
-    };
+    });
     const { ciphertext, iv } = await cryptoEncNode(node);
     await createTodo({ ciphertext, iv });
     setAddChildTitle("");
@@ -602,14 +924,10 @@ function TodoTask() {
     const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
     const clamped = Math.max(0, Math.min(Math.floor(next), COUNT_MAX));
     const isRecurring = rs?.isRecurring ?? !!meta.recur;
-    const updated: PlainNode = {
-      v: 2,
-      title: node.title,
+    const updated = toPlainNode(node, {
       isCompleted: isRecurring ? false : clamped >= thresholdOf(meta),
-      parentId: node.parentId,
-      order: node.order,
       metadata: { ...meta, counts: { [String(windowDay)]: clamped } },
-    };
+    });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
     await pushHistory(node._id as string, windowDay, clamped);
@@ -637,14 +955,10 @@ function TodoTask() {
     // for lossless check<->tally mode switching later
     const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
     const nextCount = node.isCompleted ? 0 : thresholdOf(meta);
-    const updated: PlainNode = {
-      v: 2,
-      title: node.title,
+    const updated = toPlainNode(node, {
       isCompleted: !node.isCompleted,
-      parentId: node.parentId,
-      order: node.order,
       metadata: { ...meta, counts: { [String(windowDay)]: nextCount } },
-    };
+    });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
     await pushHistory(node._id as string, windowDay, nextCount);
@@ -680,7 +994,7 @@ function TodoTask() {
       alert(DUPLICATE_MSG);
       return;
     }
-    const updated: PlainNode = { v: 2, title: v, isCompleted: cur.isCompleted, parentId: cur.parentId, order: cur.order, metadata: cur.metadata };
+    const updated = toPlainNode(cur, { title: v });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id, ciphertext, iv });
     setEditingId(null);
@@ -692,7 +1006,7 @@ function TodoTask() {
     const walk = (n: TreeNode) => {
       snapNodes.push({
         oldId: n._id as string,
-        plain: { v: 2, title: n.title, isCompleted: n.isCompleted, parentId: n.parentId, order: n.order, metadata: n.metadata },
+        plain: toPlainNode(n),
       });
       for (const c of n.children) walk(c);
     };
@@ -733,10 +1047,9 @@ function TodoTask() {
     if (!snap || !key) return;
     const idMap = new Map<string, Id<"todos">>();
     for (const { oldId, plain } of snap.nodes) {
-      const restored: PlainNode = {
-        ...plain,
+      const restored = toPlainNode(plain, {
         parentId: plain.parentId ? (idMap.get(plain.parentId) ?? null) : null,
-      };
+      });
       const { ciphertext, iv } = await cryptoEncNode(restored);
       const newId = await createTodo({ ciphertext, iv });
       idMap.set(oldId, newId as Id<"todos">);
@@ -792,14 +1105,7 @@ function TodoTask() {
         isCompleted = (metadata.counts[String(windowDay)] ?? 0) >= th;
       }
     }
-    const updated: PlainNode = {
-      v: 2,
-      title: cur.title,
-      isCompleted,
-      parentId: cur.parentId,
-      order: cur.order,
-      metadata,
-    };
+    const updated = toPlainNode(cur, { isCompleted, metadata });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id, ciphertext, iv });
     // push seeded counts into the history record too
@@ -839,14 +1145,7 @@ function TodoTask() {
     else if (targetIndex >= filtered.length) newOrder = filtered[filtered.length - 1].order + 1;
     else newOrder = (filtered[targetIndex - 1].order + filtered[targetIndex].order) / 2;
 
-    const updated: PlainNode = {
-      v: 2,
-      title: dragged.title,
-      isCompleted: dragged.isCompleted,
-      parentId: targetParentId,
-      order: newOrder,
-      metadata: dragged.metadata,
-    };
+    const updated = toPlainNode(dragged, { parentId: targetParentId, order: newOrder });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: dragged._id as Id<"todos">, ciphertext, iv });
     if (targetParentId) {
@@ -900,238 +1199,43 @@ function TodoTask() {
     return <UnlockScreen />;
   }
 
-  // Recursive renderer
-  function isValidDropTarget(node: TreeNode): boolean {
-    if (!dragId) return false;
-    if (dragId === node._id) return false;
-    const draggedTree = tree.map.get(dragId);
-    if (draggedTree) {
-      const desc = collectDescendants(draggedTree).map(String);
-      // cannot drop onto the dragged subtree, nor as a sibling inside it
-      if (desc.includes(node._id as string)) return false;
-      if (node.parentId && desc.includes(node.parentId)) return false;
-    }
-    return true;
-  }
-
-  function RenderNode({ node }: { node: TreeNode }) {
-    const isExpanded = !collapsed.has(node._id) || !!search; // folders open by default; search auto-expands
-    const isEditing = editingId === node._id;
-    const isSelected = selectedId === node._id;
-    const hasChildren = node.children.length > 0;
-    const show = matches(node);
-    if (!show) return null;
-    const isFading = node.isCompleted && fadingIds.has(node._id as string);
-    const rs = recurStates?.get(node._id as string);
-    const meta = node.metadata as PlainNode["metadata"];
-    const mode = modeOf(meta);
-    const threshold = thresholdOf(meta);
-    const count = currentCount(node, rs);
-    const checked = rs?.isRecurring ? count >= threshold : node.isCompleted;
-    return (
-      <li
-        draggable={!isEditing}
-        onDragStart={(e) => {
-          setDragId(node._id);
-          e.dataTransfer.effectAllowed = "move";
-        }}
-        onDragEnd={() => {
-          setDragId(null);
-          setDropHint(null);
-        }}
-        onDragOver={(e) => {
-          if (!dragId || !isValidDropTarget(node)) return;
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          const pos = dropPosFor(e);
-          setDropHint((prev) => (prev?.id === node._id && prev.pos === pos ? prev : { id: node._id as string, pos }));
-        }}
-        onDragLeave={(e) => {
-          const next = e.relatedTarget as Node | null;
-          if (!next || !(e.currentTarget as HTMLElement).contains(next)) {
-            setDropHint((prev) => (prev?.id === node._id ? null : prev));
-          }
-        }}
-        onDrop={(e) => {
-          e.preventDefault();
-          if (dragId && isValidDropTarget(node)) {
-            const pos = dropPosFor(e);
-            if (pos === "child") {
-              // nested under this node (append)
-              handleMove(dragId, node._id as string, node.children.length);
-            } else {
-              // sibling insertion — index computed against siblings excluding the dragged node
-              const siblings = childrenOf(tree.roots, tree.map, node.parentId);
-              const filtered = siblings.filter((s) => s._id !== dragId);
-              const idx = filtered.findIndex((s) => s._id === node._id);
-              handleMove(dragId, node.parentId, pos === "before" ? idx : idx + 1);
-            }
-          }
-          setDragId(null);
-          setDropHint(null);
-        }}
-        className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
-        style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
-      >
-        <div
-          className={`flex items-center gap-2 py-2 pr-3 text-sm ${
-            dropHint?.id === node._id
-              ? dropHint.pos === "child"
-                ? "bg-foreground/10"
-                : dropHint.pos === "before"
-                  ? "border-t-2 border-t-foreground"
-                  : "border-b-2 border-b-foreground"
-              : ""
-          }`}
-        >
-          <button
-            onClick={() => hasChildren && toggleExpanded(node._id)}
-            className={`h-4 w-4 shrink-0 flex items-center justify-center text-[10px] ${hasChildren ? "opacity-60 hover:opacity-100" : "opacity-0"}`}
-            aria-label="toggle children"
-          >
-            {hasChildren ? (isExpanded ? "▾" : "▸") : "•"}
-          </button>
-
-          {mode === "count" ? (
-            // tally rendering — storage underneath is still a count
-            <div className="flex h-4 shrink-0 items-center">
-              {count > 0 && (
-                <button
-                  onClick={() => handleCountDown(node)}
-                  className="h-4 w-4 border border-foreground text-[10px] leading-none opacity-60 hover:opacity-100"
-                  aria-label="decrement tally"
-                >
-                  −
-                </button>
-              )}
-              <button
-                onClick={() => handleCountUp(node)}
-                className={`h-4 min-w-[20px] border px-0.5 text-[10px] leading-none ${
-                  count > 0 ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"
-                }`}
-                aria-label="increment tally"
-                title="click to count +1"
-              >
-                {count}
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => handleToggle(node)}
-              className={`h-4 w-4 shrink-0 border flex items-center justify-center ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"}`}
-              aria-label="toggle"
-            >
-              {checked && <span className="text-[10px] leading-none">✓</span>}
-            </button>
-          )}
-
-          {isEditing ? (
-            <input
-              autoFocus
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onBlur={() => commitEdit(node._id)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitEdit(node._id);
-                if (e.key === "Escape") setEditingId(null);
-              }}
-              className="flex-1 border-b border-foreground bg-transparent py-0.5 text-sm focus:outline-none"
-            />
-          ) : (
-            <button
-              onClick={() => setSelectedId(node._id)}
-              onDoubleClick={() => {
-                // folders open on double-click; leaves rename
-                if (hasChildren) {
-                  navigateToPwd([...getAncestors(node._id, tree.map).map((a) => a.title), node.title]);
-                } else {
-                  startEdit(node);
-                }
-              }}
-              className={`flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
-              title={node.title}
-            >
-              <span className="mr-1 opacity-40">{node.children.length ? `[${node.children.length}]` : ""}</span>
-              {node.title}
-              {node.metadata.priority ? <span className="ml-2 text-[10px] border border-foreground/20 px-1">{node.metadata.priority}</span> : null}
-              {node.metadata.dueAt ? (
-                <span className="ml-1 text-[10px] opacity-60">
-                  {new Date(node.metadata.dueAt).toLocaleDateString()}
-                </span>
-              ) : null}
-              {meta.recur ? (
-                <span className="ml-1 text-[10px] opacity-50" title={meta.recur}>
-                  ↻ {rs?.summary || "recurring"}
-                  {rs?.isRecurring && rs.nextTs && dayIndexLocal(rs.nextTs) !== rs.windowDay
-                    ? ` · next ${new Date(rs.nextTs).toLocaleDateString()}`
-                    : ""}
-                </span>
-              ) : null}
-            </button>
-          )}
-
-          <span className="flex gap-2 text-xs shrink-0 items-center">
-            <button onClick={() => setAddChildParent(node._id)} className="opacity-40 hover:opacity-100">
-              +child
-            </button>
-            <button onClick={() => startEdit(node)} className="opacity-40 hover:opacity-100 hidden sm:inline">
-              edit
-            </button>
-            {confirmDeleteId === node._id ? (
-              <span className="font-mono opacity-100 underline underline-offset-4">confirm?</span>
-            ) : (
-              <button
-                onClick={() => setConfirmDeleteId(node._id)}
-                className="opacity-40 hover:opacity-100"
-              >
-                delete
-              </button>
-            )}
-          </span>
-        </div>
-
-        {addChildParent === node._id && (
-          <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 16 + 28}px` }}>
-            <input
-              autoFocus
-              value={addChildTitle}
-              onChange={(e) => setAddChildTitle(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAddChild(node._id);
-                if (e.key === "Escape") {
-                  setAddChildParent(null);
-                  setAddChildTitle("");
-                }
-              }}
-              placeholder="new sub-task…"
-              maxLength={200}
-              className="flex-1 border-b border-foreground bg-transparent py-1 text-xs focus:outline-none"
-            />
-            <button onClick={() => handleAddChild(node._id)} className="text-xs underline">
-              add
-            </button>
-            <button
-              onClick={() => {
-                setAddChildParent(null);
-                setAddChildTitle("");
-              }}
-              className="text-xs opacity-60"
-            >
-              cancel
-            </button>
-          </div>
-        )}
-
-        {hasChildren && isExpanded && (
-          <ul>
-            {node.children.map((child) => (
-              <RenderNode key={child._id} node={child} />
-            ))}
-          </ul>
-        )}
-      </li>
-    );
-  }
+  // Bundle of state/handlers for the module-level row renderer (stable component
+  // type — no remount of the task tree on re-render).
+  const rowCtx: RowCtx = {
+    tree,
+    matches,
+    recurStates,
+    collapsed,
+    search,
+    editingId,
+    editValue,
+    setEditValue,
+    selectedId,
+    addChildParent,
+    addChildTitle,
+    dragId,
+    dropHint,
+    fadingIds,
+    confirmDeleteId,
+    currentDirDepth,
+    currentCount,
+    handleToggle,
+    handleCountUp,
+    handleCountDown,
+    handleMove,
+    handleAddChild,
+    commitEdit,
+    startEdit,
+    setEditingId,
+    setSelectedId,
+    setAddChildParent,
+    setAddChildTitle,
+    setConfirmDeleteId,
+    toggleExpanded,
+    setDragId,
+    setDropHint,
+    navigateToPwd,
+  };
 
   return (
     <div className="w-full max-w-[720px] border border-foreground bg-background">
@@ -1338,7 +1442,7 @@ function TodoTask() {
         {!isLoading && !isDecrypting && listFlat.length > 0 && currentDirInfo.exists && visibleRoots.length > 0 && (
           <ul>
             {visibleRoots.map((root) => (
-              <RenderNode key={root._id} node={root} />
+              <RenderNode key={root._id} node={root} ctx={rowCtx} />
             ))}
           </ul>
         )}

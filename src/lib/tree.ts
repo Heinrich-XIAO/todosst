@@ -116,3 +116,17 @@ export function childrenOf(roots: TreeNode[], map: Map<string, TreeNode>, parent
   if (parentId === null) return roots;
   return map.get(parentId)?.children ?? [];
 }
+
+/** Whether the current drag may target this row: not itself, not inside the dragged subtree, not a sibling within it. */
+export function isValidDropTarget(node: TreeNode, dragId: string | null, map: Map<string, TreeNode>): boolean {
+  if (!dragId) return false;
+  if (dragId === node._id) return false;
+  const draggedTree = map.get(dragId);
+  if (draggedTree) {
+    const desc = collectDescendants(draggedTree).map(String);
+    // cannot drop onto the dragged subtree, nor as a sibling inside it
+    if (desc.includes(node._id as string)) return false;
+    if (node.parentId && desc.includes(node.parentId)) return false;
+  }
+  return true;
+}

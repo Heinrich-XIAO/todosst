@@ -251,6 +251,18 @@ export function nodeParentId(n: PlainNode): string | null {
   return n.parentId ?? null;
 }
 
+/**
+ * Rebuild a v2 payload from a source node, applying field overrides.
+ * Every re-encryption site goes through this so no field can be silently
+ * dropped when constructing the updated node.
+ */
+export function toPlainNode(
+  src: Pick<PlainNode, "title" | "isCompleted" | "parentId" | "order" | "metadata">,
+  overrides?: Partial<Omit<PlainNode, "v">>
+): PlainNode {
+  return { v: 2, ...src, ...overrides };
+}
+
 // normalize email/username to the same key used by AuthForm + auth.ts
 export function normalizeEmail(input: string): string {
   const raw = input.trim().toLowerCase();
