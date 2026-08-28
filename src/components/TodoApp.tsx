@@ -563,7 +563,7 @@ function TodoTask() {
 
   const listFlat = nodes ?? [];
 
-  // completed tasks fade out 10s after being checked — not removed
+  // completed tasks fade out 3s after being checked (1s CSS transition) — not removed
   useEffect(() => {
     if (!nodes) return;
     const timers: number[] = [];
