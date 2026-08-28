@@ -95,11 +95,22 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       await signIn("password", formData);
 
       // Post-auth: legacy accounts may not have a salt yet — create one.
+      // The auth token can take a moment to propagate to the convex client,
+      // so retry — a vault whose salt was never persisted is unrecoverable.
       if (!salt) {
         salt = generateSaltB64();
-        try {
-          await convex.mutation(api.encryption.ensureSalt, { salt });
-        } catch {}
+        let ensured = false;
+        for (let attempt = 0; attempt < 3 && !ensured; attempt++) {
+          try {
+            await convex.mutation(api.encryption.ensureSalt, { salt });
+            ensured = true;
+          } catch {
+            await new Promise((r) => setTimeout(r, 800));
+          }
+        }
+        if (!ensured) {
+          throw new Error("could not initialize your vault encryption — please try signing in again.");
+        }
       }
       // Resolve (or adopt) the vault master key and persist its wrapper.
       await resolveVaultPassword(password, salt, false);

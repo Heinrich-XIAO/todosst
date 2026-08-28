@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useConvex, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useEncryption, getRememberedKey } from "./EncryptionContext";
+import { useEncryption, getRememberedKey, generateSaltB64 } from "./EncryptionContext";
 
 export function UnlockScreen() {
   const { resolveVaultPassword, resolveVaultRecovery, isReady, clearStoredKey } = useEncryption();
@@ -47,7 +47,17 @@ export function UnlockScreen() {
     setError(null);
     setLoading(true);
     try {
-      const salt = await fetchSalt();
+      let salt = await fetchSalt();
+      if (!salt && mode === "password") {
+        // Self-heal a fresh account whose salt write failed after sign-up:
+        // with no password wrapper there is no vault data tied to a lost salt,
+        // so a new salt is safe and the password re-adopts as the master key.
+        const wrapper = (await convex.query(api.vault.getKeyRecord, { kind: "password" })) as unknown;
+        if (!wrapper) {
+          salt = generateSaltB64();
+          await convex.mutation(api.encryption.ensureSalt, { salt });
+        }
+      }
       if (!salt) {
         setError("no encryption salt found — try signing out and back in.");
         return;
