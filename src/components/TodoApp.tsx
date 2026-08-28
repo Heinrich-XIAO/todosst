@@ -410,9 +410,8 @@ const PLACEHOLDER_PHRASES = [
   "/host hackathon/outreach write email template",
   "!cd host hackathon",
   "/side-quests finally learn how vim exits",
-  "/admin/taxes reconcile the horror spreadsheet",
-  "../somewhere/quieter",
-  "/reading the-pragmatic-programmer ch. 3",
+  "/taxes reconcile the horror spreadsheet",
+  "/reading if anyone builds it, everyone dies ch. 3",
   "/groceries coffee beans (the good ones)",
   "!help",
 ];
