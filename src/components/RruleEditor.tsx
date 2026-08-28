@@ -191,7 +191,7 @@ export function RruleEditor({
         }
         const o = rule.options;
         const weekdayN: Record<number, number | null> = {};
-        for (const wd of o.byweekday) weekdayN[wd] = null;
+        for (const wd of o.byweekday ?? []) weekdayN[wd] = null;
         for (const pair of o.bynweekday ?? []) {
           if (Array.isArray(pair) && pair.length >= 2) weekdayN[pair[0] as number] = pair[1] as number;
         }
@@ -505,7 +505,9 @@ export function RruleEditor({
         </div>
       )}
 
-      {error && tab === "build" && <p className="border border-foreground/20 px-2 py-1 text-[10px]">{error}</p>}
+      {error && (
+        <p className="border border-foreground/20 px-2 py-1 text-[10px]">{error}</p>
+      )}
 
       <div className="flex items-center gap-2 text-xs">
         <button type="button" onClick={apply} className="border border-foreground bg-foreground px-3 py-1 text-background hover:opacity-90">

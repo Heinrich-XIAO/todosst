@@ -22,11 +22,15 @@ const DOW_LABELS: Record<number, string> = { 1: "mon", 3: "wed", 5: "fri" };
 export function Heatmap({ counts, nowTs, weeks = 53 }: { counts: Map<number, number>; nowTs: number; weeks?: number }) {
   const grid = useMemo(() => {
     const endIdx = dayIndexLocal(nowTs);
-    const startIdx = endIdx - weeks * 7 + 1;
+    // extend to the end (Saturday) of the current week so today is always rendered
+    const endDow = new Date(dayIndexToStart(endIdx)).getDay();
+    const alignedEnd = endIdx + (6 - endDow);
+    const startIdx = alignedEnd - weeks * 7 + 1;
     const startDow = new Date(dayIndexToStart(startIdx)).getDay(); // 0 = Sun
     const aligned = startIdx - startDow;
+    const colCount = Math.ceil((alignedEnd - aligned + 1) / 7);
     const cols: { idx: number; count: number; future: boolean }[][] = [];
-    for (let c = 0; c < weeks; c++) {
+    for (let c = 0; c < colCount; c++) {
       const col: { idx: number; count: number; future: boolean }[] = [];
       for (let r = 0; r < 7; r++) {
         const idx = aligned + c * 7 + r;
