@@ -10,9 +10,6 @@ import {
   generateSaltB64,
   unwrapKeyB64,
   wrapKeyB64,
-  encryptTodo,
-  decryptTodo,
-  type PlainTodo,
 } from "@/lib/crypto";
 import { useConvex, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -31,8 +28,6 @@ type EncryptedState = {
   lock: () => void;
   clearKey: () => void;
   clearStoredKey: () => void;
-  encryptTodo: (todo: PlainTodo) => Promise<{ ciphertext: string; iv: string }>;
-  decryptTodo: (iv: string, ciphertext: string) => Promise<PlainTodo>;
 };
 
 const Ctx = createContext<EncryptedState | null>(null);
@@ -199,22 +194,6 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     clearRememberedKey();
   }, []);
 
-  const encrypt = useCallback(
-    async (todo: PlainTodo) => {
-      if (!key) throw new Error("locked — no encryption key");
-      return await encryptTodo(key, todo);
-    },
-    [key]
-  );
-
-  const decrypt = useCallback(
-    async (iv: string, ciphertext: string) => {
-      if (!key) throw new Error("locked — no encryption key");
-      return await decryptTodo(key, iv, ciphertext);
-    },
-    [key]
-  );
-
   // Auto-unlock from localStorage when "store locally" was checked.
   // If a remembered key exists and its salt matches the server salt, import it.
   useEffect(() => {
@@ -253,10 +232,8 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
       lock,
       clearKey,
       clearStoredKey,
-      encryptTodo: encrypt,
-      decryptTodo: decrypt,
     }),
-    [key, salt, isReady, setKeyFromRaw, resolveVaultPassword, resolveVaultRecovery, lock, clearKey, clearStoredKey, encrypt, decrypt]
+    [key, salt, isReady, setKeyFromRaw, resolveVaultPassword, resolveVaultRecovery, lock, clearKey, clearStoredKey]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

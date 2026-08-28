@@ -246,11 +246,6 @@ export async function decryptNode(
   return n;
 }
 
-// helper to normalize parentId for comparisons
-export function nodeParentId(n: PlainNode): string | null {
-  return n.parentId ?? null;
-}
-
 /**
  * Rebuild a v2 payload from a source node, applying field overrides.
  * Every re-encryption site goes through this so no field can be silently
@@ -261,11 +256,4 @@ export function toPlainNode(
   overrides?: Partial<Omit<PlainNode, "v">>
 ): PlainNode {
   return { v: 2, ...src, ...overrides };
-}
-
-// normalize email/username to the same key used by AuthForm + auth.ts
-export function normalizeEmail(input: string): string {
-  const raw = input.trim().toLowerCase();
-  if (!raw) return raw;
-  return raw.includes("@") ? raw : `${raw}@todosst.local`;
 }
