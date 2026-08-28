@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { stableUserId } from "./userScope";
 
 // Public query: fetch salt by normalized email (no auth required)
 // Allows client to derive key BEFORE sign-in.
@@ -36,7 +37,7 @@ export const getMySalt = query({
     if (!identity) return null;
     const existing = await ctx.db
       .query("userSalts")
-      .withIndex("by_userId", (q) => q.eq("userId", identity.subject))
+      .withIndex("by_userId", (q) => q.eq("userId", stableUserId(identity.subject)))
       .first();
     return existing?.salt ?? null;
   },
@@ -53,12 +54,12 @@ export const ensureSalt = mutation({
     if (args.salt.length > 64) throw new Error("salt too long");
     const existing = await ctx.db
       .query("userSalts")
-      .withIndex("by_userId", (q) => q.eq("userId", identity.subject))
+      .withIndex("by_userId", (q) => q.eq("userId", stableUserId(identity.subject)))
       .first();
     if (existing) return existing.salt;
     const email = (identity.email ?? "").trim().toLowerCase() || undefined;
     await ctx.db.insert("userSalts", {
-      userId: identity.subject,
+      userId: stableUserId(identity.subject),
       email,
       salt: args.salt,
     });

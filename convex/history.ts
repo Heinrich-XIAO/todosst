@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { stableUserId } from "./userScope";
 
 // Per-todo completion history for recurring tasks. Everything (including the
 // todo id it belongs to) is opaque ciphertext — see schema.ts and src/lib/recur.ts.
@@ -14,7 +15,7 @@ export const list = query({
     if (!identity) return [];
     return await ctx.db
       .query("todoHistory")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .withIndex("by_user", (q) => q.eq("userId", stableUserId(identity.subject)))
       .collect();
   },
 });
@@ -31,14 +32,14 @@ export const put = mutation({
     if (args.id) {
       const record = await ctx.db.get(args.id);
       if (!record) throw new Error("history record not found");
-      if (record.userId !== identity.subject) throw new Error("unauthorized");
+      if (record.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
       await ctx.db.patch(args.id, { ciphertext: args.ciphertext, iv: args.iv });
       return args.id;
     }
     return await ctx.db.insert("todoHistory", {
       ciphertext: args.ciphertext,
       iv: args.iv,
-      userId: identity.subject,
+      userId: stableUserId(identity.subject),
     });
   },
 });
@@ -50,7 +51,7 @@ export const remove = mutation({
     if (!identity) throw new Error("not authenticated");
     const record = await ctx.db.get(args.id);
     if (!record) return;
-    if (record.userId !== identity.subject) throw new Error("unauthorized");
+    if (record.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
     await ctx.db.delete(args.id);
   },
 });

@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { stableUserId } from "./userScope";
 
 // List returns opaque ciphertexts — server never sees plaintext.
 // Client decrypts with key derived from password+salt.
@@ -10,7 +11,7 @@ export const list = query({
     if (!identity) return [];
     return await ctx.db
       .query("todos")
-      .withIndex("by_user", (q) => q.eq("userId", identity.subject))
+      .withIndex("by_user", (q) => q.eq("userId", stableUserId(identity.subject)))
       .order("desc")
       .collect();
   },
@@ -29,7 +30,7 @@ export const create = mutation({
     return await ctx.db.insert("todos", {
       ciphertext: args.ciphertext,
       iv: args.iv,
-      userId: identity.subject,
+      userId: stableUserId(identity.subject),
     });
   },
 });
@@ -42,7 +43,7 @@ export const update = mutation({
     if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
     if (!todo) throw new Error("todo not found");
-    if (todo.userId !== identity.subject) throw new Error("unauthorized");
+    if (todo.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
     if (!args.ciphertext || !args.iv) throw new Error("missing ciphertext");
     if (args.ciphertext.length > 8192) throw new Error("ciphertext too long");
     await ctx.db.patch(args.id, { ciphertext: args.ciphertext, iv: args.iv });
@@ -58,7 +59,7 @@ export const toggle = mutation({
     if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
     if (!todo) throw new Error("todo not found");
-    if (todo.userId !== identity.subject) throw new Error("unauthorized");
+    if (todo.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
     // Only for legacy plaintext todos
     if (todo.ciphertext) throw new Error("use encrypted update for e2e todos");
     await ctx.db.patch(args.id, { isCompleted: !todo.isCompleted });
@@ -72,7 +73,7 @@ export const updateTitle = mutation({
     if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
     if (!todo) throw new Error("todo not found");
-    if (todo.userId !== identity.subject) throw new Error("unauthorized");
+    if (todo.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
     if (todo.ciphertext) throw new Error("use encrypted update for e2e todos");
     const title = args.title.trim();
     if (!title) throw new Error("title cannot be empty");
@@ -88,7 +89,7 @@ export const remove = mutation({
     if (!identity) throw new Error("not authenticated");
     const todo = await ctx.db.get(args.id);
     if (!todo) throw new Error("todo not found");
-    if (todo.userId !== identity.subject) throw new Error("unauthorized");
+    if (todo.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
     await ctx.db.delete(args.id);
   },
 });
@@ -105,7 +106,7 @@ export const clearCompleted = mutation({
       for (const id of args.ids) {
         const todo = await ctx.db.get(id);
         if (!todo) continue;
-        if (todo.userId !== identity.subject) throw new Error("unauthorized");
+        if (todo.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
         await ctx.db.delete(id);
         count++;
       }
@@ -115,7 +116,7 @@ export const clearCompleted = mutation({
     const completed = await ctx.db
       .query("todos")
       .withIndex("by_user_completed", (q) =>
-        q.eq("userId", identity.subject).eq("isCompleted", true)
+        q.eq("userId", stableUserId(identity.subject)).eq("isCompleted", true)
       )
       .collect();
     for (const todo of completed) {

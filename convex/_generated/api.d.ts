@@ -10,8 +10,11 @@
 
 import type * as auth from "../auth.js";
 import type * as encryption from "../encryption.js";
+import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as migrate from "../migrate.js";
 import type * as todos from "../todos.js";
+import type * as userScope from "../userScope.js";
 import type * as users from "../users.js";
 
 import type {
@@ -23,8 +26,11 @@ import type {
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   encryption: typeof encryption;
+  history: typeof history;
   http: typeof http;
+  migrate: typeof migrate;
   todos: typeof todos;
+  userScope: typeof userScope;
   users: typeof users;
 }>;
 
