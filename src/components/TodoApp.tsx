@@ -47,6 +47,7 @@ import { UnlockScreen } from "./UnlockScreen";
 import { MetadataPanel } from "./MetadataPanel";
 import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
 import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
+import { NoticeDialog } from "./NoticeDialog";
 
 type Filter = "all" | "active" | "completed";
 
@@ -398,6 +399,7 @@ function TodoTask() {
   // where the dragged row would land: sibling above/below, or nested (Alt-held drop)
   const [dropHint, setDropHint] = useState<{ id: string; pos: DropPos } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{ snap: UndoSnapshot; ttl: number } | null>(null);
   const [showVault, setShowVault] = useState(false);
   const newRootInputRef = useRef<HTMLInputElement>(null);
@@ -828,7 +830,7 @@ function TodoTask() {
         createdCount++;
       }
       if (createdCount === 0) {
-        alert(DUPLICATE_MSG);
+        setNotice(DUPLICATE_MSG);
         return;
       }
       // ensure all ancestors of newly created path are un-collapsed (visible)
@@ -848,7 +850,7 @@ function TodoTask() {
     const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
     const siblings = childrenOf(tree.roots, tree.map, targetParentId);
     if (siblings.some((r) => r.title === title)) {
-      alert(DUPLICATE_MSG);
+      setNotice(DUPLICATE_MSG);
       return;
     }
     const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
@@ -871,7 +873,7 @@ function TodoTask() {
     const parent = tree.map.get(parentId);
     if (!parent) return;
     if (parent.children.some((c) => c.title === title)) {
-      alert(DUPLICATE_MSG);
+      setNotice(DUPLICATE_MSG);
       return;
     }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
@@ -979,7 +981,7 @@ function TodoTask() {
       return;
     }
     if (v !== cur.title && nodes?.some((n) => n._id !== id && (n.parentId ?? null) === (cur.parentId ?? null) && n.title === v)) {
-      alert(DUPLICATE_MSG);
+      setNotice(DUPLICATE_MSG);
       return;
     }
     const updated = toPlainNode(cur, { title: v });
@@ -1112,7 +1114,7 @@ function TodoTask() {
     if (draggedTree) {
       const desc = new Set(collectDescendants(draggedTree).map(String));
       if (targetParentId && desc.has(targetParentId)) {
-        alert("cannot move a task into its own sub-task");
+        setNotice("cannot move a task into its own sub-task");
         return;
       }
     }
@@ -1122,7 +1124,7 @@ function TodoTask() {
     // siblings excluding dragged if same parent
     const filtered = siblings.filter((s) => s._id !== draggedId);
     if (filtered.some((s) => s.title === dragged.title)) {
-      alert(`${DUPLICATE_MSG} at the destination`);
+      setNotice(`${DUPLICATE_MSG} at the destination`);
       return;
     }
     let newOrder: number;
@@ -1445,6 +1447,8 @@ function TodoTask() {
       )}
 
       {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
+
+      {notice && <NoticeDialog message={notice} onClose={() => setNotice(null)} />}
 
       {undoState && (
         <UndoToast
