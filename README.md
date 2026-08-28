@@ -24,7 +24,7 @@ One input, a few grammars (all tab-completable with ↑↓):
 
 Recurrence tokens: `~daily` `~weekly` `~weekdays` `~monthly` `~yearly`, or `~every 3d`, `~every 2w mon,thu`, `~every 3m`, `~every 1y` (spaces optional). Rules can be edited later in the task's details panel via the graphical + text RRULE editor.
 
-Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc` cancels edits/dialogs, double-click a folder to descend into it, drag tasks to re-parent.
+Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc` cancels edits/dialogs, double-click a folder to descend into it. Drag a task to reorder it among siblings (upper half = above, lower half = below) or hold `Alt` while dropping to nest it as a child. Deleting is undoable for 10 seconds.
 
 ## Recurrence model
 

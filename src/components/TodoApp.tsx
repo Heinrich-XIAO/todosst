@@ -48,6 +48,15 @@ type UndoSnapshot = {
 
 const UNDO_TTL_SECONDS = 10;
 
+type DropPos = "before" | "after" | "child";
+
+/** Upper half of the row inserts above, lower half below; Alt means "drop as child". */
+function dropPosFor(e: React.DragEvent): DropPos {
+  if (e.altKey) return "child";
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
+
 function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {
   const map = new Map<string, TreeNode>();
   // init
@@ -507,6 +516,8 @@ function TodoTask() {
   const [addChildParent, setAddChildParent] = useState<Id<"todos"> | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
+  // where the dragged row would land: sibling above/below, or nested (Alt-held drop)
+  const [dropHint, setDropHint] = useState<{ id: string; pos: DropPos } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
   const [undoState, setUndoState] = useState<{ snap: UndoSnapshot; ttl: number } | null>(null);
   const newRootInputRef = useRef<HTMLInputElement>(null);
@@ -1385,6 +1396,19 @@ function TodoTask() {
   }
 
   // Recursive renderer
+  function isValidDropTarget(node: TreeNode): boolean {
+    if (!dragId) return false;
+    if (dragId === node._id) return false;
+    const draggedTree = tree.map.get(dragId);
+    if (draggedTree) {
+      const desc = collectDescendants(draggedTree).map(String);
+      // cannot drop onto the dragged subtree, nor as a sibling inside it
+      if (desc.includes(node._id as string)) return false;
+      if (node.parentId && desc.includes(node.parentId)) return false;
+    }
+    return true;
+  }
+
   function RenderNode({ node }: { node: TreeNode }) {
     const isExpanded = !collapsed.has(node._id) || !!search; // folders open by default; search auto-expands
     const isEditing = editingId === node._id;
@@ -1406,21 +1430,55 @@ function TodoTask() {
           setDragId(node._id);
           e.dataTransfer.effectAllowed = "move";
         }}
-        onDragEnd={() => setDragId(null)}
+        onDragEnd={() => {
+          setDragId(null);
+          setDropHint(null);
+        }}
         onDragOver={(e) => {
-          if (dragId && dragId !== node._id) e.preventDefault();
+          if (!dragId || !isValidDropTarget(node)) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          const pos = dropPosFor(e);
+          setDropHint((prev) => (prev?.id === node._id && prev.pos === pos ? prev : { id: node._id as string, pos }));
+        }}
+        onDragLeave={(e) => {
+          const next = e.relatedTarget as Node | null;
+          if (!next || !(e.currentTarget as HTMLElement).contains(next)) {
+            setDropHint((prev) => (prev?.id === node._id ? null : prev));
+          }
         }}
         onDrop={(e) => {
           e.preventDefault();
-          if (!dragId) return;
-          // drop as child of this node (append)
-          handleMove(dragId, node._id, node.children.length);
+          if (dragId && isValidDropTarget(node)) {
+            const pos = dropPosFor(e);
+            if (pos === "child") {
+              // nested under this node (append)
+              handleMove(dragId, node._id as string, node.children.length);
+            } else {
+              // sibling insertion — index computed against siblings excluding the dragged node
+              const siblings = node.parentId === null ? tree.roots : (tree.map.get(node.parentId)?.children ?? []);
+              const filtered = siblings.filter((s) => s._id !== dragId);
+              const idx = filtered.findIndex((s) => s._id === node._id);
+              handleMove(dragId, node.parentId, pos === "before" ? idx : idx + 1);
+            }
+          }
           setDragId(null);
+          setDropHint(null);
         }}
         className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
         style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
       >
-        <div className="flex items-center gap-2 py-2 pr-3 text-sm">
+        <div
+          className={`flex items-center gap-2 py-2 pr-3 text-sm ${
+            dropHint?.id === node._id
+              ? dropHint.pos === "child"
+                ? "bg-foreground/10"
+                : dropHint.pos === "before"
+                  ? "border-t-2 border-t-foreground"
+                  : "border-b-2 border-b-foreground"
+              : ""
+          }`}
+        >
           <button
             onClick={() => hasChildren && toggleExpanded(node._id)}
             className={`h-4 w-4 shrink-0 flex items-center justify-center text-[10px] ${hasChildren ? "opacity-60 hover:opacity-100" : "opacity-0"}`}
