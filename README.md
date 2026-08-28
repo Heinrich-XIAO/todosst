@@ -1,22 +1,44 @@
-# todosst — Next.js + Convex + Convex Auth
+# todosst — an E2E-encrypted, hierarchical todo vault
 
-A minimal, real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** (email/password) — works on any `*.vercel.app` domain, no custom domain required.
+A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — where every task is end-to-end encrypted before it leaves your browser, folders are just tasks, and the URL is your working directory.
 
-![Next.js](https://img.shields.io/badge/Next.js-16-black) ![Convex](https://img.shields.io/badge/Convex-1.45-orange) ![Convex%20Auth](https://img.shields.io/badge/Convex%20Auth-Password-green)
+![Next.js](https://img.shields.io/badge/Next.js-16-black) ![Convex](https://img.shields.io/badge/Convex-1.45-orange) ![E2E](https://img.shields.io/badge/E2E-AES--GCM--256-green)
 
-Features:
-- 🔐 Secure email/password auth via `@convex-dev/auth` (scrypt hashing, HttpOnly SameSite=Lax cookies, CSRF-safe)
-- 🌐 Works on `*.vercel.app` out of the box — no Clerk, no custom domain
-- ⚡ Real-time sync with Convex (queries + mutations + indexes)
-- ✏️ Create / toggle / edit (double-click) / delete / clear completed
-- 🔍 Filter: All / Active / Completed + remaining count
-- 🎨 Polished Tailwind v4 UI, responsive
+- 🔐 **End-to-end encrypted** — titles, structure, metadata, and completion history are AES-GCM encrypted client-side (PBKDF2-SHA-256, 310k iterations, per-user salt). The server only ever sees ciphertext.
+- 🌲 **Tasks are directories** — any task can have sub-tasks. Navigate with the URL (`/host hackathon/outreach`), breadcrumbs, double-click, or `!cd`.
+- ⌨️ **Command-style input** — one input box creates paths, navigates, and attaches recurrence rules, with tab-completion (intellisense).
+- 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox or tally-count modes, thresholds, grace hours, and a GitHub-style past-year heatmap per task.
+- ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
+
+## The input box
+
+One input, a few grammars (all tab-completable with ↑↓):
+
+| Input | What it does |
+| --- | --- |
+| `buy coffee beans` | creates a task in the current directory |
+| `/host hackathon/outreach write email template` | creates (or reuses) the nested path, final segment = task |
+| `/taxes task without slash` | two-segment shorthand: first word = existing/new dir, rest = task |
+| `!cd ../side-quests` | navigates the working directory (relative/absolute, `..`, `.` supported) |
+| `stretch ~daily` | creates a recurring task (recurrence token is stripped from the title) |
+
+Recurrence tokens: `~daily` `~weekly` `~weekdays` `~monthly` `~yearly`, or `~every 3d`, `~every 2w mon,thu`, `~every 3m`, `~every 1y` (spaces optional). Rules can be edited later in the task's details panel via the graphical + text RRULE editor.
+
+Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc` cancels edits/dialogs, double-click a folder to descend into it, drag tasks to re-parent.
+
+## Recurrence model
+
+- A recurring task is **one node** with a stable `/path`. Its RRULE defines occurrence windows (local calendar days).
+- The UI always shows the **current window**; past windows are frozen history and feed the heatmap.
+- Completions are stored as **counts per window**. Checkbox mode = checked iff `count >= threshold`; tally mode = click to increment/decrement. Switching modes never loses data.
+- **Grace hours** (default 4, max 48) let a count after midnight still land in yesterday's window.
 
 ## Stack
 
 - **Next.js 16** (App Router, `src/` dir, Turbopack)
-- **Convex** for backend (`convex/schema.ts`, `convex/todos.ts`, `convex/auth.config.ts`, `convex/auth.ts`)
+- **Convex** backend: `convex/schema.ts` (todos + todoHistory + userSalts), `convex/todos.ts`, `convex/history.ts`, `convex/encryption.ts`
 - **Convex Auth** with `Password` provider (`@convex-dev/auth`, `@auth/core`)
+- **rrule** (RFC 5545) for occurrence windows; Tailwind v4 UI
 
 ## Getting Started
 
@@ -27,21 +49,15 @@ bunx convex dev --once        # generates types, pushes schema (local at 127.0.0
 bun dev                       # http://localhost:3000
 ```
 
-No Clerk setup needed. Just run `npx @convex-dev/auth` once (already done) — it creates `convex/auth.ts`, `convex/http.ts`, and sets `SITE_URL`, `JWKS`, `JWT_PRIVATE_KEY` in your Convex deployment.
+Sign up with any email + password (8–128 chars). Your vault password **is** your encryption password — keep it safe.
 
-### Optional — email (Resend) for verification / password reset
-
-Convex Auth Password supports `verify` and `reset` via Resend. To enable:
+### Tests
 
 ```bash
-bun add resend @oslojs/crypto
-# create convex/ResendOTP.ts per https://labs.convex.dev/auth/config/passwords
-# then in convex/auth.ts: Password({ verify: ResendOTP, reset: ResendOTPPasswordReset })
-bunx convex env set AUTH_RESEND_KEY re_xxx
-bunx convex env set AUTH_EMAIL_FROM "Todos <onboarding@resend.dev>"
+bun test                      # unit tests (src/lib/*.test.ts)
+bun run lint
+bunx tsc --noEmit
 ```
-
-Without it, sign-up/sign-in works purely with email+password — perfect for `*.vercel.app`.
 
 ## Deploy to Vercel
 
@@ -54,18 +70,16 @@ Without it, sign-up/sign-in works purely with email+password — perfect for `*.
    JWT_PRIVATE_KEY=...
    JWKS=...
    ```
-   (plus optional `AUTH_RESEND_KEY` if using Resend).
-
 4. Deploy: `vercel` or push to GitHub. Works on `*.vercel.app` — no custom domain required.
 
 ## Security
 
-- Passwords never stored plain-text — `Password` provider hashes with **scrypt** (via `@auth/core`).
-- Validation: email normalized to lowercase + regex, password `8–128` chars, title `1–200` chars, all trimmed.
-- Authorization: every `convex/todos.ts:20` checks `ctx.auth.getUserIdentity()` and verifies `todo.userId === identity.subject` (prevents IDOR).
-- Cookies: `HttpOnly`, `Secure` (in prod), `SameSite=Lax` via Convex Auth; CSRF protected (mutations only via POST, `convexAuthNextjsMiddleware` at `src/proxy.ts:1`).
-- Rate limiting: `authRateLimits` table auto-limits failed sign-ins.
-- No user enumeration: generic “Invalid email or password” errors in `src/components/AuthForm.tsx:48`.
+- **Encryption**: every task payload (`{v:2, title, isCompleted, parentId, order, metadata}`) and every history record is AES-GCM-256 encrypted in the browser (`src/lib/crypto.ts`). The key is derived from your password + a per-user 16-byte salt (PBKDF2-SHA-256, 310k iterations) and lives only in memory. "Store locally" persists the derived key in localStorage for auto-unlock on trusted devices; `lock` / `forget device` clears it.
+- **What the server can see**: ciphertext + IV + `userId` for each todo, salt, and auth tables. It cannot correlate history records to specific todos — the todoId lives inside the ciphertext.
+- **Auth**: email/password via `@convex-dev/auth` (scrypt hashing, HttpOnly SameSite=Lax cookies, CSRF-safe mutations, rate-limited failed sign-ins).
+- **Authorization**: every query/mutation checks `ctx.auth.getUserIdentity()` and scopes by stable `userId` (prevents IDOR).
+- **Validation**: email normalized to lowercase, password 8–128 chars, titles 1–200 chars, all trimmed.
+- ⚠️ **No password reset** — with E2E encryption, nobody can recover your vault if you lose the password. (See roadmap: recovery keys.)
 
 ## Project structure
 
@@ -74,29 +88,30 @@ convex/
   auth.config.ts   — { domain: process.env.CONVEX_SITE_URL } for Convex Auth
   auth.ts          — convexAuth({ providers: [Password] })
   http.ts          — auth.addHttpRoutes
-  schema.ts        — ...authTables + todos table
-  todos.ts         — list/create/toggle/updateTitle/remove/clearCompleted (all per-user)
-  users.ts         — viewer query (current user)
+  schema.ts        — authTables + todos + todoHistory + userSalts
+  todos.ts         — list/create/update/remove/clearCompleted (per-user, ciphertext payloads)
+  history.ts       — per-todo E2E-encrypted completion history (list/put/remove)
+  encryption.ts    — per-user salt get/ensure (salt is public, not secret)
+  migrate.ts       — one-time userId normalization
+  users.ts         — viewer query
 src/
   app/
     layout.tsx     — ConvexAuthNextjsServerProvider + ConvexClientProvider
-    page.tsx       — Header + TodoApp (force-dynamic)
+    [[...slug]]/page.tsx — catch-all: URL path = current working directory
     signin/page.tsx — AuthForm
   components/
     ConvexClientProvider.tsx — ConvexAuthNextjsProvider
-    Header.tsx     — Authenticated/Unauthenticated + signOut
-    AuthForm.tsx   — email/password tabs, validation, useAuthActions().signIn("password")
-    TodoApp.tsx    — input, list, filters, inline edit, realtime (Authenticated/Unauthenticated)
+    EncryptionContext.tsx    — vault key state, remember-me, lock/unlock
+    TodoApp.tsx    — tree rendering, command input, filters, details panel
+    RruleEditor.tsx — graphical + text RRULE editor
+    Heatmap.tsx    — GitHub-style past-year heatmap
+    Header.tsx, AuthForm.tsx, Logo.tsx
+  lib/
+    crypto.ts      — PBKDF2 + AES-GCM primitives, payload schemas
+    recur.ts       — windowed recurrence engine, input syntax, counts codec
+    cdPath.ts      — `!cd` path resolution
+    slashPath.ts   — `/path` creation parsing
   proxy.ts         — convexAuthNextjsMiddleware
-```
-
-## Scripts
-
-```bash
-bun dev              # next dev (turbopack)
-bun run build        # next build
-bunx convex dev      # watch convex functions
-bunx convex env list # list deployment env vars
 ```
 
 ## License
