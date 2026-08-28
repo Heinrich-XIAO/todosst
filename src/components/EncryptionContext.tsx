@@ -11,7 +11,7 @@ import {
   unwrapKeyB64,
   wrapKeyB64,
 } from "@/lib/crypto";
-import { useConvex, useQuery } from "convex/react";
+import { useConvex, useQuery, type ConvexReactClient } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 type EncryptedState = {
@@ -50,6 +50,23 @@ export function hasRecoverySession(): boolean {
   } catch {
     return false;
   }
+}
+
+// After signIn() resolves, the auth token can still be propagating to the convex
+// client (the backend logs `auth:store` signIn → calls → refreshSession). Calls
+// fired in that window run unauthenticated: `vault:getKeyRecord` then returns
+// null (pushing an existing account down the wrong "adopt key" path) and
+// mutations throw "not authenticated". Poll until the token is actually applied.
+export async function waitForAuth(convex: ConvexReactClient, attempts = 24): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      if (await convex.query(api.auth.isAuthenticated)) return;
+    } catch {
+      // transient — token swap or dev hot reload; keep waiting
+    }
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error("sign-in is taking longer than expected — please try again.");
 }
 
 export function clearRecoverySession() {
@@ -131,6 +148,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   // before the master-key design simply adopt their password-derived key as M.
   const resolveVaultPassword = useCallback(
     async (password: string, saltB64: string, storeLocally: boolean) => {
+      await waitForAuth(convex);
       const kpw = await deriveKey(password, saltB64);
       const rec = (await convex.query(api.vault.getKeyRecord, { kind: "password" })) as {
         iv: string;
@@ -165,6 +183,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   // Resolve the vault master key using a recovery code.
   const resolveVaultRecovery = useCallback(
     async (code: string, saltB64: string, storeLocally: boolean) => {
+      await waitForAuth(convex);
       const kr = await deriveRecoveryKey(code, saltB64);
       const rec = (await convex.query(api.vault.getKeyRecord, { kind: "recovery" })) as {
         iv: string;
