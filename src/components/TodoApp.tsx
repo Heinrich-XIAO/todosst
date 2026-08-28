@@ -186,7 +186,7 @@ function UnlockScreen() {
     <div className="w-full max-w-[420px] border border-foreground bg-background p-6">
       <h2 className="text-sm font-medium">unlock vault</h2>
       <p className="mt-1 text-xs opacity-60">
-        your queues are end-to-end encrypted — structure, titles, and metadata are opaque to the server. enter
+        your tasks are end-to-end encrypted — structure, titles, and metadata are opaque to the server. enter
         password to derive the key.
       </p>
       <form onSubmit={handleUnlock} className="mt-4 space-y-3">
@@ -455,7 +455,7 @@ function TypewriterPlaceholder({ phrases, active }: { phrases: string[]; active:
   return <>{text}</>;
 }
 
-function TodoQueue() {
+function TodoTask() {
   const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
   const [hasRemembered, setHasRemembered] = useState(false);
   useEffect(() => {
@@ -1007,7 +1007,7 @@ function TodoQueue() {
       setNewRootTitle("");
       return;
     }
-    // fallback: single task/queue — creates in current directory (pwd) when scoped
+    // fallback: single task — creates in current directory (pwd) when scoped
     const title = base;
     if (title.length > 200) return;
     const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
@@ -1232,7 +1232,7 @@ function TodoQueue() {
     if (draggedTree) {
       const desc = new Set(collectDescendants(draggedTree).map(String));
       if (targetParentId && desc.has(targetParentId)) {
-        alert("cannot move a queue into its own sub-queue");
+        alert("cannot move a task into its own sub-task");
         return;
       }
     }
@@ -1473,7 +1473,7 @@ function TodoQueue() {
                   setAddChildTitle("");
                 }
               }}
-              placeholder="new sub-queue…"
+              placeholder="new sub-task…"
               maxLength={200}
               className="flex-1 border-b border-foreground bg-transparent py-1 text-xs focus:outline-none"
             />
@@ -1685,14 +1685,14 @@ function TodoQueue() {
           <p className="px-3 py-8 text-sm opacity-60">loading…</p>
         ) : listFlat.length === 0 ? (
           <div className="px-3 py-12 text-sm">
-            <p>queue empty — add a top-level queue.</p>
+            <p>tasks empty — add a top-level task.</p>
             <p className="mt-1 text-xs opacity-60">later add children via +child</p>
           </div>
         ) : !currentDirInfo.exists ? (
           <p className="px-3 py-8 text-sm opacity-60">directory not found.</p>
         ) : visibleRoots.length === 0 ? (
           <div className="px-3 py-8 text-sm opacity-60">
-            {currentDirInfo.id === null ? "no matching queues." : "empty — add a task in this directory."}
+            {currentDirInfo.id === null ? "no matching tasks." : "empty — add a task in this directory."}
           </div>
         ) : decryptError ? (
           <div className="border-b border-foreground bg-background px-3 py-2 text-xs">{decryptError}</div>
@@ -1729,7 +1729,7 @@ function TodoQueue() {
             <p className="mt-3 font-mono text-xs leading-relaxed opacity-70">
               {confirmCount > 1
                 ? `// ${confirmCount - 1} nested node${confirmCount - 1 === 1 ? "" : "s"} terminated alongside it`
-                : "// queue will be purged"}
+                : "// task will be purged"}
               — this operation is irreversible.
             </p>
             <div className="mt-6 flex justify-end gap-2 font-mono text-xs">
@@ -1775,7 +1775,7 @@ export function TodoApp() {
         <AuthForm />
       </Unauthenticated>
       <Authenticated>
-        <TodoQueue />
+        <TodoTask />
       </Authenticated>
     </>
   );
