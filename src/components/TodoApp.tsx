@@ -401,6 +401,61 @@ function MetadataPanel({
   );
 }
 
+const PLACEHOLDER_PHRASES = [
+  "/host hackathon/outreach write email template",
+  "!cd host hackathon",
+  "/side-quests finally learn how vim exits",
+  "/admin/taxes reconcile the horror spreadsheet",
+  "../somewhere/quieter",
+  "/reading the-pragmatic-programmer ch. 3",
+  "/groceries coffee beans (the good ones)",
+  "!help",
+];
+
+function TypewriterPlaceholder({ phrases, active }: { phrases: string[]; active: boolean }) {
+  const [text, setText] = useState("");
+  const phraseIdx = useRef(0);
+  const charIdx = useRef(0);
+  const deleting = useRef(false);
+
+  useEffect(() => {
+    if (!active) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      if (reduced) {
+        setText(phrases[0]);
+        return;
+      }
+      const phrase = phrases[phraseIdx.current % phrases.length];
+      if (!deleting.current) {
+        charIdx.current += 1;
+        setText(phrase.slice(0, charIdx.current));
+        if (charIdx.current >= phrase.length) {
+          deleting.current = true;
+          timer = setTimeout(tick, 1700);
+        } else {
+          timer = setTimeout(tick, 38 + Math.random() * 36);
+        }
+      } else {
+        charIdx.current -= 1;
+        setText(phrase.slice(0, charIdx.current));
+        if (charIdx.current <= 0) {
+          deleting.current = false;
+          phraseIdx.current += 1;
+          timer = setTimeout(tick, 420);
+        } else {
+          timer = setTimeout(tick, 24);
+        }
+      }
+    };
+    timer = setTimeout(tick, 350);
+    return () => clearTimeout(timer);
+  }, [active, phrases]);
+
+  return <>{text}</>;
+}
+
 function TodoQueue() {
   const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
   const [hasRemembered, setHasRemembered] = useState(false);
@@ -1518,10 +1573,17 @@ function TodoQueue() {
                   setIsSlashFocused(false);
                 }
               }}
-              placeholder="/host hackathon/outreach write email template"
               maxLength={500}
               className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
             />
+            {newRootTitle === "" && (
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-nowrap py-1 text-sm text-foreground/40"
+              >
+                <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={newRootTitle === ""} />
+              </span>
+            )}
             {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
               <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
                 <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
