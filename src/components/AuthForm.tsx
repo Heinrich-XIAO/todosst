@@ -14,21 +14,25 @@ import { deriveRecoveryKey, recoveryVerifier } from "@/lib/crypto";
 
 type Mode = "signIn" | "signUp" | "recover";
 
+// 3-64 chars, lowercased, letters/digits/dot/underscore/hyphen — mirrors the
+// server-side username check in convex/auth.ts.
+const USERNAME_PATTERN = /^[a-z0-9._-]{3,64}$/;
+
 export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const { signIn } = useAuthActions();
   const convex = useConvex();
   const { resolveVaultPassword, resolveVaultRecovery, clearKey } = useEncryption();
   const [mode, setMode] = useState<Mode>(defaultMode);
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function fetchSalt(normalizedEmail: string): Promise<string | null> {
+  async function fetchSalt(name: string): Promise<string | null> {
     try {
-      return (await convex.query(api.encryption.getSalt, { email: normalizedEmail })) as string | null;
+      return (await convex.query(api.encryption.getSalt, { username: name })) as string | null;
     } catch {
       return null;
     }
@@ -37,34 +41,28 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    const raw = email.trim().toLowerCase();
-    if (raw.length < 3) {
-      setError("enter at least 3 characters.");
+    const name = username.trim().toLowerCase();
+    if (!USERNAME_PATTERN.test(name)) {
+      setError("username must be 3-64 characters (letters, digits, . _ -).");
       return;
     }
-    if (raw.length > 64) {
-      setError("too long.");
-      return;
-    }
-    // allow username or email — if no @, treat as username and map to <username>@todosst.local
-    const normalizedEmail = raw.includes("@") ? raw : `${raw}@todosst.local`;
 
     setLoading(true);
     try {
       if (mode === "recover") {
-        // ---- recovery sign-in: email + recovery code ----
+        // ---- recovery sign-in: username + recovery code ----
         if (code.trim().length < 10) {
           setError("enter your recovery key.");
           setLoading(false);
           return;
         }
-        const salt = await fetchSalt(normalizedEmail);
+        const salt = await fetchSalt(name);
         if (!salt) throw new Error("no vault found for this account.");
         // verifier = sha256(PBKDF2(code, salt)) — the raw key never leaves the client
         const kr = await deriveRecoveryKey(code, salt);
         const verifier = await recoveryVerifier(kr);
         const formData = new FormData();
-        formData.set("email", normalizedEmail);
+        formData.set("username", name);
         formData.set("verifier", verifier);
         formData.set("flow", "signIn");
         await signIn("recovery", formData);
@@ -91,11 +89,11 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
         setLoading(false);
         return;
       }
-      let salt = await fetchSalt(normalizedEmail);
-      if (salt) setCachedSalt(normalizedEmail, salt);
+      let salt = await fetchSalt(name);
+      if (salt) setCachedSalt(name, salt);
 
       const formData = new FormData();
-      formData.set("email", normalizedEmail);
+      formData.set("username", name);
       formData.set("password", password);
       formData.set("flow", mode);
       await signIn("password", formData);
@@ -129,7 +127,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found")) {
         setError(
           mode === "recover"
-            ? "invalid email or recovery key."
+            ? "invalid username or recovery key."
             : mode === "signIn"
               ? "invalid username or password."
               : "account already exists. try signing in."
@@ -173,7 +171,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "recover" && (
             <p className="text-xs leading-relaxed opacity-60">
-              forgot your password? sign in with your email and the recovery key you generated while unlocked. the
+              forgot your password? sign in with your username and the recovery key you generated while unlocked. the
               recovery key also unlocks the vault.
             </p>
           )}
@@ -185,9 +183,9 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
               required
               minLength={3}
               maxLength={64}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your name"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="username"
               className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
             />
           </label>

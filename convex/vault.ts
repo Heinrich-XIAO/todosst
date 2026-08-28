@@ -126,15 +126,26 @@ export const clearRecovery = mutation({
 
 // ---- internals used by the recovery sign-in provider ----
 
-export const internalUserIdByEmail = internalQuery({
-  args: { email: v.string() },
+export const internalUserIdByUsername = internalQuery({
+  args: { username: v.string() },
   handler: async (ctx, args) => {
-    const email = args.email.trim().toLowerCase();
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", email))
+    const username = args.username.trim().toLowerCase();
+    const account = await ctx.db
+      .query("authAccounts")
+      .withIndex("providerAndAccountId", (q) => q.eq("provider", "password").eq("providerAccountId", username))
       .first();
-    return user?._id ?? null;
+    return account?.userId ?? null;
+  },
+});
+
+export const internalUsernameForUser = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const account = await ctx.db
+      .query("authAccounts")
+      .withIndex("userIdAndProvider", (q) => q.eq("userId", args.userId).eq("provider", "password"))
+      .first();
+    return account?.providerAccountId ?? null;
   },
 });
 
@@ -186,14 +197,13 @@ export const changePassword = action({
     }
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("not authenticated");
-    const identity = await ctx.auth.getUserIdentity();
-    const email = (identity?.email ?? "").trim().toLowerCase();
-    if (!email) throw new Error("account has no email — cannot change password");
+    const username = await ctx.runQuery(internal.vault.internalUsernameForUser, { userId });
+    if (!username) throw new Error("account has no username — cannot change password");
     if (args.currentPassword) {
       try {
         await retrieveAccount(ctx, {
           provider: "password",
-          account: { id: email, secret: args.currentPassword },
+          account: { id: username, secret: args.currentPassword },
         });
       } catch {
         throw new Error("wrong current password");
@@ -204,7 +214,7 @@ export const changePassword = action({
     }
     await modifyAccountCredentials(ctx, {
       provider: "password",
-      account: { id: email, secret: newPassword },
+      account: { id: username, secret: newPassword },
     });
   },
 });

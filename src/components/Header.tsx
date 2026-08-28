@@ -23,7 +23,7 @@ export function Header() {
         <div className="flex items-center gap-3 text-sm">
           <ThemeToggle />
           <Authenticated>
-            <span className="hidden max-w-[180px] truncate opacity-60 sm:inline">{viewer?.email}</span>
+            <span className="hidden max-w-[180px] truncate opacity-60 sm:inline">{viewer?.name}</span>
             <button
               onClick={() => {
                 clearKey();

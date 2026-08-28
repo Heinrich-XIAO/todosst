@@ -1,31 +1,20 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { stableUserId } from "./userScope";
+import type { Id } from "./_generated/dataModel";
 
-// Public query: fetch salt by normalized email (no auth required)
+// Public query: fetch salt by username (no auth required)
 // Allows client to derive key BEFORE sign-in.
 export const getSalt = query({
-  args: { email: v.string() },
+  args: { username: v.string() },
   handler: async (ctx, args) => {
-    const email = args.email.trim().toLowerCase();
-    if (!email) return null;
-    // First try userSalts by_email index
-    const byEmail = await ctx.db
+    const username = args.username.trim().toLowerCase();
+    if (!username) return null;
+    const row = await ctx.db
       .query("userSalts")
-      .withIndex("by_email", (q) => q.eq("email", email))
+      .withIndex("by_username", (q) => q.eq("username", username))
       .first();
-    if (byEmail) return byEmail.salt;
-    // Fallback: try lookup via users table then by_userId
-    const user = await ctx.db
-      .query("users")
-      .withIndex("email", (q) => q.eq("email", email))
-      .first();
-    if (!user) return null;
-    const byUserId = await ctx.db
-      .query("userSalts")
-      .withIndex("by_userId", (q) => q.eq("userId", user._id))
-      .first();
-    return byUserId?.salt ?? null;
+    return row?.salt ?? null;
   },
 });
 
@@ -57,10 +46,12 @@ export const ensureSalt = mutation({
       .withIndex("by_userId", (q) => q.eq("userId", stableUserId(identity.subject)))
       .first();
     if (existing) return existing.salt;
-    const email = (identity.email ?? "").trim().toLowerCase() || undefined;
+    const user = await ctx.db.get(stableUserId(identity.subject) as Id<"users">);
+    const username = (user?.name ?? "").trim().toLowerCase();
+    if (!username) throw new Error("account has no username");
     await ctx.db.insert("userSalts", {
       userId: stableUserId(identity.subject),
-      email,
+      username,
       salt: args.salt,
     });
     return args.salt;

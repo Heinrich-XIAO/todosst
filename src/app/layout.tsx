@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "todosst",
-  description: "A minimal, fast todo app built with Next.js, Convex, and Convex Auth (email/password)",
+  description: "A minimal, fast todo app built with Next.js, Convex, and Convex Auth (username/password)",
 };
 
 const themeInitScript = `(function(){try{var t=localStorage.getItem("todosst-theme"),d=document.documentElement;if(t==="light"||t==="dark"){d.classList.remove("light","dark");d.classList.add(t);}}catch(e){}})();`;

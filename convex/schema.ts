@@ -23,11 +23,11 @@ export default defineSchema({
   // per-user PBKDF2 salt (public, not secret) for E2E key derivation
   userSalts: defineTable({
     userId: v.string(),
-    email: v.optional(v.string()),
+    username: v.string(),
     salt: v.string(), // base64 16 bytes
   })
     .index("by_userId", ["userId"])
-    .index("by_email", ["email"]),
+    .index("by_username", ["username"]),
 
   // vault master key, wrapped (AES-GCM) once per unlock method.
   // kind "password": wrapped with PBKDF2(password, salt)
@@ -40,7 +40,7 @@ export default defineSchema({
   }).index("by_user_kind", ["userId", "kind"]),
 
   // account-level recovery: sha256 of the recovery-derived key, so the user can
-  // sign in (not just unlock) with email + recovery code. The raw key never
+  // sign in (not just unlock) with username + recovery code. The raw key never
   // reaches the server, so this hash cannot unwrap the vault.
   recoveryKeys: defineTable({
     userId: v.string(),

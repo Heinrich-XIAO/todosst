@@ -52,7 +52,7 @@ bunx convex dev --once        # generates types, pushes schema (local at 127.0.0
 bun dev                       # http://localhost:3000
 ```
 
-Sign up with any email + password (8–128 chars). Your vault password **is** your encryption password — keep it safe.
+Sign up with any username + password (8–128 chars). Your vault password **is** your encryption password — keep it safe.
 
 ### Tests
 
@@ -79,9 +79,9 @@ bunx tsc --noEmit
 
 - **Encryption**: every task payload (`{v:2, title, isCompleted, parentId, order, metadata}`) and every history record is AES-GCM-256 encrypted in the browser (`src/lib/crypto.ts`). The key is derived from your password + a per-user 16-byte salt (PBKDF2-SHA-256, 310k iterations) and lives only in memory. "Store locally" persists the derived key in localStorage for auto-unlock on trusted devices; `lock` / `forget device` clears it.
 - **What the server can see**: ciphertext + IV + `userId` for each todo, salt, and auth tables. It cannot correlate history records to specific todos — the todoId lives inside the ciphertext.
-- **Auth**: email/password via `@convex-dev/auth` (scrypt hashing, HttpOnly SameSite=Lax cookies, CSRF-safe mutations, rate-limited failed sign-ins).
+- **Auth**: username/password via `@convex-dev/auth` (scrypt hashing, HttpOnly SameSite=Lax cookies, CSRF-safe mutations, rate-limited failed sign-ins).
 - **Authorization**: every query/mutation checks `ctx.auth.getUserIdentity()` and scopes by stable `userId` (prevents IDOR).
-- **Validation**: email normalized to lowercase, password 8–128 chars, titles 1–200 chars, all trimmed.
+- **Validation**: username normalized to lowercase (3–64 chars), password 8–128 chars, titles 1–200 chars, all trimmed.
 - **Recovery**: the vault master key is wrapped once per unlock method. "Change password" re-keys only the wrapper (data untouched, other devices unaffected). A generated **recovery key** (Crockford base32, shown once) unwraps the master key and can sign you in via a `sha256` verifier — the raw recovery key never reaches the server, so the server still cannot unwrap the vault.
 
 ## Project structure
@@ -89,7 +89,7 @@ bunx tsc --noEmit
 ```
 convex/
   auth.config.ts   — { domain: process.env.CONVEX_SITE_URL } for Convex Auth
-  auth.ts          — convexAuth({ providers: [Password] })
+  auth.ts          — convexAuth({ providers: [username+password, recovery] })
   http.ts          — auth.addHttpRoutes
   schema.ts        — authTables + todos + todoHistory + userSalts + vault tables
   todos.ts         — list/create/update/remove/removeMany (per-user, ciphertext payloads)

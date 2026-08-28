@@ -33,10 +33,10 @@ export function UnlockScreen() {
       const mine = (await convex.query(api.encryption.getMySalt, {})) as string | null;
       if (mine) return mine;
     } catch {}
-    if (viewer?.email) {
+    if (viewer?.name) {
       try {
-        const byEmail = (await convex.query(api.encryption.getSalt, { email: viewer.email })) as string | null;
-        if (byEmail) return byEmail;
+        const byUsername = (await convex.query(api.encryption.getSalt, { username: viewer.name })) as string | null;
+        if (byUsername) return byUsername;
       } catch {}
     }
     return null;

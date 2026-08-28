@@ -12,6 +12,7 @@ import type * as auth from "../auth.js";
 import type * as encryption from "../encryption.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as migrateUsernames from "../migrateUsernames.js";
 import type * as todos from "../todos.js";
 import type * as userScope from "../userScope.js";
 import type * as users from "../users.js";
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   encryption: typeof encryption;
   history: typeof history;
   http: typeof http;
+  migrateUsernames: typeof migrateUsernames;
   todos: typeof todos;
   userScope: typeof userScope;
   users: typeof users;

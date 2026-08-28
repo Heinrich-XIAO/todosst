@@ -105,16 +105,16 @@ export function clearRememberedKey() {
   } catch {}
 }
 
-function getCachedSalt(email: string): string | null {
+function getCachedSalt(username: string): string | null {
   try {
-    return sessionStorage.getItem(SALT_STORAGE_PREFIX + email.toLowerCase());
+    return sessionStorage.getItem(SALT_STORAGE_PREFIX + username.toLowerCase());
   } catch {
     return null;
   }
 }
-function setCachedSalt(email: string, salt: string) {
+function setCachedSalt(username: string, salt: string) {
   try {
-    sessionStorage.setItem(SALT_STORAGE_PREFIX + email.toLowerCase(), salt);
+    sessionStorage.setItem(SALT_STORAGE_PREFIX + username.toLowerCase(), salt);
   } catch {}
 }
 
