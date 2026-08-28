@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { stableUserId } from "./userScope";
+import { requireOwnHistory, requireUserId, stableUserId, validateEncryptedPayload } from "./userScope";
 
 // Per-todo completion history for recurring tasks. Everything (including the
 // todo id it belongs to) is opaque ciphertext — see schema.ts and src/lib/recur.ts.
@@ -24,22 +24,17 @@ export const list = query({
 export const put = mutation({
   args: { id: v.optional(v.id("todoHistory")), ciphertext: v.string(), iv: v.string() },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("not authenticated");
-    if (!args.ciphertext || !args.iv) throw new Error("missing ciphertext");
-    if (args.ciphertext.length > MAX_CIPHERTEXT) throw new Error("ciphertext too long");
-    if (args.iv.length > 64 || args.iv.length < 10) throw new Error("invalid iv");
+    const userId = await requireUserId(ctx);
+    validateEncryptedPayload(args.ciphertext, args.iv, MAX_CIPHERTEXT);
     if (args.id) {
-      const record = await ctx.db.get(args.id);
-      if (!record) throw new Error("history record not found");
-      if (record.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
+      await requireOwnHistory(ctx, args.id);
       await ctx.db.patch(args.id, { ciphertext: args.ciphertext, iv: args.iv });
       return args.id;
     }
     return await ctx.db.insert("todoHistory", {
       ciphertext: args.ciphertext,
       iv: args.iv,
-      userId: stableUserId(identity.subject),
+      userId,
     });
   },
 });
@@ -47,11 +42,10 @@ export const put = mutation({
 export const remove = mutation({
   args: { id: v.id("todoHistory") },
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("not authenticated");
+    const userId = await requireUserId(ctx);
     const record = await ctx.db.get(args.id);
     if (!record) return;
-    if (record.userId !== stableUserId(identity.subject)) throw new Error("unauthorized");
+    if (record.userId !== userId) throw new Error("unauthorized");
     await ctx.db.delete(args.id);
   },
 });
