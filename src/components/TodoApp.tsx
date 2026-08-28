@@ -446,6 +446,7 @@ function TodoQueue() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
   const newRootInputRef = useRef<HTMLInputElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [isSlashFocused, setIsSlashFocused] = useState(false);
   const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
 
@@ -656,6 +657,22 @@ function TodoQueue() {
           input.setSelectionRange(len, len);
         } catch {}
       });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isLocked]);
+
+  // Ctrl/Cmd+F focuses the search field
+  useEffect(() => {
+    if (isLocked) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        const active = document.activeElement as Element | null;
+        if (active && (active.tagName === "TEXTAREA" || (active as HTMLElement).isContentEditable)) return;
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -1551,6 +1568,7 @@ function TodoQueue() {
 
       <div className="flex flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">
         <input
+          ref={searchInputRef}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="search titles/tags…"
