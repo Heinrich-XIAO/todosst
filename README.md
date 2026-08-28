@@ -9,6 +9,7 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - ⌨️ **Command-style input** — one input box creates paths, navigates, and attaches recurrence rules, with tab-completion (intellisense).
 - 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox or tally-count modes, thresholds, grace hours, and a GitHub-style past-year heatmap per task.
 - 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
+- 💾 **Encrypted export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from vault settings; import it into any account to restore or merge.
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
 - 🌗 **Light / dark / auto theme** — follows the system by default; the header toggle overrides it and is remembered per device.
 
@@ -110,7 +111,7 @@ src/
     RruleEditor.tsx — graphical + text RRULE editor
     Heatmap.tsx    — GitHub-style past-year heatmap
     UnlockScreen.tsx — password unlock + recovery-key sign-in
-    VaultPanel.tsx — password change, recovery key, remember-me
+    VaultPanel.tsx — password change, recovery key, export/import, remember-me
     DeleteUndo.tsx, NoticeDialog.tsx, TypewriterPlaceholder.tsx
     Header.tsx, AuthForm.tsx, Logo.tsx
   lib/
@@ -120,6 +121,7 @@ src/
     cdPath.ts      — `!cd` path resolution
     slashPath.ts   — `/path` creation parsing
     slashComplete.ts — tab-completion intellisense
+    vaultFile.ts   — passphrase-encrypted backup files (export/import)
     months.ts      — shared MONTHS constant
   proxy.ts         — convexAuthNextjsMiddleware
 ```
