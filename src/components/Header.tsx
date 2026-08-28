@@ -1,6 +1,6 @@
 "use client";
 
-import { Authenticated, Unauthenticated, useQuery } from "convex/react";
+import { Authenticated, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
@@ -22,11 +22,6 @@ export function Header() {
         </Link>
         <div className="flex items-center gap-3 text-sm">
           <ThemeToggle />
-          <Unauthenticated>
-            <Link href="/signin" className="underline underline-offset-4 hover:opacity-60">
-              sign in
-            </Link>
-          </Unauthenticated>
           <Authenticated>
             <span className="hidden max-w-[180px] truncate opacity-60 sm:inline">{viewer?.email}</span>
             <button

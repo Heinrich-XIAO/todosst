@@ -101,8 +101,7 @@ convex/
 src/
   app/
     layout.tsx     — ConvexAuthNextjsServerProvider + ConvexClientProvider
-    [[...slug]]/page.tsx — catch-all: URL path = current working directory
-    signin/page.tsx — AuthForm
+    [[...slug]]/page.tsx — catch-all: URL path = current working directory; shows AuthForm when signed out
   components/
     ConvexClientProvider.tsx — ConvexAuthNextjsProvider
     EncryptionContext.tsx    — vault key state, remember-me, lock/unlock
