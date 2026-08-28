@@ -10,6 +10,7 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox or tally-count modes, thresholds, grace hours, and a GitHub-style past-year heatmap per task.
 - 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
+- 🌗 **Light / dark / auto theme** — follows the system by default; the header toggle overrides it and is remembered per device.
 
 ## The input box
 

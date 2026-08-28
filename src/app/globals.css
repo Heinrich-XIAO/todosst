@@ -3,6 +3,22 @@
 :root {
   --background: #ffffff;
   --foreground: #000000;
+  color-scheme: light;
+}
+
+.dark {
+  --background: #000000;
+  --foreground: #ffffff;
+  color-scheme: dark;
+}
+
+/* system preference fallback — skipped when the user forces light via class */
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: #000000;
+    --foreground: #ffffff;
+    color-scheme: dark;
+  }
 }
 
 @theme inline {
@@ -12,20 +28,9 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #000000;
-    --foreground: #ffffff;
-  }
-}
-
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-html {
-  color-scheme: light dark;
 }
 
 body {

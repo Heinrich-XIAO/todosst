@@ -6,6 +6,7 @@ import { api } from "../../convex/_generated/api";
 import Link from "next/link";
 import { useEncryption, clearRecoverySession } from "./EncryptionContext";
 import { Logo } from "./Logo";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function Header() {
   const { signOut } = useAuthActions();
@@ -20,6 +21,7 @@ export function Header() {
           <span className="font-mono">todosst</span>
         </Link>
         <div className="flex items-center gap-3 text-sm">
+          <ThemeToggle />
           <Unauthenticated>
             <Link href="/signin" className="underline underline-offset-4 hover:opacity-60">
               sign in
