@@ -21,6 +21,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -82,6 +83,11 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       }
       if (password.length > 128) {
         setError("password is too long.");
+        setLoading(false);
+        return;
+      }
+      if (mode === "signUp" && password !== confirmPassword) {
+        setError("passwords do not match.");
         setLoading(false);
         return;
       }
@@ -150,7 +156,10 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
         {tabs.map((t, i) => (
           <button
             key={t.id}
-            onClick={() => setMode(t.id)}
+            onClick={() => {
+              setMode(t.id);
+              setConfirmPassword("");
+            }}
             className={`flex-1 py-3 text-center ${i > 0 ? "border-l border-foreground" : ""} ${
               mode === t.id ? "bg-foreground text-background" : "bg-background text-foreground opacity-60 hover:opacity-100"
             }`}
@@ -196,20 +205,37 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
               />
             </label>
           ) : (
-            <label className="block">
-              <span className="text-sm">password</span>
-              <input
-                type="password"
-                autoComplete={mode === "signIn" ? "current-password" : "new-password"}
-                required
-                minLength={8}
-                maxLength={128}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="at least 8 characters"
-                className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
-              />
-            </label>
+            <>
+              <label className="block">
+                <span className="text-sm">password</span>
+                <input
+                  type="password"
+                  autoComplete={mode === "signIn" ? "current-password" : "new-password"}
+                  required
+                  minLength={8}
+                  maxLength={128}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="at least 8 characters"
+                  className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+                />
+              </label>
+              {mode === "signUp" && (
+                <label className="block">
+                  <span className="text-sm">confirm password</span>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    maxLength={128}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="repeat your password"
+                    className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+                  />
+                </label>
+              )}
+            </>
           )}
 
           {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
