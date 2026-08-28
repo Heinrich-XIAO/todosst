@@ -4,35 +4,35 @@
 import React, { createContext, useContext, useCallback, useEffect, useMemo, useState } from "react";
 import {
   deriveKey,
-  deriveExtractableKey,
+  deriveRecoveryKey,
   exportKeyB64,
   importKeyB64,
   generateSaltB64,
+  unwrapKeyB64,
+  wrapKeyB64,
   encryptTodo,
   decryptTodo,
   type PlainTodo,
 } from "@/lib/crypto";
-import { useMutation, useQuery } from "convex/react";
+import { useConvex, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 type EncryptedState = {
   key: CryptoKey | null;
   salt: string | null;
   isLocked: boolean;
-  isReady: boolean; // has salt + key attempt finished
-  deriveAndSetKey: (password: string, saltB64: string) => Promise<void>;
-  unlock: (password: string) => Promise<void>;
-  unlockWithStore: (password: string, storeLocally: boolean) => Promise<void>;
-  setKeyFromStored: (k: CryptoKey, saltB64: string) => void;
+  isReady: boolean; // has salt fetch finished
+  /** Set the vault key directly from raw key material (b64). */
+  setKeyFromRaw: (keyB64: string, saltB64: string) => Promise<void>;
+  /** Resolve the vault master key with the sign-in password (post-auth). */
+  resolveVaultPassword: (password: string, saltB64: string, storeLocally: boolean) => Promise<void>;
+  /** Resolve the vault master key with a recovery code (post-auth). */
+  resolveVaultRecovery: (code: string, saltB64: string, storeLocally: boolean) => Promise<void>;
   lock: () => void;
   clearKey: () => void;
   clearStoredKey: () => void;
   encryptTodo: (todo: PlainTodo) => Promise<{ ciphertext: string; iv: string }>;
   decryptTodo: (iv: string, ciphertext: string) => Promise<PlainTodo>;
-  pendingPassword: string | null;
-  setPendingPassword: (p: string | null) => void;
-  pendingSalt: string | null;
-  setPendingSalt: (s: string | null) => void;
 };
 
 const Ctx = createContext<EncryptedState | null>(null);
@@ -41,9 +41,27 @@ const Ctx = createContext<EncryptedState | null>(null);
 const SALT_STORAGE_PREFIX = "todosst:salt:";
 
 // localStorage key for remembered vault key (when "store locally" is checked)
-// Stores { salt, keyB64 } — key is raw AES-GCM-256 exported as base64.
+// Stores { salt, keyB64 } — key is the vault master key, raw AES-GCM-256 as base64.
 // Salt is public; keyB64 is secret but user explicitly opted into local persistence.
 const REMEMBER_STORAGE_KEY = "todosst:rememberedKey";
+
+// sessionStorage flag marking a session signed in via recovery code — allows one
+// password change without the current password (backed by a server-side grant).
+export const RECOVERY_SESSION_KEY = "todosst:recoverySession";
+
+export function hasRecoverySession(): boolean {
+  try {
+    return typeof window !== "undefined" && sessionStorage.getItem(RECOVERY_SESSION_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function clearRecoverySession() {
+  try {
+    sessionStorage.removeItem(RECOVERY_SESSION_KEY);
+  } catch {}
+}
 
 export type RememberedKey = { salt: string; keyB64: string };
 
@@ -91,13 +109,11 @@ function setCachedSalt(email: string, salt: string) {
 export function EncryptionProvider({ children }: { children: React.ReactNode }) {
   const [key, setKey] = useState<CryptoKey | null>(null);
   const [salt, setSalt] = useState<string | null>(null);
-  const [pendingPassword, setPendingPassword] = useState<string | null>(null);
-  const [pendingSalt, setPendingSalt] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const convex = useConvex();
 
   // mySalt is fetched when authenticated to know current user's salt
   const mySalt = useQuery(api.encryption.getMySalt);
-  const ensureSalt = useMutation(api.encryption.ensureSalt);
 
   // When mySalt loads, cache it and mark ready
   useEffect(() => {
@@ -106,27 +122,68 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     setIsReady(true);
   }, [mySalt]);
 
-  const deriveAndSetKey = useCallback(async (password: string, saltB64: string) => {
-    const k = await deriveKey(password, saltB64);
-    setKey(k);
-    setSalt(saltB64);
-  }, []);
-
-  // Unlock: called from UnlockScreen or after sign-in.
-  // Tries mySalt first, then falls back to cached/pending.
-  const unlock = useCallback(
-    async (password: string) => {
-      // Prefer server salt if available
-      const s = mySalt ?? salt ?? pendingSalt;
-      // Also try to fetch via pendingSalt state (set by AuthForm)
-      if (!s) throw new Error("no salt available — sign in again");
-      const k = await deriveKey(password, s);
-      // Verify we can decrypt at least one todo later? We optimistically set key.
-      // To detect wrong password, try to decrypt a probe if we have todos — caller will handle errors.
+  const setKeyFromRaw = useCallback(
+    async (keyB64: string, saltB64: string) => {
+      const k = await importKeyB64(keyB64);
       setKey(k);
-      setSalt(s);
+      setSalt(saltB64);
     },
-    [mySalt, salt, pendingSalt]
+    []
+  );
+
+  // Resolve the vault master key using the sign-in password.
+  // The master key M is stored wrapped under PBKDF2(password, salt); users from
+  // before the master-key design simply adopt their password-derived key as M.
+  const resolveVaultPassword = useCallback(
+    async (password: string, saltB64: string, storeLocally: boolean) => {
+      const kpw = await deriveKey(password, saltB64);
+      const rec = (await convex.query(api.vault.getKeyRecord, { kind: "password" })) as {
+        iv: string;
+        ciphertext: string;
+      } | null;
+      if (rec) {
+        // throws on wrong password (GCM auth failure) — caller shows the error
+        const master = await unwrapKeyB64(kpw, rec.iv, rec.ciphertext);
+        const masterB64 = await exportKeyB64(master);
+        if (storeLocally) setRememberedKey({ salt: saltB64, keyB64: masterB64 });
+        else clearRememberedKey();
+        setKey(master);
+        setSalt(saltB64);
+        return;
+      }
+      // no wrapper record yet — adopt the password-derived key as the master key
+      const masterB64 = await exportKeyB64(kpw);
+      try {
+        const wrapped = await wrapKeyB64(kpw, masterB64);
+        await convex.mutation(api.vault.putKeyRecord, { kind: "password", ...wrapped });
+      } catch {
+        // record insert failed — key still works this session; next unlock re-adopts
+      }
+      if (storeLocally) setRememberedKey({ salt: saltB64, keyB64: masterB64 });
+      else clearRememberedKey();
+      setKey(kpw);
+      setSalt(saltB64);
+    },
+    [convex]
+  );
+
+  // Resolve the vault master key using a recovery code.
+  const resolveVaultRecovery = useCallback(
+    async (code: string, saltB64: string, storeLocally: boolean) => {
+      const kr = await deriveRecoveryKey(code, saltB64);
+      const rec = (await convex.query(api.vault.getKeyRecord, { kind: "recovery" })) as {
+        iv: string;
+        ciphertext: string;
+      } | null;
+      if (!rec) throw new Error("no recovery key is set up for this account");
+      const master = await unwrapKeyB64(kr, rec.iv, rec.ciphertext); // throws on wrong code
+      const masterB64 = await exportKeyB64(master);
+      if (storeLocally) setRememberedKey({ salt: saltB64, keyB64: masterB64 });
+      else clearRememberedKey();
+      setKey(master);
+      setSalt(saltB64);
+    },
+    [convex]
   );
 
   const lock = useCallback(() => {
@@ -136,43 +193,11 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   const clearKey = useCallback(() => {
     setKey(null);
     setSalt(null);
-    setPendingPassword(null);
-    setPendingSalt(null);
   }, []);
 
   const clearStoredKey = useCallback(() => {
     clearRememberedKey();
   }, []);
-
-  const setKeyFromStored = useCallback((k: CryptoKey, saltB64: string) => {
-    setKey(k);
-    setSalt(saltB64);
-  }, []);
-
-  // Unlock that optionally persists key locally when storeLocally is true.
-  // When true, derives an extractable key, exports and stores in localStorage.
-  // When false, clears any previously stored key.
-  const unlockWithStore = useCallback(
-    async (password: string, storeLocally: boolean) => {
-      const s = mySalt ?? salt ?? pendingSalt;
-      if (!s) throw new Error("no salt available — sign in again");
-      if (storeLocally) {
-        const k = await deriveExtractableKey(password, s);
-        const keyB64 = await exportKeyB64(k);
-        setRememberedKey({ salt: s, keyB64 });
-        // Import as non-extractable for in-memory use (or reuse extractable)
-        // Reuse the extractable key directly; it works for encrypt/decrypt.
-        setKey(k);
-        setSalt(s);
-      } else {
-        clearRememberedKey();
-        const k = await deriveKey(password, s);
-        setKey(k);
-        setSalt(s);
-      }
-    },
-    [mySalt, salt, pendingSalt]
-  );
 
   const encrypt = useCallback(
     async (todo: PlainTodo) => {
@@ -216,58 +241,22 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     };
   }, [key, mySalt]);
 
-  // When we have a pendingPassword + pendingSalt (set by AuthForm during sign-up/in)
-  // auto-derive key and ensureSalt on server.
-  useEffect(() => {
-    if (!pendingPassword || !pendingSalt) return;
-    // If already have key, skip
-    if (key) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const k = await deriveKey(pendingPassword, pendingSalt);
-        if (cancelled) return;
-        setKey(k);
-        setSalt(pendingSalt);
-        // ensure salt persisted (only if authenticated)
-        if (mySalt === null) {
-          try {
-            await ensureSalt({ salt: pendingSalt });
-          } catch {
-            // ignore — maybe already exists
-          }
-        }
-      } finally {
-        // keep pendingPassword briefly? clear after derivation to avoid keeping in memory
-        // but keep pendingSalt for unlock
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [pendingPassword, pendingSalt, key, mySalt, ensureSalt]);
-
   const value = useMemo<EncryptedState>(
     () => ({
       key,
       salt,
       isLocked: !key,
       isReady,
-      deriveAndSetKey,
-      unlock,
-      unlockWithStore,
-      setKeyFromStored,
+      setKeyFromRaw,
+      resolveVaultPassword,
+      resolveVaultRecovery,
       lock,
       clearKey,
       clearStoredKey,
       encryptTodo: encrypt,
       decryptTodo: decrypt,
-      pendingPassword,
-      setPendingPassword,
-      pendingSalt,
-      setPendingSalt,
     }),
-    [key, salt, isReady, deriveAndSetKey, unlock, unlockWithStore, setKeyFromStored, lock, clearKey, clearStoredKey, encrypt, decrypt, pendingPassword, pendingSalt]
+    [key, salt, isReady, setKeyFromRaw, resolveVaultPassword, resolveVaultRecovery, lock, clearKey, clearStoredKey, encrypt, decrypt]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

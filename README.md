@@ -8,6 +8,7 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - 🌲 **Tasks are directories** — any task can have sub-tasks. Navigate with the URL (`/host hackathon/outreach`), breadcrumbs, double-click, or `!cd`.
 - ⌨️ **Command-style input** — one input box creates paths, navigates, and attaches recurrence rules, with tab-completion (intellisense).
 - 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox or tally-count modes, thresholds, grace hours, and a GitHub-style past-year heatmap per task.
+- 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
 
 ## The input box
@@ -79,7 +80,7 @@ bunx tsc --noEmit
 - **Auth**: email/password via `@convex-dev/auth` (scrypt hashing, HttpOnly SameSite=Lax cookies, CSRF-safe mutations, rate-limited failed sign-ins).
 - **Authorization**: every query/mutation checks `ctx.auth.getUserIdentity()` and scopes by stable `userId` (prevents IDOR).
 - **Validation**: email normalized to lowercase, password 8–128 chars, titles 1–200 chars, all trimmed.
-- ⚠️ **No password reset** — with E2E encryption, nobody can recover your vault if you lose the password. (See roadmap: recovery keys.)
+- **Recovery**: the vault master key is wrapped once per unlock method. "Change password" re-keys only the wrapper (data untouched, other devices unaffected). A generated **recovery key** (Crockford base32, shown once) unwraps the master key and can sign you in via a `sha256` verifier — the raw recovery key never reaches the server, so the server still cannot unwrap the vault.
 
 ## Project structure
 

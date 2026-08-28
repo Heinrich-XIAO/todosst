@@ -4,20 +4,34 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useState } from "react";
 import { useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { useEncryption, generateSaltB64, setCachedSalt } from "./EncryptionContext";
-import { deriveKey } from "@/lib/crypto";
+import {
+  useEncryption,
+  generateSaltB64,
+  setCachedSalt,
+  RECOVERY_SESSION_KEY,
+} from "./EncryptionContext";
+import { deriveRecoveryKey, recoveryVerifier } from "@/lib/crypto";
 
-type Mode = "signIn" | "signUp";
+type Mode = "signIn" | "signUp" | "recover";
 
 export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const { signIn } = useAuthActions();
   const convex = useConvex();
-  const { deriveAndSetKey, setPendingPassword, setPendingSalt, clearKey } = useEncryption();
+  const { resolveVaultPassword, resolveVaultRecovery, clearKey } = useEncryption();
   const [mode, setMode] = useState<Mode>(defaultMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  async function fetchSalt(normalizedEmail: string): Promise<string | null> {
+    try {
+      return (await convex.query(api.encryption.getSalt, { email: normalizedEmail })) as string | null;
+    } catch {
+      return null;
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,60 +47,46 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
     }
     // allow username or email — if no @, treat as username and map to <username>@todosst.local
     const normalizedEmail = raw.includes("@") ? raw : `${raw}@todosst.local`;
-    if (password.length < 8) {
-      setError("password must be at least 8 characters.");
-      return;
-    }
-    if (password.length > 128) {
-      setError("password is too long.");
-      return;
-    }
+
     setLoading(true);
     try {
-      // --- E2E key preparation ---
-      // Derive encryption key from password + per-user salt (PBKDF2 310k -> AES-GCM-256).
-      // Salt is public and stored in userSalts table.
-      let salt: string | null = null;
-      let derivedBeforeSignIn = false;
-      if (mode === "signUp") {
-        // New account: generate fresh salt, derive before sign-in so key is ready
-        salt = generateSaltB64();
-        try {
-          const k = await deriveKey(password, salt);
-          // quick sanity: ensure we can encrypt/decrypt (implicit)
-          void k;
-        } catch {
-          throw new Error("failed to derive encryption key");
+      if (mode === "recover") {
+        // ---- recovery sign-in: email + recovery code ----
+        if (code.trim().length < 10) {
+          setError("enter your recovery key.");
+          setLoading(false);
+          return;
         }
-        setPendingSalt(salt);
-        setPendingPassword(password);
-        // cache locally; will be persisted via ensureSalt after auth
-        setCachedSalt(normalizedEmail, salt);
-        // derive visible key immediately
-        await deriveAndSetKey(password, salt);
-        derivedBeforeSignIn = true;
-      } else {
-        // Sign-in: fetch existing salt if any
+        const salt = await fetchSalt(normalizedEmail);
+        if (!salt) throw new Error("no vault found for this account.");
+        // verifier = sha256(PBKDF2(code, salt)) — the raw key never leaves the client
+        const kr = await deriveRecoveryKey(code, salt);
+        const verifier = await recoveryVerifier(kr);
+        const formData = new FormData();
+        formData.set("email", normalizedEmail);
+        formData.set("verifier", verifier);
+        formData.set("flow", "signIn");
+        await signIn("recovery", formData);
+        await resolveVaultRecovery(code, salt, false);
         try {
-          const fetched = (await convex.query(api.encryption.getSalt, {
-            email: normalizedEmail,
-          })) as string | null;
-          if (fetched) {
-            salt = fetched;
-            setPendingSalt(salt);
-            setPendingPassword(password);
-            setCachedSalt(normalizedEmail, salt);
-            await deriveAndSetKey(password, salt);
-            derivedBeforeSignIn = true;
-          } else {
-            // Legacy user with no salt yet — will generate after successful sign-in
-            setPendingPassword(password);
-          }
-        } catch {
-          // If salt fetch fails, continue to auth — key will be established after auth
-          setPendingPassword(password);
-        }
+          sessionStorage.setItem(RECOVERY_SESSION_KEY, "1");
+        } catch {}
+        return;
       }
+
+      // ---- password sign-in / sign-up ----
+      if (password.length < 8) {
+        setError("password must be at least 8 characters.");
+        setLoading(false);
+        return;
+      }
+      if (password.length > 128) {
+        setError("password is too long.");
+        setLoading(false);
+        return;
+      }
+      let salt = await fetchSalt(normalizedEmail);
+      if (salt) setCachedSalt(normalizedEmail, salt);
 
       const formData = new FormData();
       formData.set("email", normalizedEmail);
@@ -94,36 +94,31 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       formData.set("flow", mode);
       await signIn("password", formData);
 
-      // Post-auth: if we didn't derive before (legacy user on sign-in), generate salt now
-      if (!derivedBeforeSignIn && mode === "signIn") {
-        // After auth, mySalt may be null (legacy). Generate and ensure.
-        // Use pendingPassword already set; create salt if still null
-        if (!salt) {
-          const newSalt = generateSaltB64();
-          setPendingSalt(newSalt);
-          setCachedSalt(normalizedEmail, newSalt);
-          try {
-            await deriveAndSetKey(password, newSalt);
-          } catch {}
-          // persist via convex — we need auth; call directly with convex
-          try {
-            await convex.mutation(api.encryption.ensureSalt, { salt: newSalt });
-          } catch {}
-        }
-      }
-      // For signUp case, ensure salt persisted (EncryptionProvider effect also does it, but do it here too)
-      if (mode === "signUp" && salt) {
+      // Post-auth: legacy accounts may not have a salt yet — create one.
+      if (!salt) {
+        salt = generateSaltB64();
         try {
           await convex.mutation(api.encryption.ensureSalt, { salt });
         } catch {}
       }
+      // Resolve (or adopt) the vault master key and persist its wrapper.
+      await resolveVaultPassword(password, salt, false);
     } catch (err) {
-      // Clear derived key if auth failed (wrong password etc.)
-      try { clearKey(); } catch {}
-      setPendingPassword(null);
+      // Clear any derived key if auth/unlock failed
+      try {
+        clearKey();
+      } catch {}
       const msg = err instanceof Error ? err.message : "authentication failed";
-      if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found") || msg.toLowerCase().includes("already")) {
-        setError(mode === "signIn" ? "invalid username or password." : "account already exists. try signing in.");
+      if (msg.toLowerCase().includes("invalid") || msg.toLowerCase().includes("not found")) {
+        setError(
+          mode === "recover"
+            ? "invalid email or recovery key."
+            : mode === "signIn"
+              ? "invalid username or password."
+              : "account already exists. try signing in."
+        );
+      } else if (msg.toLowerCase().includes("already")) {
+        setError("account already exists. try signing in.");
       } else {
         setError(msg.toLowerCase());
       }
@@ -132,25 +127,36 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
     }
   }
 
+  const tabs: { id: Mode; label: string }[] = [
+    { id: "signIn", label: "sign in" },
+    { id: "signUp", label: "create account" },
+    { id: "recover", label: "recover" },
+  ];
+
   return (
     <div className="w-full max-w-[420px] border border-foreground bg-background">
       <div className="flex border-b border-foreground text-sm">
-        <button
-          onClick={() => setMode("signIn")}
-          className={`flex-1 py-3 text-center ${mode === "signIn" ? "bg-foreground text-background" : "bg-background text-foreground opacity-60 hover:opacity-100"}`}
-        >
-          sign in
-        </button>
-        <button
-          onClick={() => setMode("signUp")}
-          className={`flex-1 py-3 text-center border-l border-foreground ${mode === "signUp" ? "bg-foreground text-background" : "bg-background text-foreground opacity-60 hover:opacity-100"}`}
-        >
-          create account
-        </button>
+        {tabs.map((t, i) => (
+          <button
+            key={t.id}
+            onClick={() => setMode(t.id)}
+            className={`flex-1 py-3 text-center ${i > 0 ? "border-l border-foreground" : ""} ${
+              mode === t.id ? "bg-foreground text-background" : "bg-background text-foreground opacity-60 hover:opacity-100"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       <div className="p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === "recover" && (
+            <p className="text-xs leading-relaxed opacity-60">
+              forgot your password? sign in with your email and the recovery key you generated while unlocked. the
+              recovery key also unlocks the vault.
+            </p>
+          )}
           <label className="block">
             <span className="text-sm">username</span>
             <input
@@ -165,25 +171,46 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
               className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
             />
           </label>
-          <label className="block">
-            <span className="text-sm">password</span>
-            <input
-              type="password"
-              autoComplete={mode === "signIn" ? "current-password" : "new-password"}
-              required
-              minLength={8}
-              maxLength={128}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="at least 8 characters"
-              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
-            />
-          </label>
+          {mode === "recover" ? (
+            <label className="block">
+              <span className="text-sm">recovery key</span>
+              <input
+                type="text"
+                required
+                spellCheck={false}
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX"
+                className="mt-1 w-full border-b border-foreground bg-transparent py-2 font-mono text-sm placeholder:text-foreground/40 focus:outline-none"
+              />
+            </label>
+          ) : (
+            <label className="block">
+              <span className="text-sm">password</span>
+              <input
+                type="password"
+                autoComplete={mode === "signIn" ? "current-password" : "new-password"}
+                required
+                minLength={8}
+                maxLength={128}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="at least 8 characters"
+                className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+              />
+            </label>
+          )}
 
           {error && <p className="border border-foreground bg-background px-3 py-2 text-sm">{error}</p>}
 
           <button type="submit" disabled={loading} className="w-full border border-foreground bg-foreground py-2.5 text-sm text-background hover:opacity-90 disabled:opacity-40">
-            {loading ? "please wait…" : mode === "signIn" ? "sign in" : "create account"}
+            {loading
+              ? "please wait…"
+              : mode === "signIn"
+                ? "sign in"
+                : mode === "signUp"
+                  ? "create account"
+                  : "recover account"}
           </button>
         </form>
       </div>

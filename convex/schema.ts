@@ -33,4 +33,30 @@ export default defineSchema({
   })
     .index("by_userId", ["userId"])
     .index("by_email", ["email"]),
+
+  // vault master key, wrapped (AES-GCM) once per unlock method.
+  // kind "password": wrapped with PBKDF2(password, salt)
+  // kind "recovery": wrapped with PBKDF2(recoveryCode, salt)
+  vaultKeys: defineTable({
+    userId: v.string(),
+    kind: v.union(v.literal("password"), v.literal("recovery")),
+    ciphertext: v.string(),
+    iv: v.string(),
+  }).index("by_user_kind", ["userId", "kind"]),
+
+  // account-level recovery: sha256 of the recovery-derived key, so the user can
+  // sign in (not just unlock) with email + recovery code. The raw key never
+  // reaches the server, so this hash cannot unwrap the vault.
+  recoveryKeys: defineTable({
+    userId: v.string(),
+    verifier: v.string(),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // single-use, 10-minute grant created during recovery sign-in, allowing one
+  // password change without the current password.
+  recoveryGrants: defineTable({
+    userId: v.id("users"),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
 });

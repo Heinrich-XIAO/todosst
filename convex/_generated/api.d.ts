@@ -16,6 +16,7 @@ import type * as migrate from "../migrate.js";
 import type * as todos from "../todos.js";
 import type * as userScope from "../userScope.js";
 import type * as users from "../users.js";
+import type * as vault from "../vault.js";
 
 import type {
   ApiFromModules,
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   todos: typeof todos;
   userScope: typeof userScope;
   users: typeof users;
+  vault: typeof vault;
 }>;
 
 /**

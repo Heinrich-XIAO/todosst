@@ -4,7 +4,7 @@ import { Authenticated, Unauthenticated, useQuery } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { api } from "../../convex/_generated/api";
 import Link from "next/link";
-import { useEncryption } from "./EncryptionContext";
+import { useEncryption, clearRecoverySession } from "./EncryptionContext";
 import { Logo } from "./Logo";
 
 export function Header() {
@@ -30,6 +30,7 @@ export function Header() {
             <button
               onClick={() => {
                 clearKey();
+                clearRecoverySession();
                 void signOut();
               }}
               className="opacity-60 hover:opacity-100"
