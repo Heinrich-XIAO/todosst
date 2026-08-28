@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { dayIndexLocal, dayIndexToStart } from "@/lib/recur";
+import { MONTHS } from "@/lib/months";
 
 // GitHub-style 53-week heatmap of counts per local day.
 // Columns run oldest -> newest, rows Sun..Sat, ending at the current week.
@@ -16,7 +17,6 @@ function levelFor(count: number): number {
   return 4;
 }
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DOW_LABELS: Record<number, string> = { 1: "mon", 3: "wed", 5: "fri" };
 
 export function Heatmap({ counts, nowTs, weeks = 53 }: { counts: Map<number, number>; nowTs: number; weeks?: number }) {

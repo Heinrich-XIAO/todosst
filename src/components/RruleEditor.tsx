@@ -3,13 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Options, RRule as RRuleType } from "rrule";
 import { normalizeRruleString } from "@/lib/recur";
+import { MONTHS } from "@/lib/months";
 
 // Full-coverage graphical RRULE builder + bidirectional text editor.
 // Underlying format: RFC 5545 RRULE via https://github.com/jakubroztocil/rrule
 
 const FREQ_LABELS = ["yearly", "monthly", "weekly", "daily", "hourly", "minutely", "secondly"] as const;
 const WD = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const ORDINALS: { v: string; label: string }[] = [
   { v: "", label: "every" },
   { v: "1", label: "1st" },
