@@ -37,7 +37,7 @@ Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc
 ## Stack
 
 - **Next.js 16** (App Router, `src/` dir, Turbopack)
-- **Convex** backend: `convex/schema.ts` (todos + todoHistory + userSalts), `convex/todos.ts`, `convex/history.ts`, `convex/encryption.ts`
+- **Convex** backend: `convex/schema.ts` (todos + todoHistory + userSalts + vault tables), `convex/todos.ts`, `convex/history.ts`, `convex/encryption.ts`, `convex/vault.ts`
 - **Convex Auth** with `Password` provider (`@convex-dev/auth`, `@auth/core`)
 - **rrule** (RFC 5545) for occurrence windows; Tailwind v4 UI
 
@@ -89,11 +89,12 @@ convex/
   auth.config.ts   — { domain: process.env.CONVEX_SITE_URL } for Convex Auth
   auth.ts          — convexAuth({ providers: [Password] })
   http.ts          — auth.addHttpRoutes
-  schema.ts        — authTables + todos + todoHistory + userSalts
-  todos.ts         — list/create/update/remove/clearCompleted (per-user, ciphertext payloads)
+  schema.ts        — authTables + todos + todoHistory + userSalts + vault tables
+  todos.ts         — list/create/update/remove/removeMany (per-user, ciphertext payloads)
   history.ts       — per-todo E2E-encrypted completion history (list/put/remove)
   encryption.ts    — per-user salt get/ensure (salt is public, not secret)
-  migrate.ts       — one-time userId normalization
+  vault.ts         — wrapped vault keys, recovery keys/grants, password change action
+  userScope.ts     — shared auth + ownership helpers (requireUserId, requireOwnTodo)
   users.ts         — viewer query
 src/
   app/
@@ -104,14 +105,21 @@ src/
     ConvexClientProvider.tsx — ConvexAuthNextjsProvider
     EncryptionContext.tsx    — vault key state, remember-me, lock/unlock
     TodoApp.tsx    — tree rendering, command input, filters, details panel
+    MetadataPanel.tsx — task details (notes, recurrence editor, heatmap)
     RruleEditor.tsx — graphical + text RRULE editor
     Heatmap.tsx    — GitHub-style past-year heatmap
+    UnlockScreen.tsx — password unlock + recovery-key sign-in
+    VaultPanel.tsx — password change, recovery key, remember-me
+    DeleteUndo.tsx, NoticeDialog.tsx, TypewriterPlaceholder.tsx
     Header.tsx, AuthForm.tsx, Logo.tsx
   lib/
     crypto.ts      — PBKDF2 + AES-GCM primitives, payload schemas
     recur.ts       — windowed recurrence engine, input syntax, counts codec
+    tree.ts        — path/sibling/tree helpers
     cdPath.ts      — `!cd` path resolution
     slashPath.ts   — `/path` creation parsing
+    slashComplete.ts — tab-completion intellisense
+    months.ts      — shared MONTHS constant
   proxy.ts         — convexAuthNextjsMiddleware
 ```
 
