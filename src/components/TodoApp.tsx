@@ -11,6 +11,7 @@ import type { PlainNode } from "@/lib/crypto";
 import { deriveExtractableKey, exportKeyB64, encryptString, decryptString } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
 import { parseBangCd, resolveCdPath, encodePathForUrl, decodePathToParts, partsToPath } from "@/lib/cdPath";
+import { parseSlashPath } from "@/lib/slashPath";
 import {
   COUNT_MAX,
   DEFAULT_GRACE_HOURS,
@@ -812,8 +813,16 @@ function TodoTask() {
     if (newRootTitle.startsWith("/")) {
       const withoutLeading = newRootTitle.slice(1);
       const parts = withoutLeading.split("/");
-      const prefixRaw = parts[parts.length - 1] ?? "";
-      const dirPartsRaw = parts.slice(0, -1);
+      let prefixRaw = parts[parts.length - 1] ?? "";
+      let dirPartsRaw = parts.slice(0, -1);
+      if (dirPartsRaw.length === 0) {
+        const m = /^(\S+)\s+(\S.*)$/.exec(prefixRaw.trim());
+        const first = m ? nodes.find((n) => n.title === m[1] && (n.parentId ?? null) === null) : undefined;
+        if (m && first) {
+          dirPartsRaw = [m[1]];
+          prefixRaw = m[2];
+        }
+      }
       let parentId: string | null = null;
       for (const raw of dirPartsRaw) {
         const seg = raw.trim();
@@ -885,30 +894,14 @@ function TodoTask() {
           next = "!cd " + title;
         }
       } else {
-        const withoutLeading = newRootTitle.slice(1);
-        const parts = withoutLeading.split("/");
-        const dirParts = parts.slice(0, -1);
-        const dirPrefix = dirParts.length ? "/" + dirParts.map((s) => s.trim()).filter(Boolean).join("/") + "/" : "/";
-        next = dirPrefix + title;
+        next = (slashComplete.dirPath || "") + "/" + title;
       }
       setNewRootTitle(next);
       setActiveSuggestIdx(0);
       requestAnimationFrame(() => newRootInputRef.current?.focus());
     },
-    [newRootTitle, slashComplete.mode]
+    [newRootTitle, slashComplete]
   );
-
-  function parseSlashPath(input: string): string[] | null {
-    const trimmed = input.trim();
-    if (!trimmed.startsWith("/")) return null;
-    const parts = trimmed
-      .split("/")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-    if (parts.length === 0) return null;
-    if (parts.some((p) => p.length > 200)) return null;
-    return parts;
-  }
 
   async function handleCreateRoot(e: React.FormEvent) {
     e.preventDefault();
