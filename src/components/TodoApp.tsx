@@ -1280,11 +1280,22 @@ function TodoQueue() {
     });
   }
 
-  // Auto-dismiss delete confirmation after 4s
+  // Auto-dismiss delete confirmation after 5s, with visible countdown
+  const [confirmCountdown, setConfirmCountdown] = useState(5);
   useEffect(() => {
     if (!confirmDeleteId) return;
-    const t = window.setTimeout(() => setConfirmDeleteId(null), 4000);
-    return () => window.clearTimeout(t);
+    setConfirmCountdown(5);
+    const interval = window.setInterval(() => {
+      setConfirmCountdown((s) => {
+        if (s <= 1) {
+          window.clearInterval(interval);
+          setConfirmDeleteId(null);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => window.clearInterval(interval);
   }, [confirmDeleteId]);
 
   // Esc cancels delete confirmation
@@ -1732,7 +1743,7 @@ function TodoQueue() {
                 delete
               </button>
             </div>
-            <p className="mt-3 text-right font-mono text-[11px] opacity-30">&gt; auto-abort in 4s • [esc] cancel</p>
+            <p className="mt-3 text-right font-mono text-[11px] opacity-30">&gt; auto-abort in {confirmCountdown}s • [esc] cancel</p>
           </div>
         </div>
       )}
