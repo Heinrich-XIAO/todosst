@@ -1457,6 +1457,7 @@ function TodoTask() {
 
       {selectedNode && (
         <MetadataPanel
+          key={selectedNode._id}
           node={selectedNode}
           onUpdateMetadata={handleUpdateMetadata}
           onClose={() => setSelectedId(null)}
