@@ -287,6 +287,7 @@ function MetadataPanel({
         </div>
 
         {/* completion style + threshold + grace */}
+        {meta.recur && (
         <div className="flex flex-wrap gap-2">
           <label className="flex-1 block">
             <span className="opacity-60">completion style</span>
@@ -326,6 +327,8 @@ function MetadataPanel({
             </label>
           )}
         </div>
+        )}
+
         {meta.recur ? (
           <p className="text-[10px] opacity-40 leading-tight">
             recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
@@ -333,12 +336,14 @@ function MetadataPanel({
         ) : null}
 
         {/* past-year heatmap for this task */}
-        <div>
-          <span className="opacity-60">past year</span>
-          <div className="mt-1">
-            <Heatmap counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} />
+        {meta.recur ? (
+          <div>
+            <span className="opacity-60">past year</span>
+            <div className="mt-1">
+              <Heatmap counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} />
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <label className="block">
           <span className="opacity-60">description</span>
