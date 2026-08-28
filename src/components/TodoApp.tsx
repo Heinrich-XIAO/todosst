@@ -420,13 +420,8 @@ function TypewriterPlaceholder({ phrases, active }: { phrases: string[]; active:
 
   useEffect(() => {
     if (!active) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      if (reduced) {
-        setText(phrases[0]);
-        return;
-      }
       const phrase = phrases[phraseIdx.current % phrases.length];
       if (!deleting.current) {
         charIdx.current += 1;
