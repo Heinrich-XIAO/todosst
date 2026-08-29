@@ -1149,6 +1149,8 @@ function TodoTask() {
     const updated = toPlainNode(node, { metadata: startTimer(meta, Date.now(), windowDay) });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
+    // the active timer is the payload's peak state — warn here, not on finish
+    warnPayloadGrowth(node, ciphertext);
   }
 
   async function handleTimerTogglePause(node: TreeNode) {
@@ -1159,6 +1161,7 @@ function TodoTask() {
     const updated = toPlainNode(node, { metadata: next });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
+    warnPayloadGrowth(node, ciphertext);
   }
 
   async function handleTimerDiscard(node: TreeNode) {
