@@ -75,7 +75,12 @@ export async function getRule(ruleStr: string, anchorTs: number): Promise<RRule 
   if (hit) return hit;
   try {
     const { rrulestr } = await loadRrule();
-    const rule = rrulestr(clean, { dtstart: new Date(dayIndexToStart(dayIndexLocal(anchorTs))) }) as RRule;
+    // an explicit DTSTART in the rule wins; otherwise anchor at the creation day's local midnight
+    const rule = (
+      /(^|\n)DTSTART/i.test(clean)
+        ? rrulestr(clean)
+        : rrulestr(clean, { dtstart: new Date(dayIndexToStart(dayIndexLocal(anchorTs))) })
+    ) as RRule;
     ruleCache.set(key, rule);
     if (ruleCache.size > 200) {
       const oldest = ruleCache.keys().next().value;
