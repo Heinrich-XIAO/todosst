@@ -100,12 +100,16 @@ function stateToList(s: string): number[] | null {
   return out.length ? out : null;
 }
 
+function wkstMatters(g: GState): boolean {
+  return (g.freq === 2 && Math.max(1, Math.floor(Number(g.interval)) || 1) > 1) || g.byweekno.trim() !== "";
+}
+
 function buildRule(mod: RRuleModule, g: GState, anchorTs: number): { rule?: RRuleType; error?: string } {
   const opts: Partial<Options> = {
     freq: g.freq,
     interval: Math.max(1, Math.floor(Number(g.interval)) || 1),
-    wkst: g.wkst,
   };
+  if (g.wkst !== 0 && wkstMatters(g)) opts.wkst = g.wkst;
   const [Y, M, D] = g.dtstart.split("-").map(Number);
   if (Y && M && D) {
     if (g.dtstartTime.trim()) {
@@ -221,7 +225,7 @@ export function RruleEditor({
           freq: o.freq,
           interval: o.interval,
           dtstart: `${ds.getFullYear()}-${pad(ds.getMonth() + 1)}-${pad(ds.getDate())}`,
-          dtstartTime: hadDtstart ? `${pad(ds.getHours())}:${pad(ds.getMinutes())}` : "",
+          dtstartTime: parsedDs ? `${pad(ds.getHours())}:${pad(ds.getMinutes())}` : "",
           count: o.count != null ? String(o.count) : "",
           until: o.until ? `${o.until.getFullYear()}-${pad(o.until.getMonth() + 1)}-${pad(o.until.getDate())}` : "",
           wkst: o.wkst ?? 0,
@@ -258,15 +262,22 @@ export function RruleEditor({
   }, [mod, g, loaded, anchorTs]);
 
   const preview = useMemo(() => {
-    if (tab !== "build" || !built?.rule) return null;
+    if (tab !== "build" || !built?.rule || !mod) return null;
     try {
+      // preview exactly as the engine resolves it: DTSTART-less rules anchor at the anchor day's midnight
+      let eff = built.rule;
+      if (!eff.origOptions.dtstart) {
+        const a = new Date(anchorTs);
+        a.setHours(0, 0, 0, 0);
+        eff = mod.rrulestr(normalizeRruleString(built.rule.toString()), { dtstart: a }) as RRuleType;
+      }
       const now = new Date();
-      const dates = built.rule.between(new Date(now.getTime() - 86_400_000), new Date(now.getTime() + 90 * 86_400_000), false);
+      const dates = eff.between(new Date(now.getTime() - 86_400_000), new Date(now.getTime() + 90 * 86_400_000), false);
       return dates.slice(0, 6);
     } catch {
       return null;
     }
-  }, [built, tab]);
+  }, [built, mod, tab, anchorTs]);
 
   const textValid = useMemo(() => {
     if (tab !== "text" || !mod) return null;
@@ -354,16 +365,18 @@ export function RruleEditor({
                 className={`mt-1 ${inputCls}`}
               />
             </label>
-            <label className={`${labelCls} w-24`}>
-              <span className="opacity-60">wkst</span>
-              <select value={g.wkst} onChange={(e) => setG({ ...g, wkst: Number(e.target.value) })} className={`mt-1 ${inputCls}`}>
-                {WD.map((w, i) => (
-                  <option key={w} value={i}>
-                    {w}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {wkstMatters(g) ? (
+              <label className={`${labelCls} w-24`}>
+                <span className="opacity-60">wkst</span>
+                <select value={g.wkst} onChange={(e) => setG({ ...g, wkst: Number(e.target.value) })} className={`mt-1 ${inputCls}`}>
+                  {WD.map((w, i) => (
+                    <option key={w} value={i}>
+                      {w}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
           </div>
 
           <div className="flex gap-2">
