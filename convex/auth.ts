@@ -26,7 +26,6 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
             provider: "password",
             account: { id: username, secret },
             profile: { name: username },
-            shouldLinkViaEmail: false,
             shouldLinkViaPhone: false,
           });
           return { userId: created.user._id };
