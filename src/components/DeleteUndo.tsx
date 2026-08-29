@@ -11,7 +11,7 @@ export const UNDO_TTL_SECONDS = 10;
 // Snapshot of a deleted subtree, captured pre-delete so it can be recreated on undo.
 export type UndoSnapshot = {
   nodes: { oldId: string; plain: PlainNode }[]; // depth-first order: parents before children
-  history: { oldId: string; counts: [number, number][] }[];
+  history: { oldId: string; counts: [number, number][]; durations?: [number, number][] }[];
   count: number;
 };
 
@@ -28,6 +28,7 @@ export function DeleteConfirmDialog({
   onClose: () => void;
   onDelete: () => void;
 }) {
+  const hasTimer = !!node.metadata.timer;
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4"
@@ -51,7 +52,9 @@ export function DeleteConfirmDialog({
           {nestedCount > 1
             ? `// ${nestedCount - 1} nested node${nestedCount - 1 === 1 ? "" : "s"} terminated alongside it`
             : "// task will be purged"}
-          — recoverable for {UNDO_TTL_SECONDS}s via undo.
+          {hasTimer ? " — ⏱ running stopwatch session will be lost" : ""}
+          {" — recoverable for "}
+          {UNDO_TTL_SECONDS}s via undo.
         </p>
         <div className="mt-6 flex justify-end gap-2 font-mono text-xs">
           <button

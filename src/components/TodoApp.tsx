@@ -30,6 +30,20 @@ import {
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
+import {
+  awayGapMs,
+  commitSession,
+  crossedPayloadThreshold,
+  discardTimer,
+  excludeAway,
+  formatSessionDuration,
+  pauseTimer,
+  resumeTimer,
+  startTimer,
+  totalMs,
+  type ActiveTimer,
+  type SessionEntry,
+} from "@/lib/stopwatch";
 import { Heatmap } from "./Heatmap";
 import { HelpPanel } from "./HelpPanel";
 import { VaultPanel } from "./VaultPanel";
@@ -51,10 +65,36 @@ import { MetadataPanel } from "./MetadataPanel";
 import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
 import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
 import { NoticeDialog } from "./NoticeDialog";
+import { AwayPromptDialog, StopwatchWidget, type AwayItem } from "./StopwatchWidget";
 
 type Filter = "all" | "active" | "completed";
 
 const DUPLICATE_MSG = "a task with that path already exists";
+
+// ---- away-time bookkeeping (per device, localStorage) ----
+// Written whenever the app hides/locks/closes so the next unlock can ask
+// whether the elapsed wall-clock gap should count toward running stopwatches.
+const CLOSED_AT_KEY = "todosst:lastHidden";
+const AWAY_PROMPT_MIN_MS = 60_000;
+
+function readClosedAt(): number | null {
+  try {
+    const n = Number(localStorage.getItem(CLOSED_AT_KEY));
+    return Number.isFinite(n) && n > 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+function writeClosedAt(ts: number) {
+  try {
+    localStorage.setItem(CLOSED_AT_KEY, String(ts));
+  } catch {}
+}
+function clearClosedAt() {
+  try {
+    localStorage.removeItem(CLOSED_AT_KEY);
+  } catch {}
+}
 
 // Cache key for decrypted rows: ciphertext (with its iv) uniquely identifies a
 // payload version; rows without ciphertext key off their id.
@@ -85,6 +125,8 @@ type RowCtx = {
   currentDirDepth: number;
   currentCount: (node: TreeNode, rs: RecurState | undefined) => number;
   handleToggle: (node: TreeNode) => Promise<void>;
+  handleTimerStart: (node: TreeNode) => Promise<void>;
+  handleTimerTogglePause: (node: TreeNode) => Promise<void>;
   handleCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   handleCountDown: (node: TreeNode, delta?: number) => Promise<void>;
   handleMove: (draggedId: string, targetParentId: string | null, targetIndex: number) => Promise<void>;
@@ -122,6 +164,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     currentDirDepth,
     currentCount,
     handleToggle,
+    handleTimerStart,
+    handleTimerTogglePause,
     handleCountUp,
     handleCountDown,
     handleMove,
@@ -252,6 +296,20 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           </button>
         )}
 
+        {mode !== "time" && !checked && (
+          // stopwatch control: ▶ starts a timing session, ⏸/▶ pauses/resumes
+          // the active one. Completed rows don't offer it; check-off records
+          // the running session (or use the floating widget's done/discard).
+          <button
+            onClick={() => (meta.timer ? handleTimerTogglePause(node) : handleTimerStart(node))}
+            className={`shrink-0 w-4 text-[10px] leading-none ${meta.timer ? "opacity-100" : "opacity-60 hover:opacity-100"}`}
+            aria-label={meta.timer ? (meta.timer.state === "running" ? "pause stopwatch" : "resume stopwatch") : "start stopwatch"}
+            title={meta.timer ? (meta.timer.state === "running" ? "pause stopwatch" : "resume stopwatch") : "start stopwatch"}
+          >
+            {meta.timer && meta.timer.state === "running" ? "⏸" : "▶"}
+          </button>
+        )}
+
         {isEditing ? (
           <input
             autoFocus
@@ -292,6 +350,12 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
                 {rs?.isRecurring && rs.nextTs && dayIndexLocal(rs.nextTs) !== rs.windowDay
                   ? ` · next ${new Date(rs.nextTs).toLocaleDateString()}`
                   : ""}
+              </span>
+            ) : null}
+            {mode !== "time" && (meta.sessions?.length ?? 0) > 0 ? (
+              <span className="ml-1 text-[10px] opacity-50" title="stopwatch time logged in this window">
+                ⏱ {formatSessionDuration(totalMs(meta.sessions))}
+                {meta.sessions!.length > 1 ? ` · ${meta.sessions!.length}` : ""}
               </span>
             ) : null}
           </button>
@@ -517,7 +581,7 @@ function TodoTask() {
   const historyRecords = useQuery(api.history.list);
   const historyPut = useMutation(api.history.put);
   const historyRemove = useMutation(api.history.remove);
-  type HistoryStore = { byTodo: Map<string, Map<number, number>>; idByTodo: Map<string, Id<"todoHistory">> };
+  type HistoryStore = { byTodo: Map<string, Map<number, number>>; dursByTodo: Map<string, Map<number, number>>; idByTodo: Map<string, Id<"todoHistory">> };
   const [history, setHistory] = useState<HistoryStore | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -527,6 +591,7 @@ function TodoTask() {
         return;
       }
       const byTodo = new Map<string, Map<number, number>>();
+      const dursByTodo = new Map<string, Map<number, number>>();
       const idByTodo = new Map<string, Id<"todoHistory">>();
       await Promise.all(
         historyRecords.map(async (r) => {
@@ -535,11 +600,12 @@ function TodoTask() {
             const data = decodeHistoryPayload(json);
             if (!data) return;
             byTodo.set(data.todoId, data.counts);
+            if (data.durations && data.durations.size > 0) dursByTodo.set(data.todoId, data.durations);
             idByTodo.set(data.todoId, r._id);
           } catch {}
         })
       );
-      if (!cancelled) setHistory({ byTodo, idByTodo });
+      if (!cancelled) setHistory({ byTodo, dursByTodo, idByTodo });
     })();
     return () => {
       cancelled = true;
@@ -570,6 +636,74 @@ function TodoTask() {
     const merged = mergeCounts(history.byTodo.values());
     return merged.size > 0 ? merged : null;
   }, [history]);
+
+  // ---- stopwatch: active sessions across all tasks (most recent first) ----
+  const activeTimers = useMemo(() => {
+    const out: { node: TreeNode; timer: ActiveTimer }[] = [];
+    if (!nodes) return out;
+    for (const n of nodes) {
+      const t = (n.metadata as PlainNode["metadata"]).timer;
+      if (!t) continue;
+      const tn = tree.map.get(n._id as string);
+      if (tn) out.push({ node: tn, timer: t });
+    }
+    return out.sort((a, b) => b.timer.startedAt - a.timer.startedAt);
+  }, [nodes, tree]);
+
+  // ---- away-time reconciliation ----
+  // While hidden/locked/closed, running stopwatches keep deriving elapsed from
+  // stored timestamps. On return, ask whether that wall-clock gap should count.
+  const [away, setAway] = useState<{ closedAt: number; now: number; items: AwayItem[] } | null>(null);
+
+  const checkAway = useCallback(() => {
+    const closedAt = readClosedAt();
+    clearClosedAt();
+    if (closedAt === null) return;
+    const now = Date.now();
+    if (now - closedAt < AWAY_PROMPT_MIN_MS) return;
+    const items: AwayItem[] = [];
+    for (const n of nodes ?? []) {
+      const t = (n.metadata as PlainNode["metadata"]).timer;
+      if (!t || t.state !== "running") continue;
+      const gap = awayGapMs(t, closedAt, now);
+      if (gap > 0) items.push({ id: n._id as string, title: n.title, away: gap });
+    }
+    if (items.length > 0) setAway({ closedAt, now, items });
+  }, [nodes]);
+
+  // mark the moment the app goes away: lock, tab hide, or close
+  useEffect(() => {
+    if (isLocked) return;
+    const onHide = () => writeClosedAt(Date.now());
+    const onVisible = () => checkAway();
+    const onVisChange = () => (document.hidden ? onHide() : onVisible());
+    document.addEventListener("visibilitychange", onVisChange);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisChange);
+      window.removeEventListener("pagehide", onHide);
+    };
+  }, [isLocked, checkAway]);
+
+  // returning from lock / fresh load with pending away time
+  useEffect(() => {
+    if (isLocked || !nodes) return;
+    checkAway();
+  }, [isLocked, nodes, checkAway]);
+
+  async function applyAway(countIds: Set<string>) {
+    const snapshot = away;
+    setAway(null);
+    if (!snapshot || !key || !nodes) return;
+    for (const item of snapshot.items) {
+      if (countIds.has(item.id)) continue; // keep counting — derivation already includes the gap
+      const n = nodes.find((x) => (x._id as string) === item.id);
+      if (!n?.metadata.timer) continue;
+      const updated = toPlainNode(n, { metadata: excludeAway(n.metadata, snapshot.closedAt, Date.now()) });
+      const { ciphertext, iv } = await cryptoEncNode(updated);
+      await updateTodo({ id: n._id, ciphertext, iv });
+    }
+  }
 
   const listFlat = nodes ?? [];
 
@@ -893,32 +1027,67 @@ function TodoTask() {
     });
   }
 
-  async function pushHistory(todoId: string, windowDay: number, count: number) {
+  async function pushHistory(todoId: string, windowDay: number, count: number, durationMs?: number) {
     if (!key) return;
     const merged = new Map(history?.byTodo.get(todoId) ?? []);
     if (count > 0) merged.set(windowDay, count);
     else merged.delete(windowDay);
-    const payload = encodeHistoryPayload({ todoId, counts: merged });
+    // stopwatch durations accumulate per day; counts are replaced (they mirror
+    // the node's per-window count)
+    const durs = new Map(history?.dursByTodo.get(todoId) ?? []);
+    if (durationMs && durationMs > 0) durs.set(windowDay, (durs.get(windowDay) ?? 0) + Math.floor(durationMs));
+    const payload = encodeHistoryPayload({ todoId, counts: merged, durations: durs.size > 0 ? durs : undefined });
     const { ciphertext, iv } = await encryptString(key, payload);
     const hid = history?.idByTodo.get(todoId);
     await historyPut(hid ? { id: hid, ciphertext, iv } : { ciphertext, iv });
   }
 
-  // Write a new count for the node's current window (recurring or tally mode).
-  // Node metadata keeps only the current window; the full history record keeps everything.
-  async function applyCountWrite(node: TreeNode, rs: RecurState | undefined, next: number) {
+  // Warn once per threshold when the encrypted payload grows toward the 8KB server limit.
+  function warnPayloadGrowth(node: TreeNode, newCiphertext: string) {
+    const prev = node._raw.ciphertext?.length ?? 0;
+    const crossed = crossedPayloadThreshold(prev, newCiphertext.length);
+    if (crossed !== null) {
+      setNotice(
+        `encrypted payload now ${(newCiphertext.length / 1024).toFixed(1)}KB of the 8KB limit — clear old stopwatch sessions in this task's details if it keeps growing`
+      );
+    }
+  }
+
+  // Count for a specific day: the current window comes from recurState, past
+  // windows from the decrypted history record.
+  function countForDay(node: TreeNode, rs: RecurState | undefined, day: number): number {
+    if (rs && rs.windowDay === day) return rs.count;
+    return history?.byTodo.get(node._id as string)?.get(day) ?? 0;
+  }
+
+  // Write a new count for a node's window (recurring or tally mode). Node
+  // metadata keeps only the current window; the full history record keeps
+  // everything. targetDay credits a specific window (e.g. a stopwatch session
+  // that finished in a past one), durationMs accumulates stopwatch time.
+  async function applyCountWrite(
+    node: TreeNode,
+    rs: RecurState | undefined,
+    next: number,
+    opts?: { targetDay?: number; metadata?: PlainNode["metadata"]; durationMs?: number }
+  ) {
     if (!key || !nodes) return;
-    const meta = node.metadata as PlainNode["metadata"];
-    const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
+    const meta = opts?.metadata ?? (node.metadata as PlainNode["metadata"]);
+    const creationDay = dayIndexLocal(node._creationTime);
+    const windowDay = rs?.windowDay ?? creationDay;
+    const targetDay = opts?.targetDay ?? windowDay;
     const clamped = Math.max(0, Math.min(Math.floor(next), COUNT_MAX));
     const isRecurring = rs?.isRecurring ?? !!meta.recur;
+    // node metadata only carries the current window's count — a past-window
+    // credit (stopwatch rollover) lives in the history record alone
+    const counts = targetDay === windowDay ? { [String(targetDay)]: clamped } : { ...(meta.counts ?? {}) };
     const updated = toPlainNode(node, {
       isCompleted: isRecurring ? false : clamped >= thresholdOf(meta),
-      metadata: { ...meta, counts: { [String(windowDay)]: clamped } },
+      metadata: { ...meta, counts },
     });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
-    await pushHistory(node._id as string, windowDay, clamped);
+    await pushHistory(node._id as string, targetDay, clamped, opts?.durationMs);
+    warnPayloadGrowth(node, ciphertext);
   }
 
   function currentCount(node: TreeNode, rs: RecurState | undefined): number {
@@ -929,27 +1098,76 @@ function TodoTask() {
 
   async function handleToggle(node: TreeNode) {
     if (!key) return;
-    const meta = node.metadata as PlainNode["metadata"];
+    const meta0 = node.metadata as PlainNode["metadata"];
     const rs = recurStates?.get(node._id as string);
-    const isRecurring = rs?.isRecurring ?? !!meta.recur;
-    const mode = modeOf(meta);
+    const isRecurring = rs?.isRecurring ?? !!meta0.recur;
+    const mode = modeOf(meta0);
+    const creationDay = dayIndexLocal(node._creationTime);
+    // an active stopwatch session on this task ends with the check-off and is
+    // recorded as a session for its (start-)window
+    let metadata = meta0;
+    let session: SessionEntry | null = null;
+    let targetDay = rs?.windowDay ?? creationDay;
+    if (meta0.timer) {
+      const committed = commitSession(meta0, Date.now());
+      metadata = committed.metadata;
+      session = committed.session;
+      targetDay = committed.windowDay;
+    }
     if (isRecurring || mode !== "check") {
       // windowed count path — checkbox toggles threshold, tally increments
-      const next = nextCountOnClick(mode, currentCount(node, rs), thresholdOf(meta));
-      await applyCountWrite(node, rs, next);
+      const next = session
+        ? mode === "count"
+          ? Math.min(countForDay(node, rs, targetDay) + 1, COUNT_MAX)
+          : Math.max(countForDay(node, rs, targetDay), thresholdOf(meta0))
+        : nextCountOnClick(mode, currentCount(node, rs), thresholdOf(meta0));
+      await applyCountWrite(node, rs, next, { targetDay, metadata, durationMs: session?.ms });
       return;
     }
     // plain checkbox task — same behavior as before, plus counts kept in sync
     // for lossless check<->tally mode switching later
-    const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
-    const nextCount = node.isCompleted ? 0 : thresholdOf(meta);
+    const nextCount = session ? thresholdOf(meta0) : node.isCompleted ? 0 : thresholdOf(meta0);
+    const completed = session ? true : !node.isCompleted;
     const updated = toPlainNode(node, {
-      isCompleted: !node.isCompleted,
-      metadata: { ...meta, counts: { [String(windowDay)]: nextCount } },
+      isCompleted: completed,
+      metadata: { ...metadata, counts: { [String(targetDay)]: nextCount } },
     });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id: node._id, ciphertext, iv });
-    await pushHistory(node._id as string, windowDay, nextCount);
+    await pushHistory(node._id as string, targetDay, nextCount, session?.ms);
+    warnPayloadGrowth(node, ciphertext);
+  }
+
+  // ---- stopwatch ----
+
+  async function handleTimerStart(node: TreeNode) {
+    if (!key || !nodes) return;
+    const meta = node.metadata as PlainNode["metadata"];
+    if (meta.timer || modeOf(meta) === "time") return;
+    const rs = recurStates?.get(node._id as string);
+    const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
+    const updated = toPlainNode(node, { metadata: startTimer(meta, Date.now(), windowDay) });
+    const { ciphertext, iv } = await cryptoEncNode(updated);
+    await updateTodo({ id: node._id, ciphertext, iv });
+  }
+
+  async function handleTimerTogglePause(node: TreeNode) {
+    if (!key || !nodes) return;
+    const meta = node.metadata as PlainNode["metadata"];
+    if (!meta.timer) return;
+    const next = meta.timer.state === "running" ? pauseTimer(meta, Date.now()) : resumeTimer(meta, Date.now());
+    const updated = toPlainNode(node, { metadata: next });
+    const { ciphertext, iv } = await cryptoEncNode(updated);
+    await updateTodo({ id: node._id, ciphertext, iv });
+  }
+
+  async function handleTimerDiscard(node: TreeNode) {
+    if (!key || !nodes) return;
+    const meta = node.metadata as PlainNode["metadata"];
+    if (!meta.timer) return;
+    const updated = toPlainNode(node, { metadata: discardTimer(meta) });
+    const { ciphertext, iv } = await cryptoEncNode(updated);
+    await updateTodo({ id: node._id, ciphertext, iv });
   }
 
   async function handleCountUp(node: TreeNode, delta = 1) {
@@ -1002,7 +1220,10 @@ function TodoTask() {
     const snapHistory: UndoSnapshot["history"] = [];
     for (const { oldId } of snapNodes) {
       const counts = history?.byTodo.get(oldId);
-      if (counts && counts.size > 0) snapHistory.push({ oldId, counts: Array.from(counts.entries()) });
+      const durs = history?.dursByTodo.get(oldId);
+      if ((counts && counts.size > 0) || (durs && durs.size > 0)) {
+        snapHistory.push({ oldId, counts: Array.from(counts?.entries() ?? []), durations: durs ? Array.from(durs.entries()) : undefined });
+      }
     }
 
     const ids = collectDescendants(node);
@@ -1033,8 +1254,10 @@ function TodoTask() {
     if (!snap || !key) return;
     const idMap = new Map<string, Id<"todos">>();
     for (const { oldId, plain } of snap.nodes) {
+      // restore idle: an active stopwatch does not survive deletion
       const restored = toPlainNode(plain, {
         parentId: plain.parentId ? (idMap.get(plain.parentId) ?? null) : null,
+        metadata: { ...plain.metadata, timer: undefined },
       });
       const { ciphertext, iv } = await cryptoEncNode(restored);
       const newId = await createTodo({ ciphertext, iv });
@@ -1043,7 +1266,11 @@ function TodoTask() {
     for (const h of snap.history) {
       const newId = idMap.get(h.oldId);
       if (!newId) continue;
-      const payload = encodeHistoryPayload({ todoId: newId as string, counts: new Map(h.counts) });
+      const payload = encodeHistoryPayload({
+        todoId: newId as string,
+        counts: new Map(h.counts),
+        durations: h.durations ? new Map(h.durations) : undefined,
+      });
       const { ciphertext, iv } = await encryptString(key, payload);
       await historyPut({ ciphertext, iv });
     }
@@ -1078,6 +1305,11 @@ function TodoTask() {
     if (!cur) return;
     let metadata: PlainNode["metadata"] = { ...cur.metadata, ...patch };
     let isCompleted = cur.isCompleted;
+    // switching to time mode cancels any active stopwatch session (time mode
+    // logs minutes via counts instead)
+    if (patch.mode === "time" && metadata.timer) {
+      metadata = discardTimer(metadata);
+    }
     // plain task switching mode/threshold: keep rendered state stable.
     // storage is always counts — checkbox rendering just compares count >= threshold.
     if (!metadata.recur && ("mode" in patch || "threshold" in patch)) {
@@ -1207,6 +1439,8 @@ function TodoTask() {
     currentDirDepth,
     currentCount,
     handleToggle,
+    handleTimerStart,
+    handleTimerTogglePause,
     handleCountUp,
     handleCountDown,
     handleMove,
@@ -1250,7 +1484,13 @@ function TodoTask() {
               forget device
             </button>
           )}
-          <button onClick={() => lock()} className="opacity-60 hover:opacity-100 underline underline-offset-4">
+          <button
+            onClick={() => {
+              writeClosedAt(Date.now());
+              lock();
+            }}
+            className="opacity-60 hover:opacity-100 underline underline-offset-4"
+          >
             lock
           </button>
         </span>
@@ -1460,6 +1700,12 @@ function TodoTask() {
         />
       )}
 
+      {activeTimers.length > 0 && (
+        <StopwatchWidget timers={activeTimers} onTogglePause={handleTimerTogglePause} onDone={handleToggle} onDiscard={handleTimerDiscard} />
+      )}
+
+      {away && <AwayPromptDialog items={away.items} closedAt={away.closedAt} now={away.now} onApply={applyAway} />}
+
       {selectedNode && (
         <MetadataPanel
           key={selectedNode._id}
@@ -1468,6 +1714,7 @@ function TodoTask() {
           onClose={() => setSelectedId(null)}
           nowTs={nowTs}
           historyCounts={history?.byTodo.get(selectedNode._id as string) ?? null}
+          historyDurations={history?.dursByTodo.get(selectedNode._id as string) ?? null}
         />
       )}
     </div>

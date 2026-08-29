@@ -2,11 +2,23 @@
 
 import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { PlainNode } from "@/lib/crypto";
-import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, modeOf, stepOf, thresholdOf } from "@/lib/recur";
 import type { TreeNode } from "@/lib/tree";
+import type { PlainNode } from "@/lib/crypto";
+import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, dayIndexToStart, modeOf, stepOf, thresholdOf } from "@/lib/recur";
+import { formatElapsed, formatSessionDuration, liveElapsedMs, totalMs } from "@/lib/stopwatch";
 import { Heatmap } from "./Heatmap";
 import { RruleEditor } from "./RruleEditor";
+
+// 8KB ciphertext server limit (base64 chars) and the warn thresholds.
+const PAYLOAD_LIMIT = 8192;
+
+function sessionLine(s: number, e: number): string {
+  const d1 = new Date(s);
+  const d2 = new Date(e);
+  const sameDay = d1.toDateString() === d2.toDateString();
+  const time = (t: number) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return sameDay ? `${time(s)} → ${time(e)}` : `${d1.toLocaleDateString()} ${time(s)} → ${d2.toLocaleDateString()} ${time(e)}`;
+}
 
 export function MetadataPanel({
   node,
@@ -14,17 +26,22 @@ export function MetadataPanel({
   onClose,
   nowTs,
   historyCounts,
+  historyDurations,
 }: {
   node: TreeNode | null;
   onUpdateMetadata: (id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) => void;
   onClose: () => void;
   nowTs: number;
   historyCounts: Map<number, number> | null;
+  historyDurations: Map<number, number> | null;
 }) {
   const [showRuleEditor, setShowRuleEditor] = useState(false);
   if (!node) return null;
   const meta = node.metadata as PlainNode["metadata"];
   const mode = modeOf(meta);
+  const sessions = (meta.sessions ?? []).slice().sort((a, b) => b.s - a.s); // newest first
+  const pastDurations = historyDurations ? Array.from(historyDurations.entries()).sort((a, b) => b[0] - a[0]).slice(0, 14) : [];
+  const payloadLen = node._raw.ciphertext?.length ?? 0;
   return (
     <div className="border-t border-foreground bg-background p-3 text-xs">
       <div className="flex items-center justify-between">
@@ -137,6 +154,72 @@ export function MetadataPanel({
             recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
           </p>
         ) : null}
+
+        {/* stopwatch sessions (check/count modes only) */}
+        {mode !== "time" ? (
+          <div className="border border-foreground/20 p-2">
+            <div className="flex items-center justify-between">
+              <span className="opacity-60">stopwatch sessions</span>
+              {meta.timer ? (
+                <span className="font-mono text-[10px]" title="active session">
+                  {meta.timer.state === "running" ? "▶ " : "⏸ "}
+                  {formatElapsed(liveElapsedMs(meta.timer, nowTs))}
+                </span>
+              ) : null}
+              {sessions.length > 0 ? (
+                <button onClick={() => onUpdateMetadata(node._id, { sessions: [] })} className="underline underline-offset-2 opacity-60 hover:opacity-100">
+                  clear
+                </button>
+              ) : null}
+            </div>
+            {sessions.length > 0 ? (
+              <>
+                <p className="mt-1 text-[10px] opacity-60">
+                  this window: {formatSessionDuration(totalMs(meta.sessions))} across {sessions.length} session{sessions.length === 1 ? "" : "s"}
+                </p>
+                <div className="mt-1 max-h-32 space-y-0.5 overflow-auto">
+                  {sessions.map((s, i) => (
+                    <div key={`${s.s}-${i}`} className="flex justify-between font-mono text-[10px] opacity-70">
+                      <span>{sessionLine(s.s, s.e)}</span>
+                      <span>{formatSessionDuration(s.ms)}</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <p className="mt-1 text-[10px] opacity-40">no sessions recorded this window</p>
+            )}
+            {pastDurations.length > 0 ? (
+              <div className="mt-2 border-t border-foreground/10 pt-1">
+                <span className="text-[10px] opacity-40">history (per day)</span>
+                <div className="mt-0.5 space-y-0.5">
+                  {pastDurations.map(([day, ms]) => (
+                    <div key={day} className="flex justify-between font-mono text-[10px] opacity-70">
+                      <span>{new Date(dayIndexToStart(day)).toLocaleDateString()}</span>
+                      <span>{formatSessionDuration(ms)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {/* encrypted payload size */}
+        <div className="border border-foreground/20 p-2">
+          <div className="flex items-center justify-between text-[10px]">
+            <span className="opacity-60">encrypted payload</span>
+            <span className="font-mono opacity-70">
+              {payloadLen}/{PAYLOAD_LIMIT}
+            </span>
+          </div>
+          <div className="mt-1 h-1 w-full border border-foreground/20">
+            <div
+              className={`h-full ${payloadLen > 7168 ? "bg-foreground" : payloadLen > 1024 ? "bg-foreground/60" : "bg-foreground/30"}`}
+              style={{ width: `${Math.min(100, Math.round((payloadLen / PAYLOAD_LIMIT) * 100))}%` }}
+            />
+          </div>
+        </div>
 
         {/* past-year heatmap for this task */}
         {meta.recur ? (
