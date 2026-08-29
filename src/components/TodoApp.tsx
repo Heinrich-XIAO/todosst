@@ -21,7 +21,6 @@ import {
   decodeHistoryPayload,
   encodeHistoryPayload,
   formatMinutes,
-  mergeCounts,
   modeOf,
   nextCountOnClick,
   parseRecurInput,
@@ -44,7 +43,6 @@ import {
   type ActiveTimer,
   type SessionEntry,
 } from "@/lib/stopwatch";
-import { Heatmap } from "./Heatmap";
 import { HelpPanel } from "./HelpPanel";
 import { VaultPanel } from "./VaultPanel";
 import {
@@ -630,12 +628,6 @@ function TodoTask() {
       cancelled = true;
     };
   }, [nodes, nowTs]);
-
-  const globalCounts = useMemo(() => {
-    if (!history) return null;
-    const merged = mergeCounts(history.byTodo.values());
-    return merged.size > 0 ? merged : null;
-  }, [history]);
 
   // ---- stopwatch: active sessions across all tasks (most recent first) ----
   const activeTimers = useMemo(() => {
@@ -1625,13 +1617,6 @@ function TodoTask() {
           ))}
         </span>
       </div>
-
-      {globalCounts && (
-        <div className="border-b border-foreground/10 px-3 py-2">
-          <div className="mb-1 text-[10px] uppercase opacity-40">activity — past year</div>
-          <Heatmap counts={globalCounts} nowTs={nowTs} />
-        </div>
-      )}
 
       {/* drag hint */}
       <div
