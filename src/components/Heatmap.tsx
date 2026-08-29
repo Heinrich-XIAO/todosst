@@ -60,11 +60,16 @@ export function Heatmap({
     // month labels: first column where the month of the top (Sunday) cell changes
     const monthLabels: { col: number; label: string }[] = [];
     let lastMonth = -1;
+    let lastLabelCol = -10;
     cols.forEach((col, c) => {
       const d = new Date(dayIndexToStart(col[0]!.idx));
       if (d.getMonth() !== lastMonth && c > 0 && !col[0]!.future) {
         lastMonth = d.getMonth();
-        monthLabels.push({ col: c, label: MONTHS[d.getMonth()]! });
+        // skip if it would overlap the previous label (columns are 12px, labels ~18px wide)
+        if ((c - lastLabelCol) * 12 >= 24) {
+          monthLabels.push({ col: c, label: MONTHS[d.getMonth()]! });
+          lastLabelCol = c;
+        }
       }
     });
     return { cols, monthLabels, aligned };
