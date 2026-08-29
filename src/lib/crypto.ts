@@ -184,6 +184,18 @@ export type PlainNode = {
     stepMin?: number; // time mode: minutes per + click (default 15)
     graceHours?: number; // window lock grace past midnight (default 4)
     counts?: Record<string, number>; // current window only (day-index -> count; time mode stores minutes); full history lives in todoHistory
+    // stopwatch (see src/lib/stopwatch.ts) — optional timing on check/count
+    // tasks; time mode logs minutes via counts instead. One active session per
+    // task, unlimited tasks in parallel; elapsed is derived from timestamps so
+    // reloads/other devices render correctly without periodic writes.
+    timer?: {
+      startedAt: number; // wall clock when the session began
+      elapsedMs: number; // net ms accumulated in finished stretches
+      state: "running" | "paused";
+      resumeAt?: number; // start ts of the current stretch (iff running)
+      windowDay: number; // day-index the session's completion applies to
+    };
+    sessions?: { s: number; e: number; ms: number }[]; // finished sessions of the current window (start, end, net ms)
   };
 };
 

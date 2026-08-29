@@ -7,6 +7,8 @@ import {
   normalizeRruleString,
   encodeCounts,
   decodeCounts,
+  encodeDurations,
+  decodeDurations,
   mergeCounts,
   encodeHistoryPayload,
   decodeHistoryPayload,
@@ -95,6 +97,36 @@ test("history payload round trip + rejects junk", () => {
   expect(back?.counts.get(1240)).toBe(2);
   expect(decodeHistoryPayload("{not json")).toBeNull();
   expect(decodeHistoryPayload(JSON.stringify({ v: 2, todoId: "x" }))).toBeNull();
+});
+
+test("durations codec round trip + sanitization", () => {
+  const s = encodeDurations({ "1240": 45 * 60_000, "1241": 3_600_000 + 5, "1242": 0 });
+  expect(s).toBe("d1240:2700000;d1241:3600005");
+  const m = decodeDurations(s);
+  expect(m.get(1240)).toBe(2_700_000);
+  expect(m.get(1241)).toBe(3_600_005);
+  expect(m.get(1242)).toBeUndefined();
+  expect(decodeDurations("garbage;d12:4;d1240:x;;").size).toBe(0);
+  expect(decodeDurations("").size).toBe(0);
+});
+
+test("history payload carries durations only when present", () => {
+  const json = encodeHistoryPayload({
+    todoId: "abc",
+    counts: new Map([[1240, 2]]),
+    durations: new Map([
+      [1240, 2_700_000],
+      [1242, 45_000],
+    ]),
+  });
+  const back = decodeHistoryPayload(json);
+  expect(back?.durations?.get(1240)).toBe(2_700_000);
+  expect(back?.durations?.get(1242)).toBe(45_000);
+  // legacy payload without t decodes fine
+  const legacy = decodeHistoryPayload(JSON.stringify({ v: 1, todoId: "x", c: "d1240:1" }));
+  expect(legacy?.durations).toBeUndefined();
+  // no durations -> no t field emitted
+  expect(encodeHistoryPayload({ todoId: "abc", counts: new Map() })).not.toContain('"t"');
 });
 
 test("parseRecurInput suffixes", () => {
