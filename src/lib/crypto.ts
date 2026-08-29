@@ -180,7 +180,7 @@ export type PlainNode = {
     // checkbox vs tally vs time is a rendering mode only
     recur?: string; // RFC 5545 RRULE string (jakubroztocil/rrule)
     mode?: "check" | "count" | "time";
-    threshold?: number; // check mode: checked iff count >= threshold (default 1); time mode: goal in minutes
+    threshold?: number; // check mode: checked iff count >= threshold (default 1); time mode: goal in minutes; count mode: goal (unset = ∞ — tally never auto-completes)
     stepMin?: number; // time mode: minutes per + click (default 15)
     graceHours?: number; // window lock grace past midnight (default 4)
     counts?: Record<string, number>; // current window only (day-index -> count; time mode stores minutes); full history lives in todoHistory

@@ -163,6 +163,11 @@ test("mode/threshold/click semantics — lossless mode switching", () => {
   expect(thresholdOf({})).toBe(1);
   expect(thresholdOf({ threshold: 0 })).toBe(1);
   expect(thresholdOf({ threshold: 3.9 })).toBe(3);
+  // count mode: unset goal = Infinity — a tally without a goal never auto-completes
+  expect(thresholdOf({ mode: "count" })).toBe(Infinity);
+  expect(thresholdOf({ mode: "count", threshold: 0 })).toBe(Infinity);
+  expect(thresholdOf({ mode: "count", threshold: 5 })).toBe(5);
+  expect(isChecked(2, Infinity)).toBe(false);
   expect(isChecked(2, 2)).toBe(true);
   expect(isChecked(1, 2)).toBe(false);
   // check mode: click sets threshold, click again clears

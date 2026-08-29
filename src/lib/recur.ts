@@ -8,7 +8,8 @@
 //   past windows are immutable history.
 // - Completions are stored as COUNTS per window, internally always counts.
 //   Checkbox vs tally vs time is purely a rendering mode (check: checked iff
-//   count >= threshold; time: count is minutes, goal = threshold).
+//   count >= threshold; time: count is minutes, goal = threshold; count: goal
+//   defaults to Infinity — a tally without a goal never auto-completes).
 // - Grace period: `now - graceHours` may still fall into yesterday's window, so
 //   night owls can count yesterday's task after midnight. Past windows are never
 //   editable by construction — the UI only ever mutates the current window.
@@ -122,9 +123,12 @@ export function modeOf(meta: RecurMetadata): CompletionMode {
   return meta.mode === "count" || meta.mode === "time" ? meta.mode : "check";
 }
 
+/** Goal for the current mode. check: default 1; time: goal in minutes, default 1.
+ * count: unset threshold = Infinity — a tally without a goal never auto-completes. */
 export function thresholdOf(meta: RecurMetadata): number {
   const t = meta.threshold;
-  return typeof t === "number" && Number.isFinite(t) && t >= 1 ? Math.min(Math.floor(t), 999) : 1;
+  if (typeof t === "number" && Number.isFinite(t) && t >= 1) return Math.min(Math.floor(t), 999);
+  return modeOf(meta) === "count" ? Infinity : 1;
 }
 
 export const TIME_STEP_DEFAULT = 15;

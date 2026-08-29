@@ -108,6 +108,24 @@ export function MetadataPanel({
               />
             </label>
           )}
+          {mode === "count" && (
+            <label className="flex-1 block">
+              <span className="opacity-60">goal (optional)</span>
+              <input
+                type="number"
+                min={1}
+                max={999}
+                value={meta.threshold ?? ""}
+                placeholder="∞"
+                onChange={(e) =>
+                  onUpdateMetadata(node._id, {
+                    threshold: e.target.value === "" ? undefined : Math.min(999, Math.max(1, Math.floor(Number(e.target.value) || 1))),
+                  })
+                }
+                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              />
+            </label>
+          )}
           {mode === "time" && (
             <>
               <label className="flex-1 block">

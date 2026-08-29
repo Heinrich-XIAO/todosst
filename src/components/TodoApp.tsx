@@ -270,7 +270,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             </button>
             <span
               className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
-                (mode === "time" ? count >= threshold : count > 0) ? "bg-foreground text-background" : "bg-background"
+                (mode === "time" || threshold < Infinity ? count >= threshold : count > 0) ? "bg-foreground text-background" : "bg-background"
               }`}
             >
               {mode === "time" ? formatMinutes(count) : count}
@@ -1315,8 +1315,8 @@ function TodoTask() {
       const th = thresholdOf(metadata);
       if ((patch.mode === "count" || patch.mode === "time") && c === 0 && cur.isCompleted) {
         // seed the tally from the checked state so nothing visually changes
-        // (time mode seeds the goal as minutes)
-        metadata = { ...metadata, counts: { ...metadata.counts, [String(windowDay)]: th } };
+        // (time mode seeds the goal as minutes; count mode without a goal seeds 1)
+        metadata = { ...metadata, counts: { ...metadata.counts, [String(windowDay)]: Number.isFinite(th) ? th : 1 } };
       } else if (metadata.counts) {
         isCompleted = (metadata.counts[String(windowDay)] ?? 0) >= th;
       }
