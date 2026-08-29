@@ -23,7 +23,9 @@ export default defineSchema({
   // per-user PBKDF2 salt (public, not secret) for E2E key derivation
   userSalts: defineTable({
     userId: v.string(),
-    username: v.string(),
+    // optional: rows created before the username migration have no username
+    // (it is backfilled from the account's password credentials)
+    username: v.optional(v.string()),
     salt: v.string(), // base64 16 bytes
   })
     .index("by_userId", ["userId"])
