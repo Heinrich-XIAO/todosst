@@ -5,16 +5,15 @@
 // input actually parses.
 
 import { useEffect } from "react";
-import { GRAMMAR, type CommandEntry, type GrammarEntry, type ModifierEntry, type SyntaxEntry } from "@/lib/grammar";
+import { GRAMMAR, type CommandEntry, type GrammarDoc, type ModifierEntry, type SyntaxEntry } from "@/lib/grammar";
 
-function Row({ entry }: { entry: GrammarEntry }) {
-  const key = entry.kind === "command" ? entry.name : entry.id;
-  return (
-    <div key={key} className="flex flex-col gap-0.5 px-3 py-1.5 sm:flex-row sm:items-baseline sm:gap-3">
-      <code className="shrink-0 text-xs">{entry.example}</code>
-      <span className="text-xs opacity-60">{entry.desc}</span>
+function DocRows({ docs }: { docs: GrammarDoc[] }) {
+  return docs.map((doc) => (
+    <div key={doc.example} className="flex flex-col gap-0.5 px-3 py-1.5 sm:flex-row sm:items-baseline sm:gap-3">
+      <code className="shrink-0 text-xs">{doc.example}</code>
+      <span className="text-xs opacity-60">{doc.note}</span>
     </div>
-  );
+  ));
 }
 
 export function HelpPanel({ onClose }: { onClose: () => void }) {
@@ -48,7 +47,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           <div key={section.label} className="border-b border-foreground/10 py-1 last:border-b-0">
             <div className="px-3 pt-1 text-[10px] uppercase opacity-40">{section.label}</div>
             {section.entries.map((entry) => (
-              <Row key={entry.kind === "command" ? entry.name : entry.id} entry={entry} />
+              <DocRows key={entry.kind === "command" ? entry.name : entry.id} docs={entry.docs} />
             ))}
           </div>
         ))}

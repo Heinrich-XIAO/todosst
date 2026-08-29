@@ -15,6 +15,9 @@ import { resolveCdPath } from "./cdPath";
 
 // ---------- types ----------
 
+/** One help-panel row: a canonical input and what it does. */
+export type GrammarDoc = { example: string; note: string };
+
 export type CommandContext = {
   /** decoded current directory path, e.g. "/host hackathon" ("/" for root) */
   currentPath: string;
@@ -28,9 +31,8 @@ export type CommandEntry = {
   kind: "command";
   /** invoked as "!<name> <argv...>" — case-sensitive, single word */
   name: string;
-  /** canonical usage shown in the help panel */
-  example: string;
-  desc: string;
+  /** rows shown in the help panel */
+  docs: GrammarDoc[];
   run: (argv: string[], ctx: CommandContext) => void;
 };
 
@@ -39,9 +41,8 @@ export type SyntaxParseResult = { kind: "slash"; parts: string[] } | { kind: "ta
 export type SyntaxEntry = {
   kind: "syntax";
   id: string;
-  /** canonical usage shown in the help panel */
-  example: string;
-  desc: string;
+  /** rows shown in the help panel */
+  docs: GrammarDoc[];
   /** return null to fall through to the next syntax entry (task is the final fallback) */
   parse: (input: string) => SyntaxParseResult | null;
 };
@@ -49,9 +50,8 @@ export type SyntaxEntry = {
 export type ModifierEntry = {
   kind: "modifier";
   id: string;
-  /** canonical usage shown in the help panel */
-  example: string;
-  desc: string;
+  /** rows shown in the help panel */
+  docs: GrammarDoc[];
   /** strips its token from the input and returns the payload to attach */
   parse: (input: string) => ParsedInput;
 };
@@ -106,8 +106,10 @@ export const GRAMMAR: GrammarEntry[] = [
   {
     kind: "syntax",
     id: "slash-path",
-    example: "/host hackathon/outreach write emails",
-    desc: "create nested directories — last segment is the task, trailing / makes an empty directory",
+    docs: [
+      { example: "/host hackathon/write emails", note: "directories first — the LAST segment is the task" },
+      { example: "/grocery/", note: "trailing / = create just an empty directory" },
+    ],
     parse: (input) => {
       const parts = parseSlashPath(input);
       return parts ? { kind: "slash", parts } : null;
@@ -116,15 +118,18 @@ export const GRAMMAR: GrammarEntry[] = [
   {
     kind: "syntax",
     id: "task",
-    example: "buy coffee beans",
-    desc: "create a task in the current directory",
+    docs: [{ example: "buy coffee beans", note: "no slash = plain task in the current directory" }],
     parse: (input) => ({ kind: "task", title: input }),
   },
   {
     kind: "command",
     name: "cd",
-    example: "!cd ../side-quests",
-    desc: 'change directory — relative, absolute /a/b, ".." up, "quotes for spaces"; bare !cd goes to root',
+    docs: [
+      { example: "!cd ../side-quests", note: "relative — .. goes up one level" },
+      { example: "!cd /a/b", note: "absolute, from the root" },
+      { example: '!cd "host hackathon"', note: "quotes for names with spaces" },
+      { example: "!cd", note: "bare = back to the root" },
+    ],
     run: (argv, ctx) => {
       // a cd target may contain spaces: unquoted (joined back) or quoted (single token)
       const target = argv.length > 0 ? argv.join(" ") : null;
@@ -134,15 +139,16 @@ export const GRAMMAR: GrammarEntry[] = [
   {
     kind: "command",
     name: "help",
-    example: "!help",
-    desc: "show the input grammar",
+    docs: [{ example: "!help", note: "show this panel" }],
     run: (_argv, ctx) => ctx.showHelp(),
   },
   {
     kind: "modifier",
     id: "recur",
-    example: "stretch ~daily",
-    desc: "recurring task — ~daily ~weekly ~monthly ~yearly ~weekdays ~every 2w mon,thu",
+    docs: [
+      { example: "stretch ~daily", note: "~daily ~weekly ~weekdays ~monthly ~yearly" },
+      { example: "gym ~every 2w mon,thu", note: "~every N d/w/m/y — weekday list optional" },
+    ],
     parse: parseRecurInput,
   },
 ];

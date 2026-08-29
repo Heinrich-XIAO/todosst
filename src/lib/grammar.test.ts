@@ -163,8 +163,11 @@ test("runInput slash paths combine with recur modifier", () => {
 test("every grammar entry documents itself and ids/names are unique", () => {
   const ids = new Set<string>();
   for (const entry of GRAMMAR) {
-    expect(entry.example.length).toBeGreaterThan(0);
-    expect(entry.desc.length).toBeGreaterThan(0);
+    expect(entry.docs.length).toBeGreaterThan(0);
+    for (const doc of entry.docs) {
+      expect(doc.example.length).toBeGreaterThan(0);
+      expect(doc.note.length).toBeGreaterThan(0);
+    }
     const key = entry.kind === "command" ? entry.name : entry.id;
     expect(ids.has(key)).toBe(false);
     ids.add(key);
