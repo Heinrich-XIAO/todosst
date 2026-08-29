@@ -215,25 +215,28 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 
         {mode === "count" ? (
           // tally rendering — storage underneath is still a count
-          <div className="flex h-4 shrink-0 items-center">
-            {count > 0 && (
-              <button
-                onClick={() => handleCountDown(node)}
-                className="h-4 w-4 border border-foreground text-[10px] leading-none opacity-60 hover:opacity-100"
-                aria-label="decrement tally"
-              >
-                −
-              </button>
-            )}
+          <div className="flex h-4 w-16 shrink-0 items-stretch border border-foreground">
+            <button
+              onClick={() => handleCountDown(node)}
+              className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
+              aria-label="decrement tally"
+            >
+              −
+            </button>
+            <span
+              className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
+                count > 0 ? "bg-foreground text-background" : "bg-background"
+              }`}
+            >
+              {count}
+            </span>
             <button
               onClick={() => handleCountUp(node)}
-              className={`h-4 min-w-[20px] border px-0.5 text-[10px] leading-none ${
-                count > 0 ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"
-              }`}
+              className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
               aria-label="increment tally"
               title="click to count +1"
             >
-              {count}
+              +
             </button>
           </div>
         ) : (
