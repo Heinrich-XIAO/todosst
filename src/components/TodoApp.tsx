@@ -74,6 +74,8 @@ const DUPLICATE_MSG = "a task with that path already exists";
 // whether the elapsed wall-clock gap should count toward running stopwatches.
 const CLOSED_AT_KEY = "todosst:lastHidden";
 const AWAY_PROMPT_MIN_MS = 60_000;
+// how long a completed task takes to fade away
+const FADE_MS = 3000;
 
 function readClosedAt(): number | null {
   try {
@@ -119,6 +121,9 @@ type RowCtx = {
   dragId: string | null;
   dropHint: { id: string; pos: DropPos } | null;
   fadingIds: Set<string>;
+  // active view hides completed rows once faded — there the fade targets 0;
+  // elsewhere (all/completed) the row rests dimmed at 20
+  fadeToZero: boolean;
   confirmDeleteId: Id<"todos"> | null;
   currentDirDepth: number;
   currentCount: (node: TreeNode, rs: RecurState | undefined) => number;
@@ -158,6 +163,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     dragId,
     dropHint,
     fadingIds,
+    fadeToZero,
     confirmDeleteId,
     currentDirDepth,
     currentCount,
@@ -184,9 +190,10 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
   const isEditing = editingId === node._id;
   const isSelected = selectedId === node._id;
   const hasChildren = node.children.length > 0;
-  const show = matches(node);
-  if (!show) return null;
   const isFading = node.isCompleted && fadingIds.has(node._id as string);
+  // a fading row stays visible (and clickable) even where the filter would hide it
+  const show = matches(node) || isFading;
+  if (!show) return null;
   const rs = recurStates?.get(node._id as string);
   const meta = node.metadata as PlainNode["metadata"];
   const mode = modeOf(meta);
@@ -235,7 +242,9 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         setDragId(null);
         setDropHint(null);
       }}
-      className={`border-b border-foreground/10 last:border-b-0 transition-opacity duration-1000 ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${isFading ? "opacity-20" : "opacity-100"}`}
+      className={`border-b border-foreground/10 last:border-b-0 transition-opacity ${isFading ? "duration-[3000ms] ease-out" : "duration-1000"} ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${
+        isFading ? (fadeToZero ? "opacity-0" : "opacity-20") : node.isCompleted ? "opacity-20" : "opacity-100"
+      }`}
       style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
     >
       <div
@@ -700,37 +709,83 @@ function TodoTask() {
 
   const listFlat = nodes ?? [];
 
-  // completed tasks fade out 3s after being checked (1s CSS transition) — not removed
+  // ---- completed-task fade-away ----
+  // Completing a task (check-off, tally/time reaching threshold, …) shows the
+  // dash + grey immediately and fades the row away over 3s. While fading the
+  // row stays rendered — and clickable to un-complete — even on the active
+  // list; when the fade ends it disappears there and rests dimmed elsewhere.
+  const fadingRef = useRef(fadingIds);
+  fadingRef.current = fadingIds;
+  const fadeTimersRef = useRef(new Map<string, number>());
+  const seenCompletedRef = useRef<Set<string> | null>(null);
+
+  function endFade(id: string) {
+    fadeTimersRef.current.delete(id);
+    setFadingIds((prev) => {
+      if (!prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+  }
+
   useEffect(() => {
-    if (!nodes) return;
-    const timers: number[] = [];
-    const currentCompleted = new Set(nodes.filter((n) => n.isCompleted).map((n) => n._id as string));
-    // schedule fading for newly completed
-    for (const n of nodes) {
-      const idStr = n._id as string;
-      if (n.isCompleted && !fadingIds.has(idStr)) {
-        const t = window.setTimeout(() => {
-          setFadingIds((prev) => {
-            const next = new Set(prev);
-            next.add(idStr);
-            return next;
-          });
-        }, 3000);
-        timers.push(t);
+    if (!nodes) {
+      // locked/reset — drop any half-finished fades
+      seenCompletedRef.current = null;
+      for (const t of Array.from(fadeTimersRef.current.values())) window.clearTimeout(t);
+      fadeTimersRef.current.clear();
+      setFadingIds((prev) => (prev.size > 0 ? new Set<string>() : prev));
+      return;
+    }
+    const completed = new Set(nodes.filter((n) => n.isCompleted).map((n) => n._id as string));
+    const seen = seenCompletedRef.current;
+    if (!seen) {
+      // first observation after load/unlock — pre-existing completed rows rest
+      // dimmed instead of animating a fade they finished long ago
+      seenCompletedRef.current = completed;
+      return;
+    }
+    const start: string[] = [];
+    for (const id of Array.from(completed)) {
+      if (!seen.has(id) && !fadingRef.current.has(id)) start.push(id);
+    }
+    const stop: string[] = [];
+    for (const id of Array.from(fadingRef.current)) {
+      if (!completed.has(id)) stop.push(id);
+    }
+    if (start.length > 0 || stop.length > 0) {
+      setFadingIds((prev) => {
+        const next = new Set(prev);
+        let changed = false;
+        for (const id of start) {
+          if (!next.has(id)) {
+            next.add(id);
+            changed = true;
+          }
+        }
+        for (const id of stop) {
+          if (next.has(id)) {
+            next.delete(id);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      for (const id of start) {
+        fadeTimersRef.current.set(id, window.setTimeout(() => endFade(id), FADE_MS));
+      }
+      // un-completed mid-fade: cancel the end timer
+      for (const id of stop) {
+        const t = fadeTimersRef.current.get(id);
+        if (t !== undefined) {
+          window.clearTimeout(t);
+          fadeTimersRef.current.delete(id);
+        }
       }
     }
-    // un-fade if toggled back to active
-    for (const id of Array.from(fadingIds)) {
-      if (!currentCompleted.has(id as string)) {
-        setFadingIds((prev) => {
-          const next = new Set(prev);
-          next.delete(id);
-          return next;
-        });
-      }
-    }
-    return () => timers.forEach((t) => clearTimeout(t));
-  }, [nodes, fadingIds]);
+    seenCompletedRef.current = completed;
+  }, [nodes]);
 
   // If no input/textarea/select is focused, typing should go straight into the new-task box
   useEffect(() => {
@@ -1417,6 +1472,7 @@ function TodoTask() {
 
   // Bundle of state/handlers for the module-level row renderer (stable component
   // type — no remount of the task tree on re-render).
+  const fadeToZero = filter === "active";
   const rowCtx: RowCtx = {
     tree,
     matches,
@@ -1432,6 +1488,7 @@ function TodoTask() {
     dragId,
     dropHint,
     fadingIds,
+    fadeToZero,
     confirmDeleteId,
     currentDirDepth,
     currentCount,
