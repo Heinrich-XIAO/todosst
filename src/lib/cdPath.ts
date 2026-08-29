@@ -1,32 +1,10 @@
 "use client";
 
-// Utilities for the `!cd` command. Canonical representation is a list of path segments
+// Utilities for cd-path resolution ("!cd" arguments live in grammar.ts).
+// Canonical representation is a list of path segments
 // (string[] with no "/" symbols) — e.g. "/haven" and "/haven/" both normalize to ["haven"].
 // Handles: absolute vs relative, "." and "..", spaces without escaping,
 // quoted forms cd "host hackathon", and // collapse.
-
-export function parseCdArg(rawAfterCd: string | null | undefined): string | null {
-  if (rawAfterCd == null) return null;
-  let s = rawAfterCd.trim();
-  if (s === "") return null; // treat as root
-  // strip surrounding quotes if present (single or double)
-  if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
-    if (s.length >= 2) s = s.slice(1, -1);
-    // keep inner exactly, don't trim again? Trim to be forgiving.
-    // but we will return as-is for path resolution (inner may have leading/trailing spaces intentionally?)
-    return s;
-  }
-  // Also handle case where arg is quoted but with extra spaces outside: already trimmed.
-  // If arg starts with quote but not ends (unclosed), strip leading quote only
-  if ((s.startsWith('"') || s.startsWith("'")) && s.length === 1) return "";
-  if (s.startsWith('"') || s.startsWith("'")) {
-    // try to find matching closing quote at end of first quoted segment?
-    // For cd, the entire path after cd is the arg, so we just strip outer if both present above.
-    // If not both, maybe user typed "host hackathon" with quotes around but we already handled.
-    // Otherwise return as-is.
-  }
-  return s;
-}
 
 /** Shared representation: list of segments with no "/" — e.g. [] for "/", ["haven"], ["host hackathon"] */
 export function decodePathToParts(pathname: string): string[] {
@@ -105,30 +83,4 @@ export function decodePath(pathname: string): string {
   } catch {
     return pathname;
   }
-}
-
-/**
- * Parse full "!cd ..." command line.
- * Input: full trimmed line starting with "!" e.g. "!cd /host hackathon/" or "!cd host hackathon"
- * Returns absolute decoded target or null if not a cd command.
- */
-export function parseBangCd(input: string): { isCd: boolean; target: string | null } {
-  const trimmed = input.trim();
-  if (!trimmed.startsWith("!")) return { isCd: false, target: null };
-  const afterBang = trimmed.slice(1).trimStart();
-  // must start with "cd"
-  if (!afterBang.startsWith("cd")) return { isCd: false, target: null };
-  const rest = afterBang.slice(2);
-  // "cd" must be followed by space, end, or quote? Allow "cd/"? we require separator
-  if (rest.length > 0 && !/^[\s"'\/]/.test(rest) && rest[0] !== "") {
-    // e.g. "!cdf" not cd
-    return { isCd: false, target: null };
-  }
-  // rawArg is rest trimmed start -- includes leading spaces etc.
-  // We want everything after "cd" as arg; e.g. "cd /host hackathon/"
-  const rawArg = rest.trimStart();
-  // If rawArg starts with quoted string, parseCdArg handles.
-  // But for "!cd \"host hackathon\"" rawArg = "\"host hackathon\"" -> parseCdArg strips quotes.
-  const parsed = parseCdArg(rawArg === "" ? null : rawArg);
-  return { isCd: true, target: parsed };
 }

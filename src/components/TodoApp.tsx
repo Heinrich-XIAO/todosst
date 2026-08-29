@@ -13,8 +13,8 @@ import { useEncryption, getRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
 import { encryptString, decryptString, toPlainNode } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
-import { parseBangCd, resolveCdPath, decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
-import { parseSlashPath } from "@/lib/slashPath";
+import { decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
+import { runInput, type CommandContext } from "@/lib/grammar";
 import {
   COUNT_MAX,
   dayIndexLocal,
@@ -29,6 +29,7 @@ import {
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
 import { Heatmap } from "./Heatmap";
+import { HelpPanel } from "./HelpPanel";
 import { VaultPanel } from "./VaultPanel";
 import {
   buildTree,
@@ -402,6 +403,7 @@ function TodoTask() {
   const [notice, setNotice] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{ snap: UndoSnapshot; ttl: number } | null>(null);
   const [showVault, setShowVault] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const newRootInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isSlashFocused, setIsSlashFocused] = useState(false);
@@ -719,6 +721,16 @@ function TodoTask() {
     [pushPath]
   );
 
+  // context handed to bang commands (!cd, !help) via the grammar registry
+  const commandCtx = useMemo<CommandContext>(
+    () => ({
+      currentPath: decodedPath,
+      pushPath,
+      showHelp: () => setHelpOpen(true),
+    }),
+    [decodedPath, pushPath]
+  );
+
   // intellisense: autocomplete for "/..." paths and "!cd ..." commands
   const slashComplete = useMemo(
     () => resolveSlashSuggest(newRootTitle, nodes, tree.roots, tree.map, decodedPath),
@@ -759,39 +771,14 @@ function TodoTask() {
     e.preventDefault();
     const raw = newRootTitle.trim();
     if (!raw || !key) return;
-    // bang commands: !cd <path> — change window location without reload
-    if (raw.startsWith("!")) {
-      const { isCd, target } = parseBangCd(raw);
-      if (isCd) {
-        let decodedCurrent: string;
-        try {
-          decodedCurrent = decodeURIComponent(pathname);
-        } catch {
-          decodedCurrent = pathname;
-        }
-        const resolved = resolveCdPath(decodedCurrent, target);
-        pushPath(resolved);
-        setNewRootTitle("");
-        return;
-      }
-      // unknown bang command — just clear and ignore (don’t create a todo)
-      setNewRootTitle("");
-      return;
-    }
-    // trailing "~…" token → recurrence on the created task
-    const parsedRecur = parseRecurInput(raw);
-    const base = parsedRecur.title;
-    if (!base) {
-      // recurrence token only — nothing to create
-      setNewRootTitle("");
-      return;
-    }
-    const slashParts = parseSlashPath(base);
-    if (slashParts) {
+    // grammar registry decides: !commands run via ctx, creation forms return a plan
+    const outcome = runInput(raw, commandCtx);
+    if (outcome.type === "create-slash") {
       if (!nodes) return;
       // Build slash-separated hierarchy: each "/" segment may contain spaces.
       // e.g. "/host hackathon/outreach write email template" -> ["host hackathon","outreach write email template"]
       // Reuse existing nodes by exact title + parentId match; create missing.
+      const slashParts = outcome.parts;
       let parentId: string | null = null;
       const maxOrderByParent = new Map<string | null, number>();
       for (const n of nodes) {
@@ -815,7 +802,7 @@ function TodoTask() {
         maxOrderByParent.set(parentId, order);
         // recurrence applies to the final segment of the path
         const isLast = segIdx === slashParts.length - 1;
-        const metadata: PlainNode["metadata"] = isLast && parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {};
+        const metadata: PlainNode["metadata"] = isLast && outcome.recur ? { recur: outcome.recur } : {};
         const node = toPlainNode({ title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata });
         const { ciphertext, iv } = await cryptoEncNode(node);
         const newId = await createTodo({ ciphertext, iv });
@@ -844,25 +831,30 @@ function TodoTask() {
       setNewRootTitle("");
       return;
     }
-    // fallback: single task — creates in current directory (pwd) when scoped
-    const title = base;
-    if (title.length > 200) return;
-    const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
-    const siblings = childrenOf(tree.roots, tree.map, targetParentId);
-    if (siblings.some((r) => r.title === title)) {
-      setNotice(DUPLICATE_MSG);
+    if (outcome.type === "create-task") {
+      // fallback: single task — creates in current directory (pwd) when scoped
+      const title = outcome.title;
+      if (title.length > 200) return;
+      const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
+      const siblings = childrenOf(tree.roots, tree.map, targetParentId);
+      if (siblings.some((r) => r.title === title)) {
+        setNotice(DUPLICATE_MSG);
+        return;
+      }
+      const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
+      const node = toPlainNode({
+        title,
+        isCompleted: false,
+        parentId: targetParentId,
+        order,
+        metadata: outcome.recur ? { recur: outcome.recur } : {},
+      });
+      const { ciphertext, iv } = await cryptoEncNode(node);
+      await createTodo({ ciphertext, iv });
+      setNewRootTitle("");
       return;
     }
-    const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
-    const node = toPlainNode({
-      title,
-      isCompleted: false,
-      parentId: targetParentId,
-      order,
-      metadata: parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {},
-    });
-    const { ciphertext, iv } = await cryptoEncNode(node);
-    await createTodo({ ciphertext, iv });
+    // command executed (cd/help), unknown command, or nothing to create — clear input
     setNewRootTitle("");
   }
 
@@ -1447,6 +1439,8 @@ function TodoTask() {
       )}
 
       {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
+
+      {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
 
       {notice && <NoticeDialog message={notice} onClose={() => setNotice(null)} />}
 

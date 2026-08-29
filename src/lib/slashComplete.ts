@@ -4,7 +4,8 @@
 // creation and "!cd ..." navigation. Pure — extracted from TodoTask so it can
 // be unit tested.
 
-import { decodePathToParts, parseBangCd } from "./cdPath";
+import { decodePathToParts } from "./cdPath";
+import { matchCommand } from "./grammar";
 import { childrenOf, findChildByTitle, type DecryptedNode, type TreeNode } from "./tree";
 
 export type SlashSuggestMode = "none" | "slash" | "cd";
@@ -56,8 +57,9 @@ export function resolveSlashSuggest(
     return { suggestions: filtered, prefix, parentId, dirPath, mode: "slash" as const };
   }
   // "!cd <path>" intellisense — segments are "/"-separated, resolved against pwd
-  const { isCd: isCdCmd, target: cdTarget } = parseBangCd(query);
-  if (!isCdCmd) return NONE;
+  const cmd = matchCommand(query);
+  if (!cmd || cmd.entry.name !== "cd") return NONE;
+  const cdTarget = cmd.argv.length > 0 ? cmd.argv.join(" ") : null;
   const segs = cdTarget ? cdTarget.split("/") : [];
   const prefixRaw = segs.length ? segs[segs.length - 1] : "";
   const dirSegs = segs.length ? segs.slice(0, -1) : [];

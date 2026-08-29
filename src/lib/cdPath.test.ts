@@ -4,24 +4,11 @@ import {
   decodePath,
   decodePathToParts,
   encodePathForUrl,
-  parseBangCd,
-  parseCdArg,
   partsToDecodedPath,
   partsToPath,
   resolveCdParts,
   resolveCdPath,
 } from "./cdPath";
-
-test("parseCdArg strips surrounding quotes", () => {
-  expect(parseCdArg(null)).toBeNull();
-  expect(parseCdArg("")).toBeNull();
-  expect(parseCdArg("   ")).toBeNull();
-  expect(parseCdArg('"host hackathon"')).toBe("host hackathon");
-  expect(parseCdArg("'host hackathon'")).toBe("host hackathon");
-  // a lone quote satisfies both start/end checks and is returned as-is
-  expect(parseCdArg('"')).toBe('"');
-  expect(parseCdArg("host hackathon")).toBe("host hackathon");
-});
 
 test("decodePathToParts normalizes slashes and percent-encoding", () => {
   expect(decodePathToParts("/")).toEqual([]);
@@ -75,19 +62,4 @@ test("encodePathForUrl round-trips decoded paths", () => {
 test("decodePath falls back on invalid encoding", () => {
   expect(decodePath("/a%20b")).toBe("/a b");
   expect(decodePath("/a%zz")).toBe("/a%zz");
-});
-
-test("parseBangCd accepts cd variants and rejects lookalikes", () => {
-  expect(parseBangCd("add task")).toEqual({ isCd: false, target: null });
-  expect(parseBangCd("!")).toEqual({ isCd: false, target: null });
-  expect(parseBangCd("!help")).toEqual({ isCd: false, target: null });
-  expect(parseBangCd("!cdf x")).toEqual({ isCd: false, target: null });
-  expect(parseBangCd("!cd")).toEqual({ isCd: true, target: null });
-  expect(parseBangCd("!cd ")).toEqual({ isCd: true, target: null });
-  expect(parseBangCd("!cd host hackathon")).toEqual({ isCd: true, target: "host hackathon" });
-  expect(parseBangCd("!cd /a/b/")).toEqual({ isCd: true, target: "/a/b/" });
-  expect(parseBangCd('!cd "host hackathon"')).toEqual({ isCd: true, target: "host hackathon" });
-  expect(parseBangCd("!cd 'x'")).toEqual({ isCd: true, target: "x" });
-  // matching is case-sensitive: only lowercase "cd" counts
-  expect(parseBangCd("!CD /A")).toEqual({ isCd: false, target: null });
 });

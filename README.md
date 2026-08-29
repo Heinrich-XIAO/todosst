@@ -22,7 +22,9 @@ One input, a few grammars (all tab-completable with ↑↓):
 | `buy coffee beans` | creates a task in the current directory |
 | `/host hackathon/outreach write email template` | creates (or reuses) the nested path, final segment = task |
 | `/taxes task without slash` | two-segment shorthand: first word = existing/new dir, rest = task |
+| `/grocery/` | creates (or reuses) an empty directory |
 | `!cd ../side-quests` | navigates the working directory (relative/absolute, `..`, `.` supported) |
+| `!help` | shows the input grammar in a panel |
 | `stretch ~daily` | creates a recurring task (recurrence token is stripped from the title) |
 
 Recurrence tokens: `~daily` `~weekly` `~weekdays` `~monthly` `~yearly`, or `~every 3d`, `~every 2w mon,thu`, `~every 3m`, `~every 1y` (spaces optional). Rules can be edited later in the task's details panel via the graphical + text RRULE editor.
@@ -117,6 +119,7 @@ src/
     crypto.ts      — PBKDF2 + AES-GCM primitives, payload schemas
     recur.ts       — windowed recurrence engine, input syntax, counts codec
     tree.ts        — path/sibling/tree helpers
+    grammar.ts     — input grammar registry (commands, `/path`, `~recur`), dispatcher + `!help` source
     cdPath.ts      — `!cd` path resolution
     slashPath.ts   — `/path` creation parsing
     slashComplete.ts — tab-completion intellisense
