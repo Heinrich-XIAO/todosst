@@ -220,5 +220,16 @@ export function toPlainNode(
   src: Pick<PlainNode, "title" | "isCompleted" | "parentId" | "order" | "metadata">,
   overrides?: Partial<Omit<PlainNode, "v">>
 ): PlainNode {
-  return { v: 2, ...src, ...overrides };
+  // Pick only payload fields — src is often a full TreeNode (with children,
+  // depth, _raw…); serializing those would bloat the ciphertext and corrupt
+  // the stored payload.
+  return {
+    v: 2,
+    title: src.title,
+    isCompleted: src.isCompleted,
+    parentId: src.parentId,
+    order: src.order,
+    metadata: src.metadata,
+    ...overrides,
+  };
 }
