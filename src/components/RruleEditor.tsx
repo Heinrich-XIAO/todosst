@@ -46,13 +46,25 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
+/** Parse the DTSTART value from a normalized rule string (mirrors rrule's untilStringToDate). */
+function dtstartOf(clean: string): Date | null {
+  const m = /(?:^|\n)DTSTART(?:;[^:\n]*)?[:=](\d{8})(?:T(\d{6})Z?)?/i.exec(clean);
+  if (!m) return null;
+  const num = (s: string, i: number, n: number) => Number(s.slice(i, i + n));
+  const y = num(m[1], 0, 4);
+  const mo = num(m[1], 4, 2);
+  const d = num(m[1], 6, 2);
+  if (m[2]) return new Date(Date.UTC(y, mo - 1, d, num(m[2], 0, 2), num(m[2], 2, 2), num(m[2], 4, 2)));
+  return new Date(Date.UTC(y, mo - 1, d));
+}
+
 function emptyG(anchorTs: number): GState {
   const d = new Date(anchorTs);
   return {
     freq: 2, // weekly
     interval: 1,
     dtstart: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    dtstartTime: "00:00",
+    dtstartTime: "",
     count: "",
     until: "",
     wkst: 0,
@@ -88,7 +100,7 @@ function stateToList(s: string): number[] | null {
   return out.length ? out : null;
 }
 
-function buildRule(mod: RRuleModule, g: GState): { rule?: RRuleType; error?: string } {
+function buildRule(mod: RRuleModule, g: GState, anchorTs: number): { rule?: RRuleType; error?: string } {
   const opts: Partial<Options> = {
     freq: g.freq,
     interval: Math.max(1, Math.floor(Number(g.interval)) || 1),
@@ -96,8 +108,15 @@ function buildRule(mod: RRuleModule, g: GState): { rule?: RRuleType; error?: str
   };
   const [Y, M, D] = g.dtstart.split("-").map(Number);
   if (Y && M && D) {
-    const [h, min] = g.dtstartTime.split(":").map(Number);
-    opts.dtstart = new Date(Y, M - 1, D, h || 0, min || 0, 0);
+    if (g.dtstartTime.trim()) {
+      const [h, min] = g.dtstartTime.split(":").map(Number);
+      opts.dtstart = new Date(Y, M - 1, D, h || 0, min || 0, 0);
+    } else {
+      // no time set — omit DTSTART when the date is the anchor date (the engine anchors there anyway)
+      const a = new Date(anchorTs);
+      const anchorDate = `${a.getFullYear()}-${pad(a.getMonth() + 1)}-${pad(a.getDate())}`;
+      if (g.dtstart !== anchorDate) opts.dtstart = new Date(Y, M - 1, D);
+    }
   }
   if (g.count.trim()) {
     const c = Number(g.count);
@@ -195,12 +214,14 @@ export function RruleEditor({
         for (const pair of o.bynweekday ?? []) {
           if (Array.isArray(pair) && pair.length >= 2) weekdayN[pair[0] as number] = pair[1] as number;
         }
-        const ds = o.dtstart;
+        // the anchored parse masks a DTSTART line in the string (option wins) — parse it separately
+        const parsedDs = dtstartOf(clean);
+        const ds = parsedDs ?? o.dtstart;
         setG({
           freq: o.freq,
           interval: o.interval,
           dtstart: `${ds.getFullYear()}-${pad(ds.getMonth() + 1)}-${pad(ds.getDate())}`,
-          dtstartTime: `${pad(ds.getHours())}:${pad(ds.getMinutes())}`,
+          dtstartTime: hadDtstart ? `${pad(ds.getHours())}:${pad(ds.getMinutes())}` : "",
           count: o.count != null ? String(o.count) : "",
           until: o.until ? `${o.until.getFullYear()}-${pad(o.until.getMonth() + 1)}-${pad(o.until.getDate())}` : "",
           wkst: o.wkst ?? 0,
@@ -233,8 +254,8 @@ export function RruleEditor({
   // canonical string + occurrence preview for the graphical tab
   const built = useMemo(() => {
     if (!loaded || !mod) return null;
-    return buildRule(mod, g);
-  }, [mod, g, loaded]);
+    return buildRule(mod, g, anchorTs);
+  }, [mod, g, loaded, anchorTs]);
 
   const preview = useMemo(() => {
     if (tab !== "build" || !built?.rule) return null;
