@@ -298,7 +298,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           <button onClick={() => setAddChildParent(node._id)} className="opacity-40 hover:opacity-100">
             +child
           </button>
-          <button onClick={() => startEdit(node)} className="opacity-40 hover:opacity-100 hidden sm:inline">
+          <button onClick={() => setSelectedId(node._id)} className="opacity-40 hover:opacity-100 hidden sm:inline">
             edit
           </button>
           {confirmDeleteId === node._id ? (
