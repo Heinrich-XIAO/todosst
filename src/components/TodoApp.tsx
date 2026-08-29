@@ -294,10 +294,11 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           </button>
         )}
 
-        {mode !== "time" && !checked && (
+        {mode !== "time" && !checked && !hasChildren && (
           // stopwatch control: ▶ starts a timing session, ⏸/▶ pauses/resumes
           // the active one. Completed rows don't offer it; check-off records
           // the running session (or use the floating widget's done/discard).
+          // Parent tasks (folders) don't get a stopwatch — time them via leaves.
           <button
             onClick={() => (meta.timer ? handleTimerTogglePause(node) : handleTimerStart(node))}
             className={`shrink-0 w-4 text-[10px] leading-none ${meta.timer ? "opacity-100" : "opacity-60 hover:opacity-100"}`}
@@ -1136,6 +1137,7 @@ function TodoTask() {
     if (!key || !nodes) return;
     const meta = node.metadata as PlainNode["metadata"];
     if (meta.timer || modeOf(meta) === "time") return;
+    if (node.children.length > 0) return; // parents have no stopwatch
     const rs = recurStates?.get(node._id as string);
     const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
     const updated = toPlainNode(node, { metadata: startTimer(meta, Date.now(), windowDay) });
