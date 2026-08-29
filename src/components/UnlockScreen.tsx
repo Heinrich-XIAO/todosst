@@ -78,16 +78,15 @@ export function UnlockScreen() {
       setPassword("");
       setCode("");
     } catch (err) {
+      // crypto.subtle rejects with a messageless OperationError on GCM auth
+      // failure — an empty message must not render as a blank (no) error
+      const msg = err instanceof Error ? err.message.trim().toLowerCase() : "";
       setError(
-        err instanceof Error
-          ? err.message.toLowerCase().includes("decrypt") || err.message.toLowerCase().includes("gcm")
-            ? mode === "password"
-              ? "wrong password."
-              : "invalid recovery key."
-            : err.message.toLowerCase()
-          : mode === "password"
-            ? "failed to unlock"
-            : "failed to unlock with recovery key"
+        !msg || msg.includes("decrypt") || msg.includes("gcm")
+          ? mode === "password"
+            ? "wrong password."
+            : "invalid recovery key."
+          : msg
       );
     } finally {
       setLoading(false);
