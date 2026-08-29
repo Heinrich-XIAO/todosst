@@ -16,6 +16,10 @@ import {
   thresholdOf,
   isChecked,
   nextCountOnClick,
+  stepOf,
+  formatMinutes,
+  TIME_STEP_DEFAULT,
+  TIME_STEP_MAX,
   DEFAULT_GRACE_HOURS,
 } from "./recur";
 
@@ -122,6 +126,8 @@ test("input-syntax rules are valid RFC 5545 (parse via rrule)", async () => {
 test("mode/threshold/click semantics — lossless mode switching", () => {
   expect(modeOf({})).toBe("check");
   expect(modeOf({ mode: "count" })).toBe("count");
+  expect(modeOf({ mode: "time" })).toBe("time");
+  expect(modeOf({ mode: "bogus" as never })).toBe("check");
   expect(thresholdOf({})).toBe(1);
   expect(thresholdOf({ threshold: 0 })).toBe(1);
   expect(thresholdOf({ threshold: 3.9 })).toBe(3);
@@ -134,6 +140,30 @@ test("mode/threshold/click semantics — lossless mode switching", () => {
   expect(nextCountOnClick("check", 5, 3)).toBe(0);
   // count mode: +1
   expect(nextCountOnClick("count", 2, 1)).toBe(3);
+});
+
+test("time mode — step, goal and minutes formatting", () => {
+  // step: default and clamping
+  expect(stepOf({})).toBe(TIME_STEP_DEFAULT);
+  expect(stepOf({ stepMin: 45 })).toBe(45);
+  expect(stepOf({ stepMin: 0 })).toBe(TIME_STEP_DEFAULT);
+  expect(stepOf({ stepMin: 0.5 })).toBe(TIME_STEP_DEFAULT);
+  expect(stepOf({ stepMin: 9999 })).toBe(TIME_STEP_MAX);
+  // goal reuses threshold
+  expect(thresholdOf({ threshold: 30 })).toBe(30);
+  // click toggles between 0 and goal
+  expect(nextCountOnClick("time", 0, 30)).toBe(30);
+  expect(nextCountOnClick("time", 30, 30)).toBe(0);
+  expect(nextCountOnClick("time", 15, 30)).toBe(30);
+  // minutes rendering
+  expect(formatMinutes(0)).toBe("0m");
+  expect(formatMinutes(45)).toBe("45m");
+  expect(formatMinutes(59)).toBe("59m");
+  expect(formatMinutes(60)).toBe("1h");
+  expect(formatMinutes(90)).toBe("1h 30m");
+  expect(formatMinutes(125)).toBe("2h 05m");
+  expect(formatMinutes(-3)).toBe("0m");
+  expect(formatMinutes(1.9)).toBe("1m");
 });
 
 test("recurState — plain task single window at creation day", async () => {

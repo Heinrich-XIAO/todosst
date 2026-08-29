@@ -20,11 +20,13 @@ import {
   dayIndexLocal,
   decodeHistoryPayload,
   encodeHistoryPayload,
+  formatMinutes,
   mergeCounts,
   modeOf,
   nextCountOnClick,
   parseRecurInput,
   recurState,
+  stepOf,
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
@@ -83,8 +85,8 @@ type RowCtx = {
   currentDirDepth: number;
   currentCount: (node: TreeNode, rs: RecurState | undefined) => number;
   handleToggle: (node: TreeNode) => Promise<void>;
-  handleCountUp: (node: TreeNode) => Promise<void>;
-  handleCountDown: (node: TreeNode) => Promise<void>;
+  handleCountUp: (node: TreeNode, delta?: number) => Promise<void>;
+  handleCountDown: (node: TreeNode, delta?: number) => Promise<void>;
   handleMove: (draggedId: string, targetParentId: string | null, targetIndex: number) => Promise<void>;
   handleAddChild: (parentId: Id<"todos">) => Promise<void>;
   commitEdit: (id: Id<"todos">) => Promise<void>;
@@ -213,28 +215,29 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           {hasChildren ? (isExpanded ? "▾" : "▸") : "•"}
         </button>
 
-        {mode === "count" ? (
-          // tally rendering — storage underneath is still a count
-          <div className="flex h-4 w-16 shrink-0 items-stretch border border-foreground">
+        {mode !== "check" ? (
+          // tally/time rendering — storage underneath is still a count
+          // (time mode interprets the count as minutes)
+          <div className={`flex h-4 shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
             <button
-              onClick={() => handleCountDown(node)}
+              onClick={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
               className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
-              aria-label="decrement tally"
+              aria-label={mode === "time" ? "decrease logged time" : "decrement tally"}
             >
               −
             </button>
             <span
               className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
-                count > 0 ? "bg-foreground text-background" : "bg-background"
+                (mode === "time" ? count >= threshold : count > 0) ? "bg-foreground text-background" : "bg-background"
               }`}
             >
-              {count}
+              {mode === "time" ? formatMinutes(count) : count}
             </span>
             <button
-              onClick={() => handleCountUp(node)}
+              onClick={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
               className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
-              aria-label="increment tally"
-              title="click to count +1"
+              aria-label={mode === "time" ? "log time" : "increment tally"}
+              title={mode === "time" ? `click to log +${stepOf(meta)}m` : "click to count +1"}
             >
               +
             </button>
@@ -930,7 +933,7 @@ function TodoTask() {
     const rs = recurStates?.get(node._id as string);
     const isRecurring = rs?.isRecurring ?? !!meta.recur;
     const mode = modeOf(meta);
-    if (isRecurring || mode === "count") {
+    if (isRecurring || mode !== "check") {
       // windowed count path — checkbox toggles threshold, tally increments
       const next = nextCountOnClick(mode, currentCount(node, rs), thresholdOf(meta));
       await applyCountWrite(node, rs, next);
@@ -949,14 +952,14 @@ function TodoTask() {
     await pushHistory(node._id as string, windowDay, nextCount);
   }
 
-  async function handleCountUp(node: TreeNode) {
+  async function handleCountUp(node: TreeNode, delta = 1) {
     const rs = recurStates?.get(node._id as string);
-    await applyCountWrite(node, rs, Math.min(currentCount(node, rs) + 1, COUNT_MAX));
+    await applyCountWrite(node, rs, Math.min(currentCount(node, rs) + delta, COUNT_MAX));
   }
 
-  async function handleCountDown(node: TreeNode) {
+  async function handleCountDown(node: TreeNode, delta = 1) {
     const rs = recurStates?.get(node._id as string);
-    await applyCountWrite(node, rs, Math.max(currentCount(node, rs) - 1, 0));
+    await applyCountWrite(node, rs, Math.max(currentCount(node, rs) - delta, 0));
   }
 
   function startEdit(node: TreeNode) {
@@ -1081,8 +1084,9 @@ function TodoTask() {
       const windowDay = dayIndexLocal(cur._creationTime);
       const c = metadata.counts?.[String(windowDay)] ?? 0;
       const th = thresholdOf(metadata);
-      if (patch.mode === "count" && c === 0 && cur.isCompleted) {
+      if ((patch.mode === "count" || patch.mode === "time") && c === 0 && cur.isCompleted) {
         // seed the tally from the checked state so nothing visually changes
+        // (time mode seeds the goal as minutes)
         metadata = { ...metadata, counts: { ...metadata.counts, [String(windowDay)]: th } };
       } else if (metadata.counts) {
         isCompleted = (metadata.counts[String(windowDay)] ?? 0) >= th;

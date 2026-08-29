@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
-import { DEFAULT_GRACE_HOURS, modeOf, thresholdOf } from "@/lib/recur";
+import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, modeOf, stepOf, thresholdOf } from "@/lib/recur";
 import type { TreeNode } from "@/lib/tree";
 import { Heatmap } from "./Heatmap";
 import { RruleEditor } from "./RruleEditor";
@@ -62,17 +62,20 @@ export function MetadataPanel({
         </div>
 
         {/* completion style + threshold + grace */}
-        {meta.recur && (
         <div className="flex flex-wrap gap-2">
           <label className="flex-1 block">
             <span className="opacity-60">completion style</span>
             <select
               value={mode}
-              onChange={(e) => onUpdateMetadata(node._id, { mode: e.target.value === "count" ? "count" : "check" })}
+              onChange={(e) => {
+                const v = e.target.value;
+                onUpdateMetadata(node._id, { mode: v === "count" || v === "time" ? v : "check" });
+              }}
               className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
             >
               <option value="check">checkbox</option>
               <option value="count">tally count</option>
+              <option value="time">time (minutes)</option>
             </select>
           </label>
           {mode === "check" && (
@@ -88,6 +91,32 @@ export function MetadataPanel({
               />
             </label>
           )}
+          {mode === "time" && (
+            <>
+              <label className="flex-1 block">
+                <span className="opacity-60">goal (minutes)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={999}
+                  value={thresholdOf(meta)}
+                  onChange={(e) => onUpdateMetadata(node._id, { threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
+                  className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+                />
+              </label>
+              <label className="flex-1 block">
+                <span className="opacity-60">step (minutes)</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={TIME_STEP_MAX}
+                  value={stepOf(meta)}
+                  onChange={(e) => onUpdateMetadata(node._id, { stepMin: Math.min(TIME_STEP_MAX, Math.max(1, Number(e.target.value) || 1)) })}
+                  className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+                />
+              </label>
+            </>
+          )}
           {meta.recur && (
             <label className="flex-1 block">
               <span className="opacity-60">grace hours</span>
@@ -102,7 +131,6 @@ export function MetadataPanel({
             </label>
           )}
         </div>
-        )}
 
         {meta.recur ? (
           <p className="text-[10px] opacity-40 leading-tight">
@@ -115,7 +143,7 @@ export function MetadataPanel({
           <div>
             <span className="opacity-60">past year</span>
             <div className="mt-1">
-              <Heatmap counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} />
+              <Heatmap counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} mode={mode} />
             </div>
           </div>
         ) : null}

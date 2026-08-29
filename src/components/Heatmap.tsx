@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
-import { dayIndexLocal, dayIndexToStart } from "@/lib/recur";
+import { dayIndexLocal, dayIndexToStart, formatMinutes, type CompletionMode } from "@/lib/recur";
 import { MONTHS } from "@/lib/months";
 
 // GitHub-style 53-week heatmap of counts per local day.
 // Columns run oldest -> newest, rows Sun..Sat, ending at the current week.
+// Time mode interprets counts as minutes with minute-sized buckets.
 
 const LEVELS = ["bg-foreground/5", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
 
@@ -17,9 +18,27 @@ function levelFor(count: number): number {
   return 4;
 }
 
+function levelForMinutes(min: number): number {
+  if (min <= 0) return 0;
+  if (min < 15) return 1;
+  if (min < 30) return 2;
+  if (min < 60) return 3;
+  return 4;
+}
+
 const DOW_LABELS: Record<number, string> = { 1: "mon", 3: "wed", 5: "fri" };
 
-export function Heatmap({ counts, nowTs, weeks = 53 }: { counts: Map<number, number>; nowTs: number; weeks?: number }) {
+export function Heatmap({
+  counts,
+  nowTs,
+  weeks = 53,
+  mode = "check",
+}: {
+  counts: Map<number, number>;
+  nowTs: number;
+  weeks?: number;
+  mode?: CompletionMode;
+}) {
   const grid = useMemo(() => {
     const endIdx = dayIndexLocal(nowTs);
     // extend to the end (Saturday) of the current week so today is always rendered
@@ -82,9 +101,9 @@ export function Heatmap({ counts, nowTs, weeks = 53 }: { counts: Map<number, num
                     title={
                       cell.future
                         ? undefined
-                        : `${cell.count > 0 ? `${cell.count} on ` : ""}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
+                        : `${cell.count > 0 ? `${mode === "time" ? formatMinutes(cell.count) : cell.count} on ` : ""}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
                     }
-                    className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[levelFor(cell.count)]}`}
+                    className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
                   />
                 ))}
               </div>

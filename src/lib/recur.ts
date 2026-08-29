@@ -7,7 +7,8 @@
 //   windows (local calendar days). The UI always shows only the CURRENT window;
 //   past windows are immutable history.
 // - Completions are stored as COUNTS per window, internally always counts.
-//   Checkbox vs tally is purely a rendering mode (check: checked iff count >= threshold).
+//   Checkbox vs tally vs time is purely a rendering mode (check: checked iff
+//   count >= threshold; time: count is minutes, goal = threshold).
 // - Grace period: `now - graceHours` may still fall into yesterday's window, so
 //   night owls can count yesterday's task after midnight. Past windows are never
 //   editable by construction — the UI only ever mutates the current window.
@@ -94,10 +95,13 @@ export async function getRule(ruleStr: string, anchorTs: number): Promise<RRule 
 
 // ---------- occurrence state ----------
 
+export type CompletionMode = "check" | "count" | "time";
+
 export type RecurMetadata = {
   recur?: string;
-  mode?: "check" | "count";
+  mode?: CompletionMode;
   threshold?: number;
+  stepMin?: number; // time mode: minutes added per + click (default TIME_STEP_DEFAULT)
   graceHours?: number;
   counts?: Record<string, number>;
 };
@@ -114,13 +118,31 @@ export type RecurState = {
   summary: string;
 };
 
-export function modeOf(meta: RecurMetadata): "check" | "count" {
-  return meta.mode === "count" ? "count" : "check";
+export function modeOf(meta: RecurMetadata): CompletionMode {
+  return meta.mode === "count" || meta.mode === "time" ? meta.mode : "check";
 }
 
 export function thresholdOf(meta: RecurMetadata): number {
   const t = meta.threshold;
   return typeof t === "number" && Number.isFinite(t) && t >= 1 ? Math.min(Math.floor(t), 999) : 1;
+}
+
+export const TIME_STEP_DEFAULT = 15;
+export const TIME_STEP_MAX = 240;
+
+/** Time mode: minutes added per + click (clamped 1..TIME_STEP_MAX). */
+export function stepOf(meta: RecurMetadata): number {
+  const s = meta.stepMin;
+  return typeof s === "number" && Number.isFinite(s) && s >= 1 ? Math.min(Math.floor(s), TIME_STEP_MAX) : TIME_STEP_DEFAULT;
+}
+
+/** "45m", "1h 05m", "2h" — minutes rendering for time mode. */
+export function formatMinutes(total: number): string {
+  const m = Math.max(0, Math.floor(total));
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  return r === 0 ? `${h}h` : `${h}h ${String(r).padStart(2, "0")}m`;
 }
 
 function graceMsOf(meta: RecurMetadata): number {
@@ -293,8 +315,9 @@ export function isChecked(count: number, threshold: number): boolean {
   return count >= threshold;
 }
 
-/** New count when the main action button is clicked in the given mode. */
-export function nextCountOnClick(mode: "check" | "count", count: number, threshold: number): number {
+/** New count when the main action button is clicked in the given mode.
+ * Time mode: click toggles between 0 and the goal (incremental logging uses the widget's +/- buttons). */
+export function nextCountOnClick(mode: CompletionMode, count: number, threshold: number): number {
   if (mode === "count") return Math.min(count + 1, COUNT_MAX);
   return isChecked(count, threshold) ? 0 : threshold;
 }

@@ -177,12 +177,13 @@ export type PlainNode = {
     icon?: string;
     color?: string;
     // recurrence (see src/lib/recur.ts) — internally always counts,
-    // checkbox vs tally is a rendering mode only
+    // checkbox vs tally vs time is a rendering mode only
     recur?: string; // RFC 5545 RRULE string (jakubroztocil/rrule)
-    mode?: "check" | "count";
-    threshold?: number; // check mode: checked iff count >= threshold (default 1)
+    mode?: "check" | "count" | "time";
+    threshold?: number; // check mode: checked iff count >= threshold (default 1); time mode: goal in minutes
+    stepMin?: number; // time mode: minutes per + click (default 15)
     graceHours?: number; // window lock grace past midnight (default 4)
-    counts?: Record<string, number>; // current window only (day-index -> count); full history lives in todoHistory
+    counts?: Record<string, number>; // current window only (day-index -> count; time mode stores minutes); full history lives in todoHistory
   };
 };
 

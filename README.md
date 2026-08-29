@@ -7,7 +7,7 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - 🔐 **End-to-end encrypted** — titles, structure, metadata, and completion history are AES-GCM encrypted client-side (PBKDF2-SHA-256, 310k iterations, per-user salt). The server only ever sees ciphertext.
 - 🌲 **Tasks are directories** — any task can have sub-tasks. Navigate with the URL (`/host hackathon/outreach`), breadcrumbs, double-click, or `!cd`.
 - ⌨️ **Command-style input** — one input box creates paths, navigates, and attaches recurrence rules, with tab-completion (intellisense).
-- 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox or tally-count modes, thresholds, grace hours, and a GitHub-style past-year heatmap per task.
+- 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox, tally-count, or time (minutes) modes, thresholds/goals, grace hours, and a GitHub-style past-year heatmap per task.
 - 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
 - 💾 **Encrypted export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from vault settings; import it into any account to restore or merge.
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
@@ -35,7 +35,7 @@ Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc
 
 - A recurring task is **one node** with a stable `/path`. Its RRULE defines occurrence windows (local calendar days).
 - The UI always shows the **current window**; past windows are frozen history and feed the heatmap.
-- Completions are stored as **counts per window**. Checkbox mode = checked iff `count >= threshold`; tally mode = click to increment/decrement. Switching modes never loses data.
+- Completions are stored as **counts per window**. Checkbox mode = checked iff `count >= threshold`; tally mode = click to increment/decrement; time mode = count is minutes logged via `+/−` steps, done once the goal (threshold) is reached. Switching modes never loses data.
 - **Grace hours** (default 4, max 48) let a count after midnight still land in yesterday's window.
 
 ## Stack
