@@ -120,6 +120,9 @@ function setCachedSalt(username: string, salt: string) {
 
 export function EncryptionProvider({ children }: { children: React.ReactNode }) {
   const [key, setKey] = useState<CryptoKey | null>(null);
+  // Set when the user locks manually — suppresses auto-unlock from the
+  // remembered key until they explicitly unlock again (password/recovery).
+  const [manualLock, setManualLock] = useState(false);
   const [salt, setSalt] = useState<string | null>(null);
   const [isReady, setIsReady] = useState(false);
   const convex = useConvex();
@@ -136,6 +139,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
 
   const setKeyFromRaw = useCallback(
     async (keyB64: string, saltB64: string) => {
+      setManualLock(false); // explicit key set clears a manual lock
       const k = await importKeyB64(keyB64);
       setKey(k);
       setSalt(saltB64);
@@ -160,6 +164,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
         const masterB64 = await exportKeyB64(master);
         if (storeLocally) setRememberedKey({ salt: saltB64, keyB64: masterB64 });
         else clearRememberedKey();
+        setManualLock(false);
         setKey(master);
         setSalt(saltB64);
         return;
@@ -174,6 +179,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
       }
       if (storeLocally) setRememberedKey({ salt: saltB64, keyB64: masterB64 });
       else clearRememberedKey();
+      setManualLock(false);
       setKey(kpw);
       setSalt(saltB64);
     },
@@ -194,6 +200,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
       const masterB64 = await exportKeyB64(master);
       if (storeLocally) setRememberedKey({ salt: saltB64, keyB64: masterB64 });
       else clearRememberedKey();
+      setManualLock(false);
       setKey(master);
       setSalt(saltB64);
     },
@@ -201,10 +208,12 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   );
 
   const lock = useCallback(() => {
+    setManualLock(true);
     setKey(null);
   }, []);
 
   const clearKey = useCallback(() => {
+    setManualLock(false); // sign-out / fresh state — allow auto-unlock again on next sign-in
     setKey(null);
     setSalt(null);
   }, []);
@@ -215,8 +224,11 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
 
   // Auto-unlock from localStorage when "store locally" was checked.
   // If a remembered key exists and its salt matches the server salt, import it.
+  // Skipped while manualLock is set — lock() must keep the vault locked even
+  // though the remembered key is still in localStorage.
   useEffect(() => {
     if (key) return;
+    if (manualLock) return; // user locked manually — stay locked until explicit unlock
     if (mySalt === undefined) return; // still loading
     if (!mySalt) return; // no server salt yet
     const stored = getRememberedKey();
@@ -237,7 +249,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [key, mySalt]);
+  }, [key, mySalt, manualLock]);
 
   const value = useMemo<EncryptedState>(
     () => ({
