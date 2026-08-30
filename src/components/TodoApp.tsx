@@ -269,7 +269,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         {mode !== "check" ? (
           // tally/time rendering — storage underneath is still a count
           // (time mode interprets the count as minutes)
-          <div className={`flex h-4 shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
+          <div className={`flex h-[18px] shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
             <button
               onClick={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
               className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
