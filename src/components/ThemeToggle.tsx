@@ -12,10 +12,16 @@ const listeners = new Set<() => void>();
 
 function subscribe(callback: () => void) {
   listeners.add(callback);
-  window.addEventListener("storage", callback);
+  // cross-tab sync: re-apply the <html> class, not just the label — the
+  // storage event only notifies the OTHER tabs
+  const onStorage = () => {
+    apply(readTheme());
+    callback();
+  };
+  window.addEventListener("storage", onStorage);
   return () => {
     listeners.delete(callback);
-    window.removeEventListener("storage", callback);
+    window.removeEventListener("storage", onStorage);
   };
 }
 

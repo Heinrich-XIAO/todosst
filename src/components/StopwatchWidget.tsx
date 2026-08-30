@@ -161,7 +161,8 @@ export function AwayPromptDialog({
           <span className="opacity-40">$</span> away for {formatElapsed(Math.max(0, now - closedAt))} — count it?
         </h2>
         <p className="mt-2 font-mono text-xs leading-relaxed opacity-70">
-          {items.length} running stopwatch{items.length === 1 ? "" : "es"} kept counting while the app was closed. Untick to leave that time out.
+          {items.length} running stopwatch{items.length === 1 ? "" : "es"} kept counting while the app was closed. Tick a
+          stopwatch to count its away time; leave it unticked to leave that time out.
         </p>
         <div className="mt-3 space-y-1">
           {items.map((item) => (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 // In-app reminder banner: due-soon reminders and overdue tasks when the app is
 // (re)focused. Push handles the closed-tab case; this covers open/backgrounded.
@@ -13,10 +13,17 @@ export function ReminderToast({
   lines: string[];
   onClose: () => void;
 }) {
+  // read onClose through a ref: callers pass an inline closure recreated on
+  // every parent render, and keying the timer on it would restart the 20s
+  // auto-dismiss on every render — effectively never dismissing
+  const onCloseRef = useRef(onClose);
   useEffect(() => {
-    const t = window.setTimeout(onClose, 20_000);
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    const t = window.setTimeout(() => onCloseRef.current(), 20_000);
     return () => window.clearTimeout(t);
-  }, [lines, onClose]);
+  }, [lines]);
 
   if (lines.length === 0) return null;
   return (
