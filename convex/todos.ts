@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { requireOwnTodo, requireUserId, stableUserId, validateEncryptedPayload } from "./userScope";
+import { purgeRemindersForTodo } from "./push";
 
 const MAX_CIPHERTEXT = 8192;
 
@@ -49,6 +50,7 @@ export const remove = mutation({
   handler: async (ctx, args) => {
     await requireOwnTodo(ctx, args.id);
     await ctx.db.delete(args.id);
+    await purgeRemindersForTodo(ctx, args.id);
   },
 });
 
@@ -65,6 +67,7 @@ export const removeMany = mutation({
       if (!todo) continue;
       if (todo.userId !== userId) throw new Error("unauthorized");
       await ctx.db.delete(id);
+      await purgeRemindersForTodo(ctx, id);
       count++;
     }
     return count;

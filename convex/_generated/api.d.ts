@@ -9,9 +9,12 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as crons from "../crons.js";
 import type * as encryption from "../encryption.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as push from "../push.js";
+import type * as pushActions from "../pushActions.js";
 import type * as todos from "../todos.js";
 import type * as userScope from "../userScope.js";
 import type * as users from "../users.js";
@@ -25,9 +28,12 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  crons: typeof crons;
   encryption: typeof encryption;
   history: typeof history;
   http: typeof http;
+  push: typeof push;
+  pushActions: typeof pushActions;
   todos: typeof todos;
   userScope: typeof userScope;
   users: typeof users;

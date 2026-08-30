@@ -51,6 +51,14 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         ))}
+        <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
+          <p className="uppercase opacity-60">reminders</p>
+          <p className="mt-0.5">
+            set a due date in a task&apos;s details, then enable &quot;remind me&quot; (15m/5m before). turn on
+            &quot;notify&quot; in the header to receive push notifications while the app is closed — the server only
+            learns when, never what. on iOS, add todosst to the home screen first.
+          </p>
+        </div>
         <div className="px-3 py-2 text-[10px] opacity-40">esc to close</div>
       </div>
     </div>

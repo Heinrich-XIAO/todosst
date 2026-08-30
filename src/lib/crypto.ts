@@ -172,6 +172,12 @@ export type PlainNode = {
   metadata: {
     description?: string;
     dueAt?: number | null;
+    // reminders (see src/lib/reminders.ts) — only the derived remindAt
+    // timestamps are mirrored to the server in plaintext; titles stay here
+    reminder?: {
+      enabled: boolean;
+      offsetsMin?: number[]; // minutes before dueAt (default [15, 5])
+    } | null;
     priority?: "low" | "med" | "high" | null;
     tags?: string[];
     icon?: string;

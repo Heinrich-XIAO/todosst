@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { TreeNode } from "@/lib/tree";
 import type { PlainNode } from "@/lib/crypto";
 import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, dayIndexToStart, modeOf, stepOf, thresholdOf } from "@/lib/recur";
+import { DEFAULT_OFFSETS_MIN, normalizeCfg } from "@/lib/reminders";
 import { formatElapsed, formatSessionDuration, liveElapsedMs, totalMs } from "@/lib/stopwatch";
 import { Heatmap } from "./Heatmap";
 import { RruleEditor } from "./RruleEditor";
@@ -289,6 +290,51 @@ export function MetadataPanel({
             />
           </label>
         </div>
+        {meta.dueAt ? (
+          (() => {
+            const cfg = normalizeCfg(meta.reminder);
+            const setOffset = (min: number, on: boolean) => {
+              const offs = new Set(cfg.offsetsMin);
+              if (on) offs.add(min);
+              else offs.delete(min);
+              onUpdateMetadata(node._id, { reminder: { enabled: true, offsetsMin: Array.from(offs).sort((a, b) => b - a) } });
+            };
+            return (
+              <div className="border border-foreground/20 p-2">
+                <div className="flex items-center justify-between">
+                  <span className="opacity-60">remind me</span>
+                  <button
+                    onClick={() =>
+                      onUpdateMetadata(node._id, {
+                        reminder: cfg.enabled ? { enabled: false, offsetsMin: cfg.offsetsMin } : { enabled: true, offsetsMin: DEFAULT_OFFSETS_MIN },
+                      })
+                    }
+                    className="underline underline-offset-2 opacity-60 hover:opacity-100"
+                  >
+                    {cfg.enabled ? "on" : "off"}
+                  </button>
+                </div>
+                {cfg.enabled ? (
+                  <div className="mt-1 flex gap-3">
+                    {DEFAULT_OFFSETS_MIN.map((min) => (
+                      <label key={min} className="flex items-center gap-1">
+                        <input
+                          type="checkbox"
+                          checked={cfg.offsetsMin.includes(min)}
+                          onChange={(e) => setOffset(min, e.target.checked)}
+                        />
+                        <span>{min}m before</span>
+                      </label>
+                    ))}
+                    {cfg.offsetsMin.length === 0 ? <span className="text-[10px] opacity-40">no offsets selected</span> : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })()
+        ) : (
+          <p className="text-[10px] opacity-40">reminders need a due date</p>
+        )}
         <label className="block">
           <span className="opacity-60">tags (comma separated)</span>
           <input

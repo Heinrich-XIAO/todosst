@@ -50,6 +50,30 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
 
+  // web push subscriptions (VAPID). Push bodies are generic ("n tasks due") —
+  // the server learns when, never what.
+  pushSubscriptions: defineTable({
+    userId: v.string(),
+    endpoint: v.string(),
+    p256dh: v.string(),
+    auth: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_endpoint", ["endpoint"]),
+
+  // scheduled reminders, one row per (todoId, remindAt). Only the plaintext
+  // timestamp is stored — titles stay inside the todos ciphertext.
+  reminders: defineTable({
+    userId: v.string(),
+    todoId: v.id("todos"),
+    remindAt: v.number(),
+    sent: v.boolean(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_due", ["remindAt"])
+    .index("by_todo", ["todoId"]),
+
   // single-use, 10-minute grant created during recovery sign-in, allowing one
   // password change without the current password.
   recoveryGrants: defineTable({

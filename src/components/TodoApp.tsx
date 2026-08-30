@@ -45,6 +45,7 @@ import {
 } from "@/lib/stopwatch";
 import { HelpPanel } from "./HelpPanel";
 import { VaultPanel } from "./VaultPanel";
+import { ReminderToast } from "./ReminderToast";
 import {
   buildTree,
   childrenOf,
@@ -57,6 +58,15 @@ import {
   type DropPos,
   type TreeNode,
 } from "@/lib/tree";
+import {
+  loadShownReminders,
+  markOverdueShown,
+  markRemindersShown,
+  overdueShownIds,
+  reminderKey,
+  reminderOffsets,
+  remindTimesFor,
+} from "@/lib/reminders";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
 import { UnlockScreen } from "./UnlockScreen";
 import { MetadataPanel } from "./MetadataPanel";
@@ -640,6 +650,112 @@ function TodoTask() {
       cancelled = true;
     };
   }, [nodes, nowTs]);
+
+  // ---- reminders: server sync + in-app firing ----
+  // The client derives remindAt timestamps from decrypted metadata and syncs
+  // the full desired set to the server (plaintext times only). Completing,
+  // editing, deleting or un-deleting a task converges the rows automatically.
+  const syncReminders = useMutation(api.push.syncReminders);
+  const syncedSigRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!nodes || !key) {
+      syncedSigRef.current = null;
+      return;
+    }
+    const now = Date.now();
+    const items: { todoId: Id<"todos">; remindAt: number }[] = [];
+    for (const n of nodes) {
+      const rs = recurStates?.get(n._id as string);
+      const meta = n.metadata as PlainNode["metadata"];
+      const done = rs?.isRecurring ? rs.count >= thresholdOf(meta) : n.isCompleted;
+      for (const t of remindTimesFor(meta, done, now)) {
+        items.push({ todoId: n._id, remindAt: t });
+      }
+    }
+    items.sort((a, b) => (a.todoId < b.todoId ? -1 : a.todoId > b.todoId ? 1 : a.remindAt - b.remindAt));
+    const sig = JSON.stringify(items);
+    if (sig === syncedSigRef.current) return;
+    syncedSigRef.current = sig;
+    void syncReminders({ items }).catch(() => {
+      syncedSigRef.current = null;
+    });
+  }, [nodes, recurStates, key, syncReminders]);
+
+  const [remindToast, setRemindToast] = useState<{ title: string; lines: string[] } | null>(null);
+  const nodesRef = useRef(nodes);
+  nodesRef.current = nodes;
+  const recurStatesRef = useRef(recurStates);
+  recurStatesRef.current = recurStates;
+
+  // due-soon reminders fire on a 30s tick (app open); overdue tasks surface
+  // when the tab is (re)focused — once per task per local day
+  useEffect(() => {
+    if (isLocked) return;
+    const isDone = (n: { _id: string; isCompleted: boolean; metadata: PlainNode["metadata"] }) => {
+      const rs = recurStatesRef.current?.get(n._id);
+      if (rs?.isRecurring) return rs.count >= thresholdOf(n.metadata);
+      return n.isCompleted;
+    };
+    const checkDueSoon = () => {
+      const list = nodesRef.current;
+      if (!list) return;
+      const now = Date.now();
+      const shown = loadShownReminders();
+      const lines: string[] = [];
+      const fired: string[] = [];
+      for (const n of list) {
+        const meta = n.metadata as PlainNode["metadata"];
+        if (!meta.dueAt || !meta.reminder?.enabled || isDone(n)) continue;
+        for (const off of reminderOffsets(meta)) {
+          const at = meta.dueAt - off * 60_000;
+          if (at > now || at <= now - 5 * 60_000) continue;
+          const k = reminderKey(n._id as string, at);
+          if (shown.has(k)) continue;
+          fired.push(k);
+          lines.push(off === 0 ? `${n.title} — due now` : `${n.title} — due in ≤${off}m`);
+        }
+      }
+      if (fired.length > 0) {
+        markRemindersShown(fired, now);
+        setRemindToast({ title: "reminders", lines });
+      }
+    };
+    const checkOverdue = () => {
+      const list = nodesRef.current;
+      if (!list) return;
+      const now = Date.now();
+      const day = dayIndexLocal(now);
+      const seen = overdueShownIds(day);
+      const lines: string[] = [];
+      const ids: string[] = [];
+      for (const n of list) {
+        const meta = n.metadata as PlainNode["metadata"];
+        if (!meta.dueAt || meta.dueAt > now || isDone(n)) continue;
+        const id = n._id as string;
+        if (seen.has(id)) continue;
+        ids.push(id);
+        lines.push(`${n.title} — was due ${new Date(meta.dueAt).toLocaleString()}`);
+      }
+      if (ids.length > 0) {
+        markOverdueShown(day, ids);
+        setRemindToast({ title: "overdue", lines });
+      }
+    };
+    const onVisible = () => {
+      if (document.hidden) return;
+      checkDueSoon();
+      checkOverdue();
+    };
+    checkDueSoon();
+    checkOverdue();
+    const interval = window.setInterval(checkDueSoon, 30_000);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [isLocked]);
+
 
   // ---- stopwatch: active sessions across all tasks (most recent first) ----
   const activeTimers = useMemo(() => {
@@ -1748,6 +1864,8 @@ function TodoTask() {
           onDismiss={() => setUndoState(null)}
         />
       )}
+
+      {remindToast && <ReminderToast title={remindToast.title} lines={remindToast.lines} onClose={() => setRemindToast(null)} />}
 
       {activeTimers.length > 0 && (
         <StopwatchWidget timers={activeTimers} onTogglePause={handleTimerTogglePause} onDone={handleToggle} onDiscard={handleTimerDiscard} />
