@@ -7,7 +7,8 @@ import { useState, useEffect, useMemo, useCallback, useRef, type Dispatch, type 
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+import { AuthLoading, Unauthenticated, Authenticated } from "convex/react";
+import { PushAutoEnable } from "./PushAutoEnable";
 import { AuthForm } from "./AuthForm";
 import { useEncryption, getRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
@@ -1899,6 +1900,7 @@ export function TodoApp() {
       </Unauthenticated>
       <Authenticated>
         <TodoTask />
+        <PushAutoEnable />
       </Authenticated>
     </>
   );
