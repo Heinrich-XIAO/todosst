@@ -1827,6 +1827,11 @@ function TodoTask() {
           e.preventDefault();
           if (!dragId) return;
           // drop on empty area — move to current directory (root or pwd)
+          if (!currentDirInfo.exists) {
+            setNotice("cannot move into a nonexistent directory");
+            setDragId(null);
+            return;
+          }
           const targetParentId = currentDirInfo.id as string | null;
           const dragged = nodes?.find((n) => n._id === dragId);
           if (dragged && (dragged.parentId ?? null) !== targetParentId) {
