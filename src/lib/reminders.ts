@@ -7,6 +7,7 @@
 // server learns *when*, never *what*.
 
 import type { PlainNode } from "./crypto";
+import { normalizeDueAt } from "./due";
 
 export const DEFAULT_OFFSETS_MIN = [15, 5];
 
@@ -35,8 +36,9 @@ export function remindTimesFor(
   now: number
 ): number[] {
   if (isCompleted || !meta.dueAt) return [];
+  const dueAt = normalizeDueAt(meta.dueAt);
   return reminderOffsets(meta)
-    .map((o) => meta.dueAt! - o * 60_000)
+    .map((o) => dueAt - o * 60_000)
     .filter((t) => Number.isFinite(t) && t > now - 5 * 60_000) // keep just-fired ones so the sync doesn't delete them mid-dispatch
     .sort((a, b) => a - b);
 }

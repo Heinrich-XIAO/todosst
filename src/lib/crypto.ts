@@ -171,6 +171,8 @@ export type PlainNode = {
   order: number;
   metadata: {
     description?: string;
+    // local midnight of the due day (see src/lib/due.ts) — legacy rows may
+    // hold UTC midnight; normalizeDueAt migrates them on read
     dueAt?: number | null;
     // reminders (see src/lib/reminders.ts) — only the derived remindAt
     // timestamps are mirrored to the server in plaintext; titles stay here

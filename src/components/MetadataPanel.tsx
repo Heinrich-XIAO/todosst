@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { TreeNode } from "@/lib/tree";
 import type { PlainNode } from "@/lib/crypto";
 import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, dayIndexToStart, modeOf, stepOf, thresholdOf } from "@/lib/recur";
+import { formatDueInput, normalizeDueAt, parseDueInput } from "@/lib/due";
 import { DEFAULT_OFFSETS_MIN, normalizeCfg } from "@/lib/reminders";
 import { formatElapsed, formatSessionDuration, liveElapsedMs, totalMs } from "@/lib/stopwatch";
 import { Heatmap } from "./Heatmap";
@@ -281,9 +282,11 @@ export function MetadataPanel({
             <span className="opacity-60">due</span>
             <input
               type="date"
-              value={node.metadata.dueAt ? new Date(node.metadata.dueAt).toISOString().slice(0, 10) : ""}
+              value={node.metadata.dueAt ? formatDueInput(normalizeDueAt(node.metadata.dueAt)) : ""}
               onChange={(e) => {
-                const dueAt = e.target.value ? new Date(e.target.value).getTime() : null;
+                // store local midnight of the picked day (UTC-midnight parses
+                // render a day early west of UTC)
+                const dueAt = e.target.value ? parseDueInput(e.target.value) : null;
                 onUpdateMetadata(node._id, { dueAt });
               }}
               className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"

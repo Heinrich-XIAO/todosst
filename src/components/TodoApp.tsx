@@ -30,6 +30,7 @@ import {
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
+import { normalizeDueAt } from "@/lib/due";
 import {
   awayGapMs,
   commitSession,
@@ -362,7 +363,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             {node.metadata.priority ? <span className="ml-2 text-[10px] border border-foreground/20 px-1">{node.metadata.priority}</span> : null}
             {node.metadata.dueAt ? (
               <span className="ml-1 text-[10px] opacity-60">
-                {new Date(node.metadata.dueAt).toLocaleDateString()}
+                {new Date(normalizeDueAt(node.metadata.dueAt)).toLocaleDateString()}
               </span>
             ) : null}
             {meta.recur ? (
@@ -706,9 +707,10 @@ function TodoTask() {
       const fired: string[] = [];
       for (const n of list) {
         const meta = n.metadata as PlainNode["metadata"];
-        if (!meta.dueAt || !meta.reminder?.enabled || isDone(n)) continue;
+        const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
+        if (!dueAt || !meta.reminder?.enabled || isDone(n)) continue;
         for (const off of reminderOffsets(meta)) {
-          const at = meta.dueAt - off * 60_000;
+          const at = dueAt - off * 60_000;
           if (at > now || at <= now - 5 * 60_000) continue;
           const k = reminderKey(n._id as string, at);
           if (shown.has(k)) continue;
@@ -731,11 +733,12 @@ function TodoTask() {
       const ids: string[] = [];
       for (const n of list) {
         const meta = n.metadata as PlainNode["metadata"];
-        if (!meta.dueAt || meta.dueAt > now || isDone(n)) continue;
+        const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
+        if (!dueAt || dueAt > now || isDone(n)) continue;
         const id = n._id as string;
         if (seen.has(id)) continue;
         ids.push(id);
-        lines.push(`${n.title} — was due ${new Date(meta.dueAt).toLocaleString()}`);
+        lines.push(`${n.title} — was due ${new Date(dueAt).toLocaleString()}`);
       }
       if (ids.length > 0) {
         markOverdueShown(day, ids);
