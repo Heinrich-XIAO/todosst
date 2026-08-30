@@ -15,7 +15,7 @@ import type { PlainNode } from "@/lib/crypto";
 import { encryptString, decryptString, toPlainNode } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
 import { decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
-import { runInput, type CommandContext } from "@/lib/grammar";
+import { runInput, type CommandContext, type InputOutcome } from "@/lib/grammar";
 import {
   COUNT_MAX,
   dayIndexLocal,
@@ -1082,7 +1082,15 @@ function TodoTask() {
     const raw = newRootTitle.trim();
     if (!raw || !key) return;
     // grammar registry decides: !commands run via ctx, creation forms return a plan
-    const outcome = runInput(raw, commandCtx);
+    const rawOutcome = runInput(raw, commandCtx);
+    // a task typed inside a nonexistent directory (e.g. after a typo'd !cd)
+    // resolves like an absolute slash path from root: the missing directory
+    // chain is created and the task lands where the user is standing, instead
+    // of silently falling back to root while the header still says "(not found)"
+    const outcome: InputOutcome =
+      rawOutcome.type === "create-task" && !currentDirInfo.exists && rawOutcome.title.length <= 200
+        ? { type: "create-slash", parts: [...currentDirInfo.parts, rawOutcome.title], recur: rawOutcome.recur }
+        : rawOutcome;
     if (outcome.type === "create-slash") {
       if (!nodes) return;
       // Build slash-separated hierarchy: each "/" segment may contain spaces.
@@ -1145,7 +1153,9 @@ function TodoTask() {
       // fallback: single task — creates in current directory (pwd) when scoped
       const title = outcome.title;
       if (title.length > 200) return;
-      const targetParentId = currentDirInfo.exists ? (currentDirInfo.id as Id<"todos"> | null) : null;
+      // unreachable for a nonexistent dir: the redirect above turned that case
+      // into a slash plan, so the current directory is guaranteed to exist here
+      const targetParentId = currentDirInfo.id as Id<"todos"> | null;
       const siblings = childrenOf(tree.roots, tree.map, targetParentId);
       if (siblings.some((r) => r.title === title)) {
         setNotice(DUPLICATE_MSG);
