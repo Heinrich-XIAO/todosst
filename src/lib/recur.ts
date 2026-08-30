@@ -68,6 +68,26 @@ export function normalizeRruleString(s: string): string {
 
 const ruleCache = new Map<string, RRule>();
 
+/**
+ * Encode ts's local wall clock as a "naive UTC" date. rrule 2.8 does all
+ * occurrence math on UTC components (its `tzid` option is silently ignored),
+ * so anchoring a rule at a real local-midnight instant drifts after DST
+ * fall-back: occurrences land at 23:00 local of the previous day and windows
+ * / BYDAY weekdays shift until spring-forward. Working entirely in
+ * local-wall-time-as-UTC keeps every occurrence on the intended calendar day.
+ */
+function toNaiveLocal(ts: number): Date {
+  const d = new Date(ts);
+  return new Date(
+    Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds())
+  );
+}
+
+/** Day index of a naive-space occurrence (its UTC date parts are the intended local day). */
+function naiveDayIndex(d: Date): number {
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / DAY_MS;
+}
+
 /** Parse an RRULE string into an RRule anchored at anchorTs (fallback when the string has no DTSTART). Cached. */
 export async function getRule(ruleStr: string, anchorTs: number): Promise<RRule | null> {
   const clean = normalizeRruleString(ruleStr);
@@ -77,11 +97,12 @@ export async function getRule(ruleStr: string, anchorTs: number): Promise<RRule 
   if (hit) return hit;
   try {
     const { rrulestr } = await loadRrule();
-    // an explicit DTSTART in the rule wins; otherwise anchor at the creation day's local midnight
+    // an explicit DTSTART in the rule wins; otherwise anchor at the creation
+    // day's local midnight — both interpreted in naive wall-clock space
     const rule = (
       /(^|\n)DTSTART/i.test(clean)
         ? rrulestr(clean)
-        : rrulestr(clean, { dtstart: new Date(dayIndexToStart(dayIndexLocal(anchorTs))) })
+        : rrulestr(clean, { dtstart: toNaiveLocal(dayStartLocal(anchorTs)) })
     ) as RRule;
     ruleCache.set(key, rule);
     if (ruleCache.size > 200) {
@@ -117,6 +138,9 @@ export type RecurState = {
   nextTs: number | null;
   /** human summary of the rule, e.g. "every 2 weeks on mon, thu" */
   summary: string;
+  /** rule exhausted (COUNT/UNTIL) and its final window has fully passed —
+   * the window is immutable history; the UI must not mutate it */
+  expired: boolean;
 };
 
 export function modeOf(meta: RecurMetadata): CompletionMode {
@@ -177,28 +201,41 @@ export async function recurState(meta: RecurMetadata, anchorTs: number, nowTs: n
   const ruleStr = meta.recur ? String(meta.recur) : "";
   if (!normalizeRruleString(ruleStr)) {
     const windowDay = dayIndexLocal(anchorTs);
-    return { isRecurring: false, windowDay, count: countFor(meta, windowDay), nextTs: null, summary: "" };
+    return { isRecurring: false, windowDay, count: countFor(meta, windowDay), nextTs: null, summary: "", expired: false };
   }
   const rule = await getRule(ruleStr, anchorTs);
   if (!rule) {
     // unparseable rule — degrade to a plain single window
     const windowDay = dayIndexLocal(anchorTs);
-    return { isRecurring: false, windowDay, count: countFor(meta, windowDay), nextTs: null, summary: "" };
+    return { isRecurring: false, windowDay, count: countFor(meta, windowDay), nextTs: null, summary: "", expired: false };
   }
-  const eff = nowTs - graceMsOf(meta);
-  const current = rule.before(new Date(eff), true);
-  const next = rule.after(new Date(Math.max(nowTs, anchorTs)), false);
-  const nextTs = next ? next.getTime() : null;
+  // all occurrence math happens in naive local wall-clock space (see toNaiveLocal)
+  const current = rule.before(toNaiveLocal(nowTs - graceMsOf(meta)), true);
+  const next = rule.after(toNaiveLocal(Math.max(nowTs, anchorTs)), false);
   let windowDay: number;
   if (current) {
-    windowDay = dayIndexLocal(current.getTime());
-  } else if (nextTs !== null) {
-    // rule not started yet — tally applies to the upcoming window
-    windowDay = dayIndexLocal(nextTs);
+    windowDay = naiveDayIndex(current);
   } else {
-    windowDay = dayIndexLocal(nowTs);
+    // before(eff) is null when eff predates dtstart — e.g. the rule's first
+    // occurrence is today and now is still inside the grace window after
+    // midnight. Retry without the grace subtraction so today's window stays
+    // reachable before deferring to the upcoming one.
+    const plain = rule.before(toNaiveLocal(nowTs), true);
+    if (plain) {
+      windowDay = naiveDayIndex(plain);
+    } else if (next) {
+      // rule not started yet — tally applies to the upcoming window
+      windowDay = naiveDayIndex(next);
+    } else {
+      windowDay = dayIndexLocal(nowTs);
+    }
   }
-  return { isRecurring: true, windowDay, count: countFor(meta, windowDay), nextTs, summary: summarize(rule) };
+  const nextTs = next ? dayIndexToStart(naiveDayIndex(next)) : null;
+  // an exhausted rule (COUNT/UNTIL) keeps returning its last occurrence from
+  // before() forever — once that window's day has passed it is history and
+  // must stop accepting counts
+  const expired = !!current && !next && nowTs >= dayIndexToStart(windowDay) + DAY_MS;
+  return { isRecurring: true, windowDay, count: countFor(meta, windowDay), nextTs, summary: summarize(rule), expired };
 }
 
 // ---------- compact counts codec ----------

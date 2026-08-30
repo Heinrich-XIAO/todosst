@@ -268,6 +268,46 @@ test("recurState — DTSTART in string overrides anchor", async () => {
   expect(rs.windowDay).toBe(dayIndexLocal(new Date(2026, 2, 11, 12).getTime()));
 }, 20000);
 
+test("recurState — first window is reachable inside the grace period", async () => {
+  // daily rule created 01:00 local today; checked at 02:00 (within the 4h
+  // grace after midnight) — before(eff) predates dtstart, but today's window
+  // must still resolve instead of deferring to tomorrow
+  const created = new Date(2026, 0, 10, 1, 0).getTime();
+  const anchor = dayIndexToStart(dayIndexLocal(created));
+  const rs = await recurState({ recur: "FREQ=DAILY" }, anchor, new Date(2026, 0, 10, 2, 0).getTime());
+  expect(rs.isRecurring).toBe(true);
+  expect(rs.windowDay).toBe(dayIndexLocal(created));
+}, 20000);
+
+test("recurState — windows stay on the local calendar day across DST fall-back", async () => {
+  // daily rule anchored Jan 1 2026; US zones fall back Nov 1 2026. With a
+  // real-instant anchor, rrule's UTC-component math lands occurrences at
+  // 23:00 local of the PREVIOUS day after fall-back, shifting windows a day
+  // early. Anchoring in local-wall-time-as-UTC keeps Nov 2 on Nov 2.
+  const anchor = dayIndexToStart(dayIndexLocal(new Date(2026, 0, 1, 12).getTime()));
+  const nov2Noon = new Date(2026, 10, 2, 12).getTime();
+  const rs = await recurState({ recur: "FREQ=DAILY" }, anchor, nov2Noon);
+  expect(rs.windowDay).toBe(dayIndexLocal(nov2Noon));
+  // and the next occurrence is Nov 3's window, not Nov 2 23:00
+  expect(rs.nextTs !== null && dayIndexLocal(rs.nextTs)).toBe(dayIndexLocal(new Date(2026, 10, 3, 12).getTime()));
+}, 20000);
+
+test("recurState — exhausted rule marks its final window expired", async () => {
+  const anchor = dayIndexToStart(dayIndexLocal(new Date(2026, 0, 1, 12).getTime()));
+  // 3 daily occurrences: Jan 1-3. Well past the end the window is history.
+  const rs = await recurState({ recur: "FREQ=DAILY;COUNT=3" }, anchor, new Date(2026, 1, 1, 12).getTime());
+  expect(rs.isRecurring).toBe(true);
+  expect(rs.expired).toBe(true);
+  expect(rs.windowDay).toBe(dayIndexLocal(new Date(2026, 0, 3, 12).getTime()));
+  expect(rs.nextTs).toBeNull();
+  // an ongoing rule is never expired
+  const rs2 = await recurState({ recur: "FREQ=DAILY" }, anchor, new Date(2026, 1, 1, 12).getTime());
+  expect(rs2.expired).toBe(false);
+  // plain tasks are never expired
+  const rs3 = await recurState({}, anchor, new Date(2026, 1, 1, 12).getTime());
+  expect(rs3.expired).toBe(false);
+}, 20000);
+
 test("defaults exported", () => {
   expect(DEFAULT_GRACE_HOURS).toBe(4);
 });
