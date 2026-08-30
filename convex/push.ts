@@ -97,7 +97,14 @@ export const syncReminders = mutation({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
     for (const row of existing) {
-      if (!desired.has(`${row.todoId}:${row.remindAt}`)) await ctx.db.delete(row._id);
+      if (desired.has(`${row.todoId}:${row.remindAt}`)) continue;
+      // a row that is still pending dispatch must survive a client sync that
+      // already dropped it as "too old" — otherwise a sync racing the cron
+      // deletes a due-but-unsent reminder before it can ever fire. Rows keep
+      // arriving from the client only past PAST_DROP_MS; anything pending and
+      // still inside the stale window belongs to the cron.
+      if (!row.sent && row.remindAt >= now - STALE_GRACE_MS) continue;
+      await ctx.db.delete(row._id);
     }
     for (const it of desired.values()) {
       if (existing.some((r) => r.todoId === it.todoId && r.remindAt === it.remindAt)) continue;
@@ -131,26 +138,48 @@ export const deleteSubscription = internalMutation({
 
 // Minute cron: fire due reminders. One push per user per tick with the count
 // merged in — no titles ever leave the server.
+// The index filters `sent: false` directly so delivered rows (deleted only by
+// cleanupOld a week later) can never crowd pending ones out of the take(200)
+// page. Rows are marked sent only after the push action reports an outcome —
+// a 429/5xx/network failure at the push service leaves them pending so the
+// next tick retries, within the stale-grace window.
 export const dispatchDue = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
     const due = await ctx.db
       .query("reminders")
-      .withIndex("by_due", (q) => q.lte("remindAt", now))
+      .withIndex("by_pending", (q) => q.eq("sent", false).lte("remindAt", now))
       .take(200);
-    const pending = due.filter((r) => !r.sent);
-    if (pending.length === 0) return;
+    if (due.length === 0) return;
     const counts = new Map<string, number>();
-    for (const r of pending) {
-      // mark sent regardless — a reminder missed while offline doesn't fire days later
-      await ctx.db.patch(r._id, { sent: true });
-      if (now - r.remindAt <= STALE_GRACE_MS) {
-        counts.set(r.userId, (counts.get(r.userId) ?? 0) + 1);
+    const deliverable = new Map<string, Id<"reminders">[]>();
+    for (const r of due) {
+      // too old to be useful — drop it without pushing
+      if (now - r.remindAt > STALE_GRACE_MS) {
+        await ctx.db.patch(r._id, { sent: true });
+        continue;
       }
+      const ids = deliverable.get(r.userId) ?? [];
+      ids.push(r._id);
+      deliverable.set(r.userId, ids);
+      counts.set(r.userId, (counts.get(r.userId) ?? 0) + 1);
     }
-    for (const userId of counts.keys()) {
-      await ctx.scheduler.runAfter(0, internal.pushActions.sendPush, { userId });
+    for (const [userId, ids] of deliverable) {
+      await ctx.scheduler.runAfter(0, internal.pushActions.sendPush, { userId, reminderIds: ids });
+    }
+  },
+});
+
+// Mark reminders as delivered — called by the push action once at least one
+// subscription accepted (or none was retryable). Left unsent on total failure
+// so the next cron tick retries.
+export const markRemindersSent = internalMutation({
+  args: { ids: v.array(v.id("reminders")) },
+  handler: async (ctx, args) => {
+    for (const id of args.ids) {
+      const row = await ctx.db.get(id);
+      if (row && !row.sent) await ctx.db.patch(row._id, { sent: true });
     }
   },
 });

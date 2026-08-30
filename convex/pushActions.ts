@@ -7,15 +7,26 @@ import { internal } from "./_generated/api";
 // fully generic (the service worker renders "tasks due soon"). No titles,
 // no counts, nothing about the vault ever leaves the client.
 export const sendPush = internalAction({
-  args: { userId: v.string() },
+  args: { userId: v.string(), reminderIds: v.array(v.id("reminders")) },
   handler: async (ctx, args) => {
     const publicKey = process.env.VAPID_PUBLIC_KEY;
     const privateKey = process.env.VAPID_PRIVATE_KEY;
-    if (!publicKey || !privateKey) return; // push not configured on this deployment
+    if (!publicKey || !privateKey) {
+      // push not configured on this deployment — drop the rows so they don't
+      // sit pending forever
+      await ctx.runMutation(internal.push.markRemindersSent, { ids: args.reminderIds });
+      return;
+    }
 
     const subs = await ctx.runQuery(internal.push.subscriptionsFor, { userId: args.userId });
-    if (subs.length === 0) return;
+    if (subs.length === 0) {
+      // nowhere to deliver — drop the rows (matches the old mark-first behavior)
+      await ctx.runMutation(internal.push.markRemindersSent, { ids: args.reminderIds });
+      return;
+    }
 
+    let delivered = 0;
+    let retryable = 0;
     await Promise.allSettled(
       subs.map(async (s) => {
         try {
@@ -31,12 +42,24 @@ export const sendPush = internalAction({
           // 201 = delivered, 429/5xx = retryable (next cron tick), 404/410 = gone
           if (res.status === 404 || res.status === 410) {
             await ctx.runMutation(internal.push.deleteSubscription, { endpoint: s.endpoint });
+          } else if (res.ok) {
+            delivered++;
+          } else if (res.status === 429 || res.status >= 500) {
+            retryable++;
           }
         } catch {
-          // network error — the subscription stays; next due reminder retries
+          // network error — retryable
+          retryable++;
         }
       })
     );
+
+    // mark delivered only when at least one subscription accepted, or when
+    // nothing is retryable (all endpoints gone) — a total failure leaves the
+    // rows unsent so the next cron tick retries
+    if (delivered > 0 || retryable === 0) {
+      await ctx.runMutation(internal.push.markRemindersSent, { ids: args.reminderIds });
+    }
   },
 });
 

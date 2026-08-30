@@ -71,6 +71,10 @@ export default defineSchema({
     sent: v.boolean(),
   })
     .index("by_user", ["userId"])
+    // sent first so dispatchDue pages straight through the unsent prefix —
+    // delivered rows (deleted only by cleanupOld a week later) must never
+    // crowd pending ones out of a bounded take()
+    .index("by_pending", ["sent", "remindAt"])
     .index("by_due", ["remindAt"])
     .index("by_todo", ["todoId"]),
 
