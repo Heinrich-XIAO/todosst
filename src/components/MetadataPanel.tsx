@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { TreeNode } from "@/lib/tree";
 import type { PlainNode } from "@/lib/crypto";
@@ -38,6 +38,33 @@ export function MetadataPanel({
   historyDurations: Map<number, number> | null;
 }) {
   const [showRuleEditor, setShowRuleEditor] = useState(false);
+  // free-text fields (description, tags) save on blur; pending values are
+  // tracked so unmount can flush edits from paths that skip blur (node
+  // deleted while typing, panel closed without focus change). Refs are
+  // nulled before passive cleanup runs, so DOM can't be read there.
+  const pendingRef = useRef<{ description?: string; tags?: string }>({});
+  const stateRef = useRef({ node, onUpdateMetadata });
+  useEffect(() => {
+    stateRef.current = { node, onUpdateMetadata };
+  });
+  useEffect(() => {
+    return () => {
+      const { node: n, onUpdateMetadata: save } = stateRef.current;
+      if (!n) return;
+      // pendingRef is not a DOM ref — it holds the latest typed strings; reading
+      // .current here is the point of the flush
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      const pending = pendingRef.current;
+      const meta = n.metadata as PlainNode["metadata"];
+      if (pending.description !== undefined && pending.description !== (meta.description ?? "")) {
+        save(n._id, { description: pending.description });
+      }
+      if (pending.tags !== undefined) {
+        const tags = pending.tags.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 8);
+        if (tags.join("\u0000") !== (meta.tags ?? []).join("\u0000")) save(n._id, { tags });
+      }
+    };
+  }, []);
   if (!node) return null;
   const meta = node.metadata as PlainNode["metadata"];
   const mode = modeOf(meta);
@@ -257,7 +284,19 @@ export function MetadataPanel({
             defaultValue={node.metadata.description ?? ""}
             placeholder="add notes…"
             rows={2}
-            onBlur={(e) => onUpdateMetadata(node._id, { description: e.target.value })}
+            onChange={(e) => {
+              pendingRef.current.description = e.target.value;
+            }}
+            onBlur={(e) => {
+              onUpdateMetadata(node._id, { description: e.target.value });
+              pendingRef.current.description = undefined;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
+            }}
             className="mt-1 w-full border border-foreground/20 bg-transparent p-2 text-xs focus:outline-none"
           />
         </label>
@@ -343,6 +382,9 @@ export function MetadataPanel({
           <input
             defaultValue={(node.metadata.tags ?? []).join(", ")}
             placeholder="work, urgent"
+            onChange={(e) => {
+              pendingRef.current.tags = e.target.value;
+            }}
             onBlur={(e) => {
               const tags = e.target.value
                 .split(",")
@@ -350,6 +392,13 @@ export function MetadataPanel({
                 .filter(Boolean)
                 .slice(0, 8);
               onUpdateMetadata(node._id, { tags });
+              pendingRef.current.tags = undefined;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                e.currentTarget.blur();
+              }
             }}
             className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
           />
