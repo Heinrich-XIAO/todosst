@@ -272,7 +272,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           <div className={`flex h-[18px] shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
             <button
               onClick={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
-              className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
+              disabled={count <= 0}
+              className="w-4 text-[10px] leading-none disabled:opacity-30"
               aria-label={mode === "time" ? "decrease logged time" : "decrement tally"}
             >
               −
@@ -286,7 +287,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             </span>
             <button
               onClick={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
-              className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
+              disabled={count >= COUNT_MAX}
+              className="w-4 text-[10px] leading-none disabled:opacity-30"
               aria-label={mode === "time" ? "log time" : "increment tally"}
               title={mode === "time" ? `click to log +${stepOf(meta)}m` : "click to count +1"}
             >
