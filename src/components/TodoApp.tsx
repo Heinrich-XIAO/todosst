@@ -24,6 +24,7 @@ import {
   formatMinutes,
   modeOf,
   nextCountOnClick,
+  normalizeRruleString,
   parseRecurInput,
   recurState,
   stepOf,
@@ -218,6 +219,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       onDragStart={(e) => {
         setDragId(node._id);
         e.dataTransfer.effectAllowed = "move";
+        // Firefox aborts the drag entirely when no transfer data is set
+        e.dataTransfer.setData("text/plain", node.title);
       }}
       onDragEnd={() => {
         setDragId(null);
@@ -238,6 +241,10 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       }}
       onDrop={(e) => {
         e.preventDefault();
+        // the drop-area container also handles onDrop (move-to-current-dir);
+        // without stopPropagation it fires with the same stale dragId and
+        // re-moves the node to the directory root after this handler moved it
+        e.stopPropagation();
         if (dragId && isValidDropTarget(node, dragId, tree.map)) {
           const pos = dropPosFor(e);
           if (pos === "child") {
@@ -260,6 +267,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
     >
       <div
+        data-drop-row
         className={`flex items-center gap-2 py-2 pr-3 text-sm ${
           dropHint?.id === node._id
             ? dropHint.pos === "child"
@@ -521,6 +529,7 @@ function TodoTask() {
       decryptCacheRef.current.clear();
       setNodes(null);
       setDecryptError(null);
+      setIsDecrypting(false);
       return;
     }
     if (decryptKeyRef.current !== key) {
@@ -530,7 +539,10 @@ function TodoTask() {
     let cancelled = false;
     const misses = todos.filter((t) => !decryptCacheRef.current.has(cacheKeyFor(t)));
     if (misses.length === 0) {
-      // fully cached — synchronous state update, no loading flash
+      // fully cached — synchronous state update, no loading flash. A prior
+      // run may still be in flight (it was cancelled); reset the flag here so
+      // it can never stick true.
+      setIsDecrypting(false);
       const results = todos.map((t) => decryptCacheRef.current.get(cacheKeyFor(t))!);
       const failed = results.some((r) => r.title === "— unable to decrypt —");
       setDecryptError(failed ? "wrong password or corrupted vault — some items could not be decrypted." : null);
@@ -569,6 +581,10 @@ function TodoTask() {
                 _raw: { ciphertext: t.ciphertext, iv: t.iv },
               } satisfies DecryptedNode;
             }
+            // never cache after cancellation: the cache was cleared and
+            // re-keyed when the effect re-ran (lock, key change) — an old run
+            // writing here would poison it with wrong-key results
+            if (cancelled) return;
             decryptCacheRef.current.set(cacheKeyFor(t), result);
           })
         );
@@ -579,6 +595,8 @@ function TodoTask() {
         if (failed) setDecryptError("wrong password or corrupted vault — some items could not be decrypted.");
         setNodes(results);
       } finally {
+        // the rerun (cancelled this one) owns the flag: it either set it true
+        // again or reset it on an early-return path
         if (!cancelled) setIsDecrypting(false);
       }
     })();
@@ -605,10 +623,15 @@ function TodoTask() {
   const historyRemove = useMutation(api.history.remove);
   type HistoryStore = { byTodo: Map<string, Map<number, number>>; dursByTodo: Map<string, Map<number, number>>; idByTodo: Map<string, Id<"todoHistory">> };
   const [history, setHistory] = useState<HistoryStore | null>(null);
+  // synchronous mirror of `history`: writes merge against this ref, not the
+  // async state, so a write racing the list+decrypt load (or a rapid second
+  // write) can't compute from a stale snapshot and duplicate/drop records
+  const historyRef = useRef<HistoryStore | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!historyRecords || !key) {
+        historyRef.current = null;
         if (!cancelled) setHistory(null);
         return;
       }
@@ -627,12 +650,28 @@ function TodoTask() {
           } catch {}
         })
       );
-      if (!cancelled) setHistory({ byTodo, dursByTodo, idByTodo });
+      historyRef.current = { byTodo, dursByTodo, idByTodo };
+      if (!cancelled) setHistory(historyRef.current);
     })();
     return () => {
       cancelled = true;
     };
   }, [historyRecords, key]);
+
+  // prune history records whose todo no longer exists — e.g. the todo was
+  // deleted while history was still loading, so its record id was unknown and
+  // the row leaked on the server (the id is inside the ciphertext, the server
+  // cannot garbage-collect). One sweep per unlock.
+  const historyPrunedRef = useRef(false);
+  useEffect(() => {
+    if (!nodes || !history || !key) return;
+    if (historyPrunedRef.current) return;
+    historyPrunedRef.current = true;
+    const ids = new Set(nodes.map((n) => n._id as string));
+    for (const [todoId, hid] of history.idByTodo) {
+      if (!ids.has(todoId)) void historyRemove({ id: hid }).catch(() => {});
+    }
+  }, [nodes, history, key, historyRemove]);
 
   const [recurStates, setRecurStates] = useState<Map<string, RecurState> | null>(null);
   useEffect(() => {
@@ -690,61 +729,68 @@ function TodoTask() {
   recurStatesRef.current = recurStates;
 
   // due-soon reminders fire on a 30s tick (app open); overdue tasks surface
-  // when the tab is (re)focused — once per task per local day
-  useEffect(() => {
-    if (isLocked) return;
+  // when the tab is (re)focused — once per task per local day. Both read the
+  // nodes/recurStates refs so the callbacks stay referentially stable and the
+  // interval isn't churned by data updates.
+  const checkDueSoon = useCallback(() => {
+    const list = nodesRef.current;
+    if (!list) return;
     const isDone = (n: { _id: string; isCompleted: boolean; metadata: PlainNode["metadata"] }) => {
       const rs = recurStatesRef.current?.get(n._id);
       if (rs?.isRecurring) return rs.count >= thresholdOf(n.metadata);
       return n.isCompleted;
     };
-    const checkDueSoon = () => {
-      const list = nodesRef.current;
-      if (!list) return;
-      const now = Date.now();
-      const shown = loadShownReminders();
-      const lines: string[] = [];
-      const fired: string[] = [];
-      for (const n of list) {
-        const meta = n.metadata as PlainNode["metadata"];
-        const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
-        if (!dueAt || !meta.reminder?.enabled || isDone(n)) continue;
-        for (const off of reminderOffsets(meta)) {
-          const at = dueAt - off * 60_000;
-          if (at > now || at <= now - 5 * 60_000) continue;
-          const k = reminderKey(n._id as string, at);
-          if (shown.has(k)) continue;
-          fired.push(k);
-          lines.push(off === 0 ? `${n.title} — due now` : `${n.title} — due in ≤${off}m`);
-        }
+    const now = Date.now();
+    const shown = loadShownReminders();
+    const lines: string[] = [];
+    const fired: string[] = [];
+    for (const n of list) {
+      const meta = n.metadata as PlainNode["metadata"];
+      const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
+      if (!dueAt || !meta.reminder?.enabled || isDone(n)) continue;
+      for (const off of reminderOffsets(meta)) {
+        const at = dueAt - off * 60_000;
+        if (at > now || at <= now - 5 * 60_000) continue;
+        const k = reminderKey(n._id as string, at);
+        if (shown.has(k)) continue;
+        fired.push(k);
+        lines.push(off === 0 ? `${n.title} — due now` : `${n.title} — due in ≤${off}m`);
       }
-      if (fired.length > 0) {
-        markRemindersShown(fired, now);
-        setRemindToast({ title: "reminders", lines });
-      }
+    }
+    if (fired.length > 0) {
+      markRemindersShown(fired, now);
+      setRemindToast({ title: "reminders", lines });
+    }
+  }, []);
+  const checkOverdue = useCallback(() => {
+    const list = nodesRef.current;
+    if (!list) return;
+    const isDone = (n: { _id: string; isCompleted: boolean; metadata: PlainNode["metadata"] }) => {
+      const rs = recurStatesRef.current?.get(n._id);
+      if (rs?.isRecurring) return rs.count >= thresholdOf(n.metadata);
+      return n.isCompleted;
     };
-    const checkOverdue = () => {
-      const list = nodesRef.current;
-      if (!list) return;
-      const now = Date.now();
-      const day = dayIndexLocal(now);
-      const seen = overdueShownIds(day);
-      const lines: string[] = [];
-      const ids: string[] = [];
-      for (const n of list) {
-        const meta = n.metadata as PlainNode["metadata"];
-        const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
-        if (!dueAt || dueAt > now || isDone(n)) continue;
-        const id = n._id as string;
-        if (seen.has(id)) continue;
-        ids.push(id);
-        lines.push(`${n.title} — was due ${new Date(dueAt).toLocaleString()}`);
-      }
-      if (ids.length > 0) {
-        markOverdueShown(day, ids);
-        setRemindToast({ title: "overdue", lines });
-      }
-    };
+    const now = Date.now();
+    const day = dayIndexLocal(now);
+    const seen = overdueShownIds(day);
+    const lines: string[] = [];
+    const ids: string[] = [];
+    for (const n of list) {
+      const meta = n.metadata as PlainNode["metadata"];
+      const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
+      if (!dueAt || dueAt > now || isDone(n)) continue;
+      const id = n._id as string;
+      if (seen.has(id)) continue;
+      ids.push(id);
+      lines.push(`${n.title} — was due ${new Date(dueAt).toLocaleString()}`);
+    }
+    if (ids.length > 0) {
+      markOverdueShown(day, ids);
+      setRemindToast({ title: "overdue", lines });
+    }
+  }, []);
+  useEffect(() => {
+    if (isLocked) return;
     const onVisible = () => {
       if (document.hidden) return;
       checkDueSoon();
@@ -758,7 +804,16 @@ function TodoTask() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [isLocked]);
+  }, [isLocked, checkDueSoon, checkOverdue]);
+
+  // the tick effect's first run happens while nodes is still null — surface
+  // overdue/due-soon as soon as the first decrypt lands instead of waiting
+  // up to 30s
+  useEffect(() => {
+    if (isLocked || !nodes) return;
+    checkDueSoon();
+    checkOverdue();
+  }, [isLocked, nodes, checkDueSoon, checkOverdue]);
 
 
   // ---- stopwatch: active sessions across all tasks (most recent first) ----
@@ -923,10 +978,13 @@ function TodoTask() {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       // allow shortcuts / navigation keys
       if (e.key.length !== 1) return;
+      // never hijack keystrokes while a modal/panel is up — dialogs autofocus
+      // a button (not an input), so the target checks below pass and typed
+      // characters would be swallowed into the hidden input behind the dialog
+      if (notice || showVault || helpOpen || confirmDeleteId || away || selectedId) return;
       const target = e.target as Element | null;
       const active = document.activeElement as Element | null;
       if (isTypingTarget(target) || isTypingTarget(active)) return;
-      // ignore if a modal/dialog with its own input is present? input check above covers it
       const input = newRootInputRef.current;
       if (!input) return;
       e.preventDefault();
@@ -943,7 +1001,7 @@ function TodoTask() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isLocked]);
+  }, [isLocked, notice, showVault, helpOpen, confirmDeleteId, away, selectedId]);
 
   // Ctrl/Cmd+F focuses the search field
   useEffect(() => {
@@ -1214,17 +1272,34 @@ function TodoTask() {
 
   async function pushHistory(todoId: string, windowDay: number, count: number, durationMs?: number) {
     if (!key) return;
-    const merged = new Map(history?.byTodo.get(todoId) ?? []);
+    const store = historyRef.current;
+    // history not loaded yet (list pending or records mid-decrypt): a blind
+    // insert would create a second record for this todo that the decrypt
+    // merge can never reconcile — the todoId is inside the ciphertext, so the
+    // later last-wins merge would silently drop one record's days. The count
+    // still lives in the node's metadata; the next write re-merges fully.
+    if (!store) return;
+    const merged = new Map(store.byTodo.get(todoId) ?? []);
     if (count > 0) merged.set(windowDay, count);
     else merged.delete(windowDay);
     // stopwatch durations accumulate per day; counts are replaced (they mirror
     // the node's per-window count)
-    const durs = new Map(history?.dursByTodo.get(todoId) ?? []);
+    const durs = new Map(store.dursByTodo.get(todoId) ?? []);
     if (durationMs && durationMs > 0) durs.set(windowDay, (durs.get(windowDay) ?? 0) + Math.floor(durationMs));
     const payload = encodeHistoryPayload({ todoId, counts: merged, durations: durs.size > 0 ? durs : undefined });
     const { ciphertext, iv } = await encryptString(key, payload);
-    const hid = history?.idByTodo.get(todoId);
-    await historyPut(hid ? { id: hid, ciphertext, iv } : { ciphertext, iv });
+    const hid = store.idByTodo.get(todoId);
+    const putId = await historyPut(hid ? { id: hid, ciphertext, iv } : { ciphertext, iv });
+    // optimistic ref/state update so rapid successive writes merge instead of
+    // each computing from the same pre-write snapshot
+    const byTodo = new Map(store.byTodo);
+    byTodo.set(todoId, merged);
+    const dursByTodo = new Map(store.dursByTodo);
+    dursByTodo.set(todoId, durs);
+    const idByTodo = new Map(store.idByTodo);
+    if (!hid && putId) idByTodo.set(todoId, putId as Id<"todoHistory">);
+    historyRef.current = { byTodo, dursByTodo, idByTodo };
+    setHistory(historyRef.current);
   }
 
   // Warn once per threshold when the encrypted payload grows toward the 8KB server limit.
@@ -1245,6 +1320,18 @@ function TodoTask() {
     return history?.byTodo.get(node._id as string)?.get(day) ?? 0;
   }
 
+  // recurStates loads in a separate async effect after nodes decrypt — clicks
+  // racing that load must still credit the current recurrence window, not the
+  // creation day. Falls back to computing the state on the fly (rule parse is
+  // cached, so this is cheap).
+  async function resolveRs(node: TreeNode | DecryptedNode): Promise<RecurState | undefined> {
+    const cached = recurStates?.get(node._id as string);
+    if (cached) return cached;
+    const meta = node.metadata as PlainNode["metadata"];
+    if (!meta.recur || !normalizeRruleString(String(meta.recur))) return undefined;
+    return await recurState(meta, node._creationTime, Date.now());
+  }
+
   // Write a new count for a node's window (recurring or tally mode). Node
   // metadata keeps only the current window; the full history record keeps
   // everything. targetDay credits a specific window (e.g. a stopwatch session
@@ -1257,6 +1344,12 @@ function TodoTask() {
   ) {
     if (!key || !nodes) return;
     const meta = opts?.metadata ?? (node.metadata as PlainNode["metadata"]);
+    rs = rs ?? (await resolveRs(node));
+    // an exhausted rule's final window is immutable history — never mutate it
+    if (rs?.expired) {
+      setNotice("this task's schedule has ended — its history is locked");
+      return;
+    }
     const creationDay = dayIndexLocal(node._creationTime);
     const windowDay = rs?.windowDay ?? creationDay;
     const targetDay = opts?.targetDay ?? windowDay;
@@ -1284,7 +1377,7 @@ function TodoTask() {
   async function handleToggle(node: TreeNode) {
     if (!key) return;
     const meta0 = node.metadata as PlainNode["metadata"];
-    const rs = recurStates?.get(node._id as string);
+    const rs = await resolveRs(node);
     const isRecurring = rs?.isRecurring ?? !!meta0.recur;
     const mode = modeOf(meta0);
     const creationDay = dayIndexLocal(node._creationTime);
@@ -1330,7 +1423,12 @@ function TodoTask() {
     const meta = node.metadata as PlainNode["metadata"];
     if (meta.timer || modeOf(meta) === "time") return;
     if (node.children.length > 0) return; // parents have no stopwatch
-    const rs = recurStates?.get(node._id as string);
+    const rs = await resolveRs(node);
+    // don't start a session that would credit an exhausted rule's stale window
+    if (rs?.expired) {
+      setNotice("this task's schedule has ended — its history is locked");
+      return;
+    }
     const windowDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
     const updated = toPlainNode(node, { metadata: startTimer(meta, Date.now(), windowDay) });
     const { ciphertext, iv } = await cryptoEncNode(updated);
@@ -1437,10 +1535,15 @@ function TodoTask() {
 
   // Recreate the deleted subtree with fresh ids: parents first so child
   // parentIds can be remapped; history records are re-keyed to the new ids.
+  // A failed create (e.g. the 8KB payload limit) keeps the un-restored
+  // remainder in the undo toast instead of silently dropping the rest of the
+  // subtree — the toast countdown restarts and undo can be retried.
   async function handleUndo() {
     const snap = undoState?.snap;
-    setUndoState(null);
-    if (!snap || !key) return;
+    if (!snap || !key) {
+      setUndoState(null);
+      return;
+    }
     const idMap = new Map<string, Id<"todos">>();
     for (const { oldId, plain } of snap.nodes) {
       // restore idle: an active stopwatch does not survive deletion
@@ -1451,20 +1554,42 @@ function TodoTask() {
         parentId: plain.parentId ? (idMap.get(plain.parentId) ?? (plain.parentId as Id<"todos">)) : null,
         metadata: { ...plain.metadata, timer: undefined },
       });
-      const { ciphertext, iv } = await cryptoEncNode(restored);
-      const newId = await createTodo({ ciphertext, iv });
-      idMap.set(oldId, newId as Id<"todos">);
+      try {
+        const { ciphertext, iv } = await cryptoEncNode(restored);
+        const newId = await createTodo({ ciphertext, iv });
+        idMap.set(oldId, newId as Id<"todos">);
+      } catch {
+        setNotice("undo stopped partway — press undo again to retry the rest");
+        break;
+      }
     }
     for (const h of snap.history) {
       const newId = idMap.get(h.oldId);
       if (!newId) continue;
-      const payload = encodeHistoryPayload({
-        todoId: newId as string,
-        counts: new Map(h.counts),
-        durations: h.durations ? new Map(h.durations) : undefined,
+      try {
+        const payload = encodeHistoryPayload({
+          todoId: newId as string,
+          counts: new Map(h.counts),
+          durations: h.durations ? new Map(h.durations) : undefined,
+        });
+        const { ciphertext, iv } = await encryptString(key, payload);
+        await historyPut({ ciphertext, iv });
+      } catch {
+        // history restore is best-effort; node data matters more
+      }
+    }
+    const remainingNodes = snap.nodes.filter((n) => !idMap.has(n.oldId));
+    if (remainingNodes.length > 0) {
+      setUndoState({
+        snap: {
+          nodes: remainingNodes,
+          history: snap.history.filter((h) => !idMap.has(h.oldId)),
+          count: remainingNodes.length,
+        },
+        ttl: UNDO_TTL_SECONDS,
       });
-      const { ciphertext, iv } = await encryptString(key, payload);
-      await historyPut({ ciphertext, iv });
+    } else {
+      setUndoState(null);
     }
   }
 
@@ -1486,9 +1611,10 @@ function TodoTask() {
   }, [undoSnap]);
 
   // key changed (locked/unlocked/re-derived) — plaintext snapshot may no longer
-  // round-trip with the new key, drop it
+  // round-trip with the new key, drop it; re-arm the history orphan sweep
   useEffect(() => {
     setUndoState(null);
+    historyPrunedRef.current = false;
   }, [key]);
 
   async function handleUpdateMetadata(id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) {
