@@ -1164,7 +1164,12 @@ function TodoTask() {
       setNewRootTitle("");
       return;
     }
-    // command executed (cd/help), unknown command, or nothing to create — clear input
+    if (outcome.type === "unknown-command") {
+      // same convention as other input errors: notice shown, text kept for fixing
+      setNotice(`unknown command: !${outcome.name} (try !help)`);
+      return;
+    }
+    // command executed (cd/help) or nothing to create — clear input
     setNewRootTitle("");
   }
 
