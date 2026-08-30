@@ -65,6 +65,19 @@ test("slash mode with unresolvable dir degrades to none", () => {
   expect(r.suggestions).toEqual([]);
 });
 
+test("slash mode skips empty segments like creation does", () => {
+  // "/a//ou" — the double slash must not abort suggestions; creation accepts it
+  const { nodes, roots, map } = setup([
+    { title: "a" },
+    { title: "outreach", parent: 0 },
+  ]);
+  const r = resolveSlashSuggest("/a//ou", nodes, roots, map, "/");
+  expect(r.mode).toBe("slash");
+  expect(r.dirPath).toBe("/a");
+  expect(r.prefix).toBe("ou");
+  expect(r.suggestions.map((s) => s.title)).toEqual(["outreach"]);
+});
+
 test("cd mode suggests root children by prefix", () => {
   const { nodes, roots, map } = setup([{ title: "host hackathon" }]);
   const r = resolveSlashSuggest("!cd host", nodes, roots, map, "/");

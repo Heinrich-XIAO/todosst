@@ -5,18 +5,19 @@
 // (string[] with no "/" symbols) — e.g. "/haven" and "/haven/" both normalize to ["haven"].
 // Handles: absolute vs relative, "." and "..", spaces without escaping,
 // quoted forms cd "host hackathon", and // collapse.
+//
+// Percent-decoding happens exactly ONCE, at the URL boundary: usePathname
+// returns percent-encoded segments, and decodePath/decodeURIComponent turns
+// them into the decoded paths this module works with. Titles may legitimately
+// contain "%" (e.g. "50%20off"), so re-decoding decoded input here would
+// corrupt them.
 
-/** Shared representation: list of segments with no "/" — e.g. [] for "/", ["haven"], ["host hackathon"] */
+/** Shared representation: list of segments with no "/" — e.g. [] for "/", ["haven"], ["host hackathon"].
+ * Input must already be percent-decoded (see above). */
 export function decodePathToParts(pathname: string): string[] {
   return pathname
     .split("/")
-    .map((s) => {
-      try {
-        return decodeURIComponent(s).trim();
-      } catch {
-        return s.trim();
-      }
-    })
+    .map((s) => s.trim())
     .filter((s) => s.length > 0);
 }
 
@@ -48,13 +49,8 @@ export function resolveCdParts(currentPath: string, target: string | null): stri
   const isAbsolute = target.startsWith("/");
 
   const baseParts = isAbsolute ? [] : decodePathToParts(currentPath);
-  const rawTargetParts = target.split("/").map((p) => {
-    try {
-      return decodeURIComponent(p);
-    } catch {
-      return p;
-    }
-  });
+  // the target is user-typed text — already literal, never percent-encoded
+  const rawTargetParts = target.split("/");
   // Drop leading "" from absolute ("/a" -> ["","a"])
   const targetParts = isAbsolute && rawTargetParts.length && rawTargetParts[0] === "" ? rawTargetParts.slice(1) : rawTargetParts;
 

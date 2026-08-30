@@ -129,6 +129,12 @@ test("runInput recur-only input is ignored", () => {
   expect(runInput("   ", makeCtx().ctx)).toEqual({ type: "ignored" });
 });
 
+test("runInput bare slash paths are ignored (root is not a task)", () => {
+  expect(runInput("/", makeCtx().ctx)).toEqual({ type: "ignored" });
+  expect(runInput("//", makeCtx().ctx)).toEqual({ type: "ignored" });
+  expect(runInput("/ ", makeCtx().ctx)).toEqual({ type: "ignored" });
+});
+
 test("runInput slash paths", () => {
   // last segment is the task, spaces kept verbatim
   expect(runInput("/a/b task", makeCtx().ctx)).toEqual({

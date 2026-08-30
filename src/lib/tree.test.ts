@@ -74,6 +74,17 @@ test("getAncestors walks root-first to the parent", () => {
   expect(getAncestors(a._id, map)).toEqual([]);
 });
 
+test("getAncestors terminates on cyclic parentId data", () => {
+  // raw records may contain a cycle (buildTree detaches it from the rendered
+  // tree but leaves the links) — the walk must not hang
+  const a = node({ title: "a" });
+  const b = node({ title: "b", parentId: a._id });
+  a.parentId = b._id;
+  const { map } = buildTree([a, b]);
+  expect(getAncestors(a._id, map).map((n) => n.title)).toEqual(["b"]);
+  expect(getAncestors(b._id, map).map((n) => n.title)).toEqual(["a"]);
+});
+
 test("findChildByTitle scopes the match to the given parent", () => {
   const a = node({ title: "dup", order: 1 });
   const b = node({ title: "b", order: 2 });

@@ -10,14 +10,14 @@ import {
   resolveCdPath,
 } from "./cdPath";
 
-test("decodePathToParts normalizes slashes and percent-encoding", () => {
+test("decodePathToParts normalizes slashes (input is already percent-decoded)", () => {
   expect(decodePathToParts("/")).toEqual([]);
   expect(decodePathToParts("")).toEqual([]);
   expect(decodePathToParts("/a/b")).toEqual(["a", "b"]);
   expect(decodePathToParts("//a//b/")).toEqual(["a", "b"]);
-  expect(decodePathToParts("/a%20b")).toEqual(["a b"]);
-  // invalid encoding falls back to the raw segment
-  expect(decodePathToParts("/a%zz")).toEqual(["a%zz"]);
+  // segments are literal — percent-decoding happens once at the URL boundary
+  // (titles may legitimately contain "%", e.g. "50%20off")
+  expect(decodePathToParts("/a%20b")).toEqual(["a%20b"]);
   expect(decodePathToParts("/  a  ")).toEqual(["a"]);
 });
 
@@ -25,7 +25,10 @@ test("partsToPath encodes segments and round-trips", () => {
   expect(partsToPath([])).toBe("/");
   expect(partsToPath(["a"])).toBe("/a");
   expect(partsToPath(["host hackathon", "sub dir"])).toBe("/host%20hackathon/sub%20dir");
-  expect(decodePathToParts(partsToPath(["host hackathon", "sub dir"]))).toEqual(["host hackathon", "sub dir"]);
+  // full URL round trip: encode -> percent-decode at the boundary -> parts
+  expect(decodePathToParts(decodePath(partsToPath(["host hackathon", "sub dir"])))).toEqual(["host hackathon", "sub dir"]);
+  // a literal "%20" inside a title survives the round trip
+  expect(decodePathToParts(decodePath(partsToPath(["50%20off"])))).toEqual(["50%20off"]);
 });
 
 test("partsToDecodedPath keeps literal spaces", () => {

@@ -193,7 +193,9 @@ export function runInput(raw: string, ctx: CommandContext): InputOutcome {
     if (parsed.kind === "slash") {
       return { type: "create-slash", parts: parsed.parts, recur: recurParsed.ruleStr };
     }
-    if (parsed.title.trim() === "") return { type: "ignored" };
+    // empty titles and bare slash paths ("/", "//" — root is not a task) are ignored
+    const title = parsed.title.trim();
+    if (title === "" || /^\/+$/.test(title)) return { type: "ignored" };
     return { type: "create-task", title: parsed.title, recur: recurParsed.ruleStr };
   }
   return { type: "ignored" };

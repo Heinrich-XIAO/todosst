@@ -21,7 +21,12 @@ export type DropPos = "before" | "after" | "child";
 /** Upper half of the row inserts above, lower half below; Alt means "drop as child". */
 export function dropPosFor(e: DragEvent): DropPos {
   if (e.altKey) return "child";
-  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  // measure the visible row (direct child marked data-drop-row), not the whole
+  // <li> — a folder's li also contains its expanded children, which would put
+  // the before/after split line deep inside the subtree
+  const li = e.currentTarget as HTMLElement;
+  const row = li.querySelector<HTMLElement>(":scope > [data-drop-row]") ?? li;
+  const rect = row.getBoundingClientRect();
   return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
 }
 
@@ -92,10 +97,15 @@ export function getAncestors(
   map: Map<string, TreeNode>
 ): TreeNode[] {
   const out: TreeNode[] = [];
+  // buildTree tolerates cyclic parentId data (it detaches cycles from the
+  // rendered tree but leaves the links) — guard the walk so a cycle in the
+  // raw records can't hang the caller
+  const seen = new Set<string>([id]);
   let cur = map.get(id);
   while (cur?.parentId) {
     const p = map.get(cur.parentId);
-    if (!p) break;
+    if (!p || seen.has(p._id as string)) break;
+    seen.add(p._id as string);
     out.unshift(p);
     cur = p;
   }

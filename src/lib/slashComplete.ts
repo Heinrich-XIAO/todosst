@@ -44,7 +44,9 @@ export function resolveSlashSuggest(
     let parentId: string | null = null;
     for (const raw of dirPartsRaw) {
       const seg = raw.trim();
-      if (!seg) return { ...NONE, prefix: prefixRaw };
+      // empty segments are accepted by creation (parseSlashPath collapses
+      // "//"), so they must not kill the suggestion pass either
+      if (!seg) continue;
       const match = findChildByTitle(nodes, parentId, seg);
       if (!match) return { ...NONE, prefix: prefixRaw };
       parentId = match._id as string;
