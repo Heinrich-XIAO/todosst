@@ -106,7 +106,12 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
         let ensured = false;
         for (let attempt = 0; attempt < 3 && !ensured; attempt++) {
           try {
-            await convex.mutation(api.encryption.ensureSalt, { salt });
+            // ensureSalt returns the canonical stored salt when one already
+            // exists (another device won the race, or our pre-auth getSalt
+            // lookup failed transiently). Deriving the vault key from the
+            // locally generated salt instead would make all data unreadable.
+            const canonical = (await convex.mutation(api.encryption.ensureSalt, { salt })) as unknown;
+            if (typeof canonical === "string" && canonical.length >= 10) salt = canonical;
             ensured = true;
           } catch {
             await new Promise((r) => setTimeout(r, 800));
@@ -115,6 +120,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
         if (!ensured) {
           throw new Error("could not initialize your vault encryption — please try signing in again.");
         }
+        setCachedSalt(name, salt);
       }
       // Resolve (or adopt) the vault master key and persist its wrapper.
       await resolveVaultPassword(password, salt, false);
