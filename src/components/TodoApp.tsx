@@ -1429,8 +1429,11 @@ function TodoTask() {
     const idMap = new Map<string, Id<"todos">>();
     for (const { oldId, plain } of snap.nodes) {
       // restore idle: an active stopwatch does not survive deletion
+      // parents appear before children in snap.nodes, so an id missing from
+      // idMap means the parent survived the delete — keep its original id
+      // rather than dropping the link (which would orphan the node at root)
       const restored = toPlainNode(plain, {
-        parentId: plain.parentId ? (idMap.get(plain.parentId) ?? null) : null,
+        parentId: plain.parentId ? (idMap.get(plain.parentId) ?? (plain.parentId as Id<"todos">)) : null,
         metadata: { ...plain.metadata, timer: undefined },
       });
       const { ciphertext, iv } = await cryptoEncNode(restored);
