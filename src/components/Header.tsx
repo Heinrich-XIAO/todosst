@@ -1,8 +1,7 @@
 "use client";
 
-import { Authenticated, useQuery } from "convex/react";
+import { Authenticated } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
-import { api } from "../../convex/_generated/api";
 import Link from "next/link";
 import { useEncryption, clearRecoverySession } from "./EncryptionContext";
 import { Logo } from "./Logo";
@@ -11,7 +10,6 @@ import { ThemeToggle } from "./ThemeToggle";
 export function Header() {
   const { signOut } = useAuthActions();
   const { clearKey } = useEncryption();
-  const viewer = useQuery(api.users.viewer);
 
   return (
     <header className="border-b border-foreground bg-background">
@@ -23,7 +21,6 @@ export function Header() {
         <div className="flex items-center gap-3 text-sm">
           <ThemeToggle />
           <Authenticated>
-            <span className="hidden max-w-[180px] truncate opacity-60 sm:inline">{viewer?.name}</span>
             <button
               onClick={() => {
                 clearKey();
