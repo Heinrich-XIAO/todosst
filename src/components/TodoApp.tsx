@@ -1971,8 +1971,7 @@ function TodoTask() {
           <p className="px-3 py-8 text-sm opacity-60">loading…</p>
         ) : listFlat.length === 0 ? (
           <div className="px-3 py-12 text-sm">
-            <p>tasks empty — add a top-level task.</p>
-            <p className="mt-1 text-xs opacity-60">later add children via +child</p>
+            <p>no tasks. add a top-level task.</p>
           </div>
         ) : !currentDirInfo.exists ? (
           <p className="px-3 py-8 text-sm opacity-60">directory not found.</p>
