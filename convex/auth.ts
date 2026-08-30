@@ -59,12 +59,16 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
         const username = String(params.username ?? "").trim().toLowerCase();
         const verifier = String(params.verifier ?? "");
         if (!username || !verifier) throw new Error("Invalid credentials");
+        // brute-force bound: the verifier is a fixed 32-byte hash, so without a
+        // throttle it could be guessed offline-style at full request rate
+        await ctx.runMutation(internal.throttle.hit, { key: `recovery:${username}` });
         const userId = await ctx.runQuery(internal.vault.internalUserIdByUsername, { username });
         if (!userId) throw new Error("Invalid credentials");
         const stored = await ctx.runQuery(internal.vault.internalGetVerifier, { userId });
         if (!stored || stored !== verifier) throw new Error("Invalid credentials");
         // single-use grant allowing one password change without the current password
         await ctx.runMutation(internal.vault.internalCreateGrant, { userId });
+        await ctx.runMutation(internal.throttle.reset, { key: `recovery:${username}` });
         return { userId };
       },
     }),

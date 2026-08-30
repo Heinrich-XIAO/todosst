@@ -84,4 +84,11 @@ export default defineSchema({
     userId: v.id("users"),
     createdAt: v.number(),
   }).index("by_user", ["userId"]),
+
+  // fixed-window brute-force throttle for credential providers
+  loginThrottle: defineTable({
+    key: v.string(), // e.g. "recovery:<username>"
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_key", ["key"]),
 });

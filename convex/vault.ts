@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { stableUserId } from "./userScope";
+import { stableUserId, validateEncryptedPayload } from "./userScope";
 import { getAuthUserId, modifyAccountCredentials, retrieveAccount } from "@convex-dev/auth/server";
 
 // Vault key management. The vault master key M (AES-GCM-256, random) encrypts all
@@ -11,6 +11,9 @@ import { getAuthUserId, modifyAccountCredentials, retrieveAccount } from "@conve
 // The server can never unwrap these.
 
 const KIND = v.union(v.literal("password"), v.literal("recovery"));
+
+// wrapped AES-GCM-256 key + iv, base64 — well under a kilobyte
+const MAX_WRAPPED_KEY = 4096;
 
 export const getKeyRecord = query({
   args: { kind: KIND },
@@ -29,7 +32,7 @@ export const putKeyRecord = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("not authenticated");
-    if (!args.ciphertext || !args.iv) throw new Error("missing ciphertext");
+    validateEncryptedPayload(args.ciphertext, args.iv, MAX_WRAPPED_KEY);
     const userId = stableUserId(identity.subject);
     const existing = await ctx.db
       .query("vaultKeys")
@@ -82,7 +85,8 @@ export const setRecovery = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("not authenticated");
-    if (!args.verifier || !args.ciphertext || !args.iv) throw new Error("missing fields");
+    validateEncryptedPayload(args.ciphertext, args.iv, MAX_WRAPPED_KEY);
+    if (!args.verifier || args.verifier.length > 256) throw new Error("invalid verifier");
     const userId = stableUserId(identity.subject);
     const existingKey = await ctx.db
       .query("recoveryKeys")
