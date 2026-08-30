@@ -55,8 +55,10 @@ export async function enablePush(): Promise<SubJson | null> {
   if (!("serviceWorker" in navigator) || !("PushManager" in window)) return null;
   const permission = await Notification.requestPermission();
   if (permission !== "granted") return null;
-  const reg = await registerServiceWorker();
-  if (!reg) return null;
+  await registerServiceWorker();
+  // ready() guarantees an activated worker — subscribing on the registration
+  // returned by register() races first-visit activation ("no active Service Worker")
+  const reg = await navigator.serviceWorker.ready;
   let sub = await reg.pushManager.getSubscription();
   if (!sub) {
     const key = vapidPublicKey();
