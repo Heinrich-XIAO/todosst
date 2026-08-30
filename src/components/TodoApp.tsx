@@ -268,21 +268,17 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 
         {mode !== "check" ? (
           // tally/time rendering — storage underneath is still a count
-          // (time mode interprets the count as minutes). Each segment draws its
-          // own full-height box (outer borders on the −/+ cells, -ml-px seam
-          // collapse) so the control reads exactly as tall as the checkbox —
-          // an outer container border alone left the inner count cell 1px
-          // inset top/bottom and the whole control looked shorter.
-          <div className={`flex h-4 shrink-0 items-stretch ${mode === "time" ? "w-20" : "w-16"}`}>
+          // (time mode interprets the count as minutes)
+          <div className={`flex h-4 shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
             <button
               onClick={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
-              className="group flex w-4 shrink-0 items-center justify-center border border-foreground text-[10px] leading-none"
+              className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
               aria-label={mode === "time" ? "decrease logged time" : "decrement tally"}
             >
-              <span className="opacity-60 group-hover:opacity-100">−</span>
+              −
             </button>
             <span
-              className={`-ml-px flex flex-1 items-center justify-center border-y border-r border-foreground text-[10px] leading-none ${
+              className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
                 (mode === "time" || threshold < Infinity ? count >= threshold : count > 0) ? "bg-foreground text-background" : "bg-background"
               }`}
             >
@@ -290,11 +286,11 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             </span>
             <button
               onClick={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
-              className="group -ml-px flex w-4 shrink-0 items-center justify-center border border-foreground text-[10px] leading-none"
+              className="w-4 text-[10px] leading-none opacity-60 hover:opacity-100"
               aria-label={mode === "time" ? "log time" : "increment tally"}
               title={mode === "time" ? `click to log +${stepOf(meta)}m` : "click to count +1"}
             >
-              <span className="opacity-60 group-hover:opacity-100">+</span>
+              +
             </button>
           </div>
         ) : (
