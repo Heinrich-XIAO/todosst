@@ -245,13 +245,13 @@ export function VaultPanel({ onClose }: { onClose: () => void }) {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="vault settings"
+        aria-label="settings"
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[460px] border border-foreground bg-background p-6"
       >
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-medium">vault settings</h2>
-          <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="close vault settings">
+          <h2 className="text-sm font-medium">settings</h2>
+          <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="close settings">
             close
           </button>
         </div>
