@@ -47,7 +47,6 @@ import {
   type SessionEntry,
 } from "@/lib/stopwatch";
 import { HelpPanel } from "./HelpPanel";
-import { VaultPanel } from "./VaultPanel";
 import { ReminderToast } from "./ReminderToast";
 import {
   buildTree,
@@ -502,7 +501,6 @@ function TodoTask() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{ snap: UndoSnapshot; ttl: number } | null>(null);
-  const [showVault, setShowVault] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const newRootInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -981,7 +979,7 @@ function TodoTask() {
       // never hijack keystrokes while a modal/panel is up — dialogs autofocus
       // a button (not an input), so the target checks below pass and typed
       // characters would be swallowed into the hidden input behind the dialog
-      if (notice || showVault || helpOpen || confirmDeleteId || away || selectedId) return;
+      if (notice || helpOpen || confirmDeleteId || away || selectedId) return;
       const target = e.target as Element | null;
       const active = document.activeElement as Element | null;
       if (isTypingTarget(target) || isTypingTarget(active)) return;
@@ -1001,7 +999,7 @@ function TodoTask() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isLocked, notice, showVault, helpOpen, confirmDeleteId, away, selectedId]);
+  }, [isLocked, notice, helpOpen, confirmDeleteId, away, selectedId]);
 
   // Ctrl/Cmd+F focuses the search field
   useEffect(() => {
@@ -1785,13 +1783,6 @@ function TodoTask() {
           <span>E2E Encrypted</span>
         </span>
         <span className="flex items-center gap-3">
-          <button
-            onClick={() => setShowVault(true)}
-            className="opacity-60 hover:opacity-100 underline underline-offset-4"
-            title="change password, recovery key"
-          >
-            vault
-          </button>
           {hasRemembered && (
             <button
               onClick={() => {
@@ -2006,8 +1997,6 @@ function TodoTask() {
           onDelete={() => handleDelete(confirmNode)}
         />
       )}
-
-      {showVault && <VaultPanel onClose={() => setShowVault(false)} />}
 
       {helpOpen && <HelpPanel onClose={() => setHelpOpen(false)} />}
 
