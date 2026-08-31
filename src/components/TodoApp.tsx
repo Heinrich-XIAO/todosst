@@ -1931,6 +1931,11 @@ function TodoTask() {
           ref={searchInputRef}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              e.currentTarget.blur();
+            }
+          }}
           placeholder="search titles/tags…"
           className="flex-1 min-w-[140px] bg-transparent py-1 placeholder:text-foreground/40 focus:outline-none"
         />
