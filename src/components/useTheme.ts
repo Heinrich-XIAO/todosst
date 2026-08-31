@@ -1,16 +1,15 @@
 "use client";
 
-import { useCallback, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 
-type Theme = "auto" | "light" | "dark";
+export type Theme = "auto" | "light" | "dark";
 
 const KEY = "todosst-theme";
-const NEXT: Record<Theme, Theme> = { auto: "light", light: "dark", dark: "auto" };
-const THEMES: readonly Theme[] = ["auto", "light", "dark"];
+export const THEMES: readonly Theme[] = ["auto", "light", "dark"];
 
 const listeners = new Set<() => void>();
 
-function subscribe(callback: () => void) {
+export function subscribe(callback: () => void) {
   listeners.add(callback);
   // cross-tab sync: re-apply the <html> class, not just the label — the
   // storage event only notifies the OTHER tabs
@@ -25,7 +24,7 @@ function subscribe(callback: () => void) {
   };
 }
 
-function readTheme(): Theme {
+export function readTheme(): Theme {
   try {
     const stored = localStorage.getItem(KEY);
     if (stored && (THEMES as readonly string[]).includes(stored)) {
@@ -43,32 +42,20 @@ function apply(theme: Theme) {
   if (theme !== "auto") root.classList.add(theme);
 }
 
-function getServerTheme(): Theme {
+export function getServerTheme(): Theme {
   return "auto";
 }
 
-export function ThemeToggle() {
-  const theme = useSyncExternalStore(subscribe, readTheme, getServerTheme);
+export function useTheme(): Theme {
+  return useSyncExternalStore(subscribe, readTheme, getServerTheme);
+}
 
-  const cycle = useCallback(() => {
-    const next = NEXT[readTheme()];
-    apply(next);
-    try {
-      localStorage.setItem(KEY, next);
-    } catch {
-      /* private mode */
-    }
-    for (const listener of listeners) listener();
-  }, []);
-
-  return (
-    <button
-      onClick={cycle}
-      aria-label={`Color theme: ${theme}`}
-      title="Cycle color theme"
-      className="opacity-60 hover:opacity-100"
-    >
-      theme: {theme}
-    </button>
-  );
+export function setTheme(theme: Theme) {
+  apply(theme);
+  try {
+    localStorage.setItem(KEY, theme);
+  } catch {
+    /* private mode */
+  }
+  for (const listener of listeners) listener();
 }

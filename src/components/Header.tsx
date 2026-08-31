@@ -1,15 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import { Authenticated } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import Link from "next/link";
-import { useEncryption, clearRecoverySession } from "./EncryptionContext";
+import { clearRecoverySession, useEncryption } from "./EncryptionContext";
 import { Logo } from "./Logo";
-import { ThemeToggle } from "./ThemeToggle";
+import { SettingsDialog } from "./SettingsDialog";
 
 export function Header() {
   const { signOut } = useAuthActions();
   const { clearKey } = useEncryption();
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <header className="border-b border-foreground bg-background">
@@ -19,7 +21,13 @@ export function Header() {
           <span className="font-mono">todosst</span>
         </Link>
         <div className="flex items-center gap-3 text-sm">
-          <ThemeToggle />
+          <button
+            onClick={() => setSettingsOpen(true)}
+            className="opacity-60 hover:opacity-100"
+            title="theme and device settings"
+          >
+            settings
+          </button>
           <Authenticated>
             <button
               onClick={() => {
@@ -34,6 +42,7 @@ export function Header() {
           </Authenticated>
         </div>
       </div>
+      {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
     </header>
   );
 }
