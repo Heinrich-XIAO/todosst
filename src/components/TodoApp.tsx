@@ -9,6 +9,8 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { AuthLoading, Unauthenticated, Authenticated } from "convex/react";
 import { PushAutoEnable } from "./PushAutoEnable";
+import { DailyNudgeSync } from "./DailyNudge";
+import { InstallHint } from "./InstallHint";
 import { AuthForm } from "./AuthForm";
 import { useEncryption, getRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
@@ -1827,6 +1829,8 @@ function TodoTask() {
         </span>
       </div>
 
+      <InstallHint />
+
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
       {view === "tree" && (
         <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
@@ -2107,6 +2111,7 @@ export function TodoApp() {
       <Authenticated>
         <TodoTask />
         <PushAutoEnable />
+        <DailyNudgeSync />
       </Authenticated>
     </>
   );

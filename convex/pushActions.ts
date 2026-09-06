@@ -1,11 +1,56 @@
 import { v } from "convex/values";
-import { internalAction } from "./_generated/server";
+import { internalAction, type ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
+import { encryptPushPayload } from "../src/lib/pushCrypto";
 
 // Web Push sender for the V8 runtime — no Node dependency. VAPID is an ES256
-// JWT signed with WebCrypto; the push body is empty so the notification is
-// fully generic (the service worker renders "tasks due soon"). No titles,
-// no counts, nothing about the vault ever leaves the client.
+// JWT signed with WebCrypto; the notification is fully generic. Reminder pushes
+// carry no payload at all; nudge pushes carry a tiny encrypted body (RFC 8291
+// aes128gcm) that only distinguishes the notification copy. No titles, no
+// counts, nothing about the vault ever leaves the client.
+
+async function deliverToSubs(
+  ctx: ActionCtx,
+  publicKey: string,
+  privateKey: string,
+  subs: { endpoint: string; p256dh: string; auth: string }[],
+  // per-subscription body (encrypted), or null for the empty-body generic push
+  bodyFor: (s: { p256dh: string; auth: string }) => Promise<Uint8Array | null>
+): Promise<{ delivered: number; retryable: number }> {
+  let delivered = 0;
+  let retryable = 0;
+  await Promise.allSettled(
+    subs.map(async (s) => {
+      try {
+        // aud must be the endpoint's origin, so each endpoint gets its own JWT
+        const jwt = await vapidJwt(publicKey, privateKey, endpointOrigin(s.endpoint));
+        const body = await bodyFor(s);
+        const res = await fetch(s.endpoint, {
+          method: "POST",
+          headers: {
+            TTL: "3600",
+            Authorization: `vapid t=${jwt}, k=${publicKey}`,
+            ...(body ? { "Content-Encoding": "aes128gcm" } : {}),
+          },
+          ...(body ? { body: body as unknown as BodyInit } : {}),
+        });
+        // 201 = delivered, 429/5xx = retryable (next cron tick), 404/410 = gone
+        if (res.status === 404 || res.status === 410) {
+          await ctx.runMutation(internal.push.deleteSubscription, { endpoint: s.endpoint });
+        } else if (res.ok) {
+          delivered++;
+        } else if (res.status === 429 || res.status >= 500) {
+          retryable++;
+        }
+      } catch {
+        // network error — retryable
+        retryable++;
+      }
+    })
+  );
+  return { delivered, retryable };
+}
+
 export const sendPush = internalAction({
   args: { userId: v.string(), reminderIds: v.array(v.id("reminders")) },
   handler: async (ctx, args) => {
@@ -25,34 +70,7 @@ export const sendPush = internalAction({
       return;
     }
 
-    let delivered = 0;
-    let retryable = 0;
-    await Promise.allSettled(
-      subs.map(async (s) => {
-        try {
-          // aud must be the endpoint's origin, so each endpoint gets its own JWT
-          const jwt = await vapidJwt(publicKey, privateKey, endpointOrigin(s.endpoint));
-          const res = await fetch(s.endpoint, {
-            method: "POST",
-            headers: {
-              TTL: "3600",
-              Authorization: `vapid t=${jwt}, k=${publicKey}`,
-            },
-          });
-          // 201 = delivered, 429/5xx = retryable (next cron tick), 404/410 = gone
-          if (res.status === 404 || res.status === 410) {
-            await ctx.runMutation(internal.push.deleteSubscription, { endpoint: s.endpoint });
-          } else if (res.ok) {
-            delivered++;
-          } else if (res.status === 429 || res.status >= 500) {
-            retryable++;
-          }
-        } catch {
-          // network error — retryable
-          retryable++;
-        }
-      })
-    );
+    const { delivered, retryable } = await deliverToSubs(ctx, publicKey, privateKey, subs, async () => null);
 
     // mark delivered only when at least one subscription accepted, or when
     // nothing is retryable (all endpoints gone) — a total failure leaves the
@@ -60,6 +78,28 @@ export const sendPush = internalAction({
     if (delivered > 0 || retryable === 0) {
       await ctx.runMutation(internal.push.markRemindersSent, { ids: args.reminderIds });
     }
+  },
+});
+
+// Daily-nudge push: a tiny encrypted body {t:"nudge"} — the service worker
+// renders "today's windows are open" instead of the due-soon copy. Fire and
+// forget (the cron dedupes per day before scheduling); an encryption failure
+// on a broken subscription falls back to the empty-body generic push.
+export const sendNudge = internalAction({
+  args: { userId: v.string() },
+  handler: async (ctx, args) => {
+    const publicKey = process.env.VAPID_PUBLIC_KEY;
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    if (!publicKey || !privateKey) return;
+    const subs = await ctx.runQuery(internal.push.subscriptionsFor, { userId: args.userId });
+    if (subs.length === 0) return;
+    await deliverToSubs(ctx, publicKey, privateKey, subs, async (s) => {
+      try {
+        return await encryptPushPayload({ p256dh: s.p256dh, auth: s.auth }, JSON.stringify({ t: "nudge" }));
+      } catch {
+        return null;
+      }
+    });
   },
 });
 

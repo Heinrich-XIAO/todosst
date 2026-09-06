@@ -13,6 +13,7 @@ import type * as crons from "../crons.js";
 import type * as encryption from "../encryption.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as nudge from "../nudge.js";
 import type * as push from "../push.js";
 import type * as pushActions from "../pushActions.js";
 import type * as throttle from "../throttle.js";
@@ -33,6 +34,7 @@ declare const fullApi: ApiFromModules<{
   encryption: typeof encryption;
   history: typeof history;
   http: typeof http;
+  nudge: typeof nudge;
   push: typeof push;
   pushActions: typeof pushActions;
   throttle: typeof throttle;
