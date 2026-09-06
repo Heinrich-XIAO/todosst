@@ -2,34 +2,33 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
-import { parseDueInput } from "@/lib/due";
+import type { PlainNode } from "@/lib/crypto";
+import {
+  CompletionStyleField,
+  DescriptionField,
+  PriorityDueField,
+  RecurrenceField,
+  RemindersField,
+  TagsField,
+  parseTagsInput,
+} from "./TaskFields";
 
-// Tap-first task creation for mobile. The desktop grammar input stays the
-// power tool; this sheet composes the same outcomes (directory path, ~recur
-// token, metadata) without requiring the keyboard for anything but the title.
+// The mobile new-task flow: the edit UI's fields (TaskFields — same controls
+// as MetadataPanel) in a bottom sheet, developed for creation — a title, a
+// directory picker, and a sticky add button. Fields buffer locally and bake
+// into the created node's metadata in one shot; nothing writes per keystroke.
 
-export type ComposerDraft = {
+export type TaskDraft = {
   title: string;
   /** directory path titles; [] = root. Empty in child mode (parent is fixed). */
   dirParts: string[];
-  /** grammar token, e.g. "~daily"; parsed by the caller via parseRecurInput */
-  recurToken: string | null;
-  /** local midnight of the due day (see src/lib/due.ts); null = none */
-  dueAt: number | null;
-  priority: "low" | "med" | "high" | null;
+  /** full metadata to bake into the created node */
+  metadata: PlainNode["metadata"];
 };
 
-export type ComposerMode =
-  | { kind: "root"; initialDirParts: string[] }
-  | { kind: "child"; parentId: Id<"todos">; parentTitle: string };
-
-const RECUR_CHIPS: { label: string; token: string }[] = [
-  { label: "daily", token: "~daily" },
-  { label: "weekdays", token: "~weekdays" },
-  { label: "weekly", token: "~weekly" },
-  { label: "monthly", token: "~monthly" },
-  { label: "yearly", token: "~yearly" },
-];
+export type TaskSheetMode =
+  | { kind: "create"; initialDirParts: string[] }
+  | { kind: "create-child"; parentId: Id<"todos">; parentTitle: string };
 
 // Distance between the layout viewport bottom and the visual viewport bottom —
 // the keyboard height while an input is focused (0 when closed). iOS Safari
@@ -52,29 +51,38 @@ function useKeyboardInset() {
   return inset;
 }
 
-export function ComposerSheet({
+export function TaskSheet({
   mode,
   dirOptions,
   online,
+  nowTs,
   onClose,
   onSubmit,
 }: {
-  mode: ComposerMode;
+  mode: TaskSheetMode;
   /** every pickable directory as title paths; [ [] ] means root only */
   dirOptions: string[][];
   online: boolean;
+  /** recurrence anchor for new rules — the app's shared clock */
+  nowTs: number;
   onClose: () => void;
-  onSubmit: (draft: ComposerDraft) => Promise<boolean>;
+  onSubmit: (draft: TaskDraft) => Promise<boolean>;
 }) {
   const [title, setTitle] = useState("");
-  const [dirParts, setDirParts] = useState<string[]>(mode.kind === "root" ? mode.initialDirParts : []);
+  const [dirParts, setDirParts] = useState<string[]>(mode.kind === "create" ? mode.initialDirParts : []);
   const [dirOpen, setDirOpen] = useState(false);
-  const [recurToken, setRecurToken] = useState<string | null>(null);
-  const [dueInput, setDueInput] = useState("");
-  const [priority, setPriority] = useState<"low" | "med" | "high" | null>(null);
+  const [metadata, setMetadata] = useState<PlainNode["metadata"]>({});
   const [busy, setBusy] = useState(false);
+  // mirror of metadata for submit-time reads — blur commits can land in the
+  // same event tick as the submit tap, before the state update re-renders
+  const metaRef = useRef<PlainNode["metadata"]>({});
   const keyboardInset = useKeyboardInset();
   const dirLabelRef = useRef<HTMLButtonElement>(null);
+
+  const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
+    metaRef.current = { ...metaRef.current, ...patch };
+    setMetadata(metaRef.current);
+  };
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -93,10 +101,8 @@ export function ComposerSheet({
     setBusy(true);
     const ok = await onSubmit({
       title: t,
-      dirParts: mode.kind === "root" ? dirParts : [],
-      recurToken,
-      dueAt: online && dueInput ? parseDueInput(dueInput) : null,
-      priority: online ? priority : null,
+      dirParts: mode.kind === "create" ? dirParts : [],
+      metadata: metaRef.current,
     });
     setBusy(false);
     if (ok) onClose();
@@ -108,7 +114,7 @@ export function ComposerSheet({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={mode.kind === "child" ? "new sub-task" : "new task"}
+        aria-label={mode.kind === "create-child" ? "new sub-task" : "new task"}
         onClick={(e) => e.stopPropagation()}
         className="absolute inset-x-0 flex flex-col border-t border-foreground bg-background"
         style={{
@@ -119,7 +125,7 @@ export function ComposerSheet({
       >
         <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-2 text-xs">
           <span className="font-mono opacity-60">
-            {mode.kind === "child" ? `new sub-task — under ${mode.parentTitle}` : "new task"}
+            {mode.kind === "create-child" ? `new sub-task — under ${mode.parentTitle}` : "new task"}
           </span>
           <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="close">
             ✕
@@ -127,9 +133,9 @@ export function ComposerSheet({
         </div>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3">
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3 text-xs">
             <label className="block">
-              <span className="text-xs opacity-60">task</span>
+              <span className="opacity-60">task</span>
               <input
                 autoFocus
                 value={title}
@@ -140,9 +146,9 @@ export function ComposerSheet({
               />
             </label>
 
-            {mode.kind === "root" && (
+            {mode.kind === "create" && (
               <div>
-                <span className="text-xs opacity-60">in</span>
+                <span className="opacity-60">in</span>
                 <button
                   ref={dirLabelRef}
                   type="button"
@@ -178,55 +184,21 @@ export function ComposerSheet({
               </div>
             )}
 
-            <div>
-              <span className="text-xs opacity-60">repeats</span>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {RECUR_CHIPS.map((chip) => {
-                  const active = recurToken === chip.token;
-                  return (
-                    <button
-                      key={chip.token}
-                      type="button"
-                      onClick={() => setRecurToken(active ? null : chip.token)}
-                      className={`border px-2 py-1 text-xs ${
-                        active ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:border-foreground"
-                      }`}
-                    >
-                      {chip.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex gap-3">
-              <label className="flex-1 block">
-                <span className="text-xs opacity-60">due</span>
-                <input
-                  type="date"
-                  value={dueInput}
-                  disabled={!online}
-                  onChange={(e) => setDueInput(e.target.value)}
-                  className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-sm disabled:opacity-40"
-                />
-              </label>
-              <label className="w-28">
-                <span className="text-xs opacity-60">priority</span>
-                <select
-                  value={priority ?? ""}
-                  disabled={!online}
-                  onChange={(e) => setPriority(e.target.value === "" ? null : (e.target.value as "low" | "med" | "high"))}
-                  className="mt-1 w-full border border-foreground/20 bg-background p-1 text-sm disabled:opacity-40"
-                >
-                  <option value="">none</option>
-                  <option value="low">low</option>
-                  <option value="med">med</option>
-                  <option value="high">high</option>
-                </select>
-              </label>
-            </div>
+            <RecurrenceField metadata={metadata} anchorTs={nowTs} onPatch={onPatch} />
+            <CompletionStyleField metadata={metadata} onPatch={onPatch} />
+            <DescriptionField metadata={metadata} onCommit={(v) => onPatch({ description: v })} disabled={!online} />
+            <PriorityDueField metadata={metadata} onPatch={onPatch} />
+            <RemindersField metadata={metadata} onPatch={onPatch} />
+            <TagsField
+              metadata={metadata}
+              onCommit={(v) => {
+                const tags = parseTagsInput(v);
+                onPatch({ tags: tags.length ? tags : undefined });
+              }}
+              disabled={!online}
+            />
             {!online && (
-              <p className="text-[10px] opacity-50">offline — captures keep title, directory and recurrence only</p>
+              <p className="text-[10px] opacity-50">offline — captures keep title, directory and preset recurrence only</p>
             )}
           </div>
 
@@ -236,7 +208,7 @@ export function ComposerSheet({
               disabled={!title.trim() || busy}
               className="w-full border border-foreground bg-foreground py-2 text-sm text-background hover:opacity-90 disabled:opacity-20"
             >
-              {busy ? "adding…" : mode.kind === "child" ? "add sub-task" : "add task"}
+              {busy ? "adding…" : mode.kind === "create-child" ? "add sub-task" : "add task"}
             </button>
           </div>
         </form>

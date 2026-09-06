@@ -34,7 +34,7 @@ import {
 import type { RecurState } from "@/lib/recur";
 import { normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
-import { ComposerSheet, type ComposerDraft, type ComposerMode } from "./ComposerSheet";
+import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
 import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
 import { buildTodayItems, openCountOf, TodayView, type PastYearSlide } from "./TodayView";
@@ -480,8 +480,9 @@ function TodoTask() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isSlashFocused, setIsSlashFocused] = useState(false);
   const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
-  // open mobile composer sheet: root-level (from the nav +) or under a parent
-  const [composer, setComposer] = useState<ComposerMode | null>(null);
+  // open the mobile new-task sheet: root-level (from the nav +) or under a
+  // parent — the edit UI's fields (TaskFields) adapted for creation
+  const [composer, setComposer] = useState<TaskSheetMode | null>(null);
   // touch-first device (phone/tablet) — swaps keyboard-heavy affordances for
   // tap-first ones. Desktop unchanged.
   const isTouch = useMemo(
@@ -1424,22 +1425,37 @@ function TodoTask() {
     setAddChildParent(null);
   }
 
-  // Mobile composer sheet submission. Composes the same outcomes the grammar
-  // input produces (create-slash / create-task with a ~recur token), plus
-  // structured metadata (dueAt, priority) the grammar can't express. Offline
-  // (and network-failure) captures park the grammar-equivalent raw string;
-  // the sheet disables due/priority while offline since they can't be encoded.
-  async function submitSheet(draft: ComposerDraft): Promise<boolean> {
-    if (!key) return false;
-    const { ruleStr } = draft.recurToken ? parseRecurInput(draft.recurToken) : { ruleStr: null as string | null };
-    const metadata: PlainNode["metadata"] = {
-      ...(ruleStr ? { recur: ruleStr } : {}),
-      ...(draft.dueAt != null ? { dueAt: draft.dueAt } : {}),
-      ...(draft.priority ? { priority: draft.priority } : {}),
-    };
-    const raw = draft.recurToken ? `${draft.title} ${draft.recurToken}` : draft.title;
+  // Preset recurrence tokens the grammar understands (grammar.ts ~recur docs) —
+  // the only recurrence forms an offline outbox capture can preserve.
+  const PRESET_RECUR_TOKENS = ["~daily", "~weekdays", "~weekly", "~monthly", "~yearly"];
 
-    if (composer && composer.kind === "child") {
+  // Map a RRULE string back to its grammar token when it matches a preset
+  // (~daily …) — offline outbox captures store grammar input, so only preset
+  // recurrence survives an offline park; custom rules need a connection.
+  function recurTokenFor(ruleStr: string | null | undefined): string | null {
+    if (!ruleStr) return null;
+    return PRESET_RECUR_TOKENS.find((t) => parseRecurInput(t).ruleStr === ruleStr) ?? null;
+  }
+
+  // Mobile new-task sheet submission (the edit UI's fields, buffered). Bakes
+  // the full draft metadata into the same outcomes the grammar input produces
+  // (create-slash / create-task). Offline (and network-failure) captures park
+  // the grammar-equivalent raw string — title, directory and preset recurrence
+  // only; the sheet disables the other fields while offline since the grammar
+  // can't encode them.
+  async function submitSheet(draft: TaskDraft): Promise<boolean> {
+    if (!key) return false;
+    const ruleStr = draft.metadata.recur ?? null;
+    const recurToken = recurTokenFor(ruleStr);
+    // offline raw: grammar input the replay path can re-create
+    const metadata: PlainNode["metadata"] = online
+      ? draft.metadata
+      : recurToken
+        ? { recur: ruleStr! }
+        : {};
+    const raw = recurToken ? `${draft.title} ${recurToken}` : draft.title;
+
+    if (composer && composer.kind === "create-child") {
       const parent = tree.map.get(composer.parentId);
       if (!parent) return false;
       const childParts = [...getAncestors(composer.parentId, tree.map).map((a) => a.title), parent.title];
@@ -1465,7 +1481,7 @@ function TodoTask() {
       setNotice("task titles are limited to 200 characters");
       return false;
     }
-    const rawWithPath = [...parts, draft.title].join("/") + (draft.recurToken ? ` ${draft.recurToken}` : "");
+    const rawWithPath = [...parts, raw].join("/");
     if (!online) {
       await parkCapture(rawWithPath, parts);
       return true;
@@ -1473,7 +1489,7 @@ function TodoTask() {
     const outcome: InputOutcome = parts.length
       ? { type: "create-slash", parts: [...parts, draft.title], recur: ruleStr, metadata }
       : { type: "create-task", title: draft.title, recur: ruleStr, metadata };
-    // the composer's [] is an explicit root pick — override create-task's
+    // the sheet's [] is an explicit root pick — override create-task's
     // current-directory fallback so "/" in the sheet means "/"
     const created = await createForOutcome(outcome, parts.length ? undefined : { parentId: null }).catch(
       async (err: unknown) => {
@@ -2032,7 +2048,7 @@ function TodoTask() {
     navigateToPwd,
     isTouch,
     openChildComposer: (parentId, parentTitle) =>
-      setComposer({ kind: "child", parentId, parentTitle }),
+      setComposer({ kind: "create-child", parentId, parentTitle }),
   };
 
   return (
@@ -2329,10 +2345,11 @@ function TodoTask() {
       )}
 
       {composer && (
-        <ComposerSheet
+        <TaskSheet
           mode={composer}
           dirOptions={dirOptions}
           online={online}
+          nowTs={nowTs}
           onClose={() => setComposer(null)}
           onSubmit={submitSheet}
         />
@@ -2341,7 +2358,7 @@ function TodoTask() {
       <BottomNav
         view={view}
         setView={setView}
-        onAdd={() => setComposer({ kind: "root", initialDirParts: pwdParts })}
+        onAdd={() => setComposer({ kind: "create", initialDirParts: pwdParts })}
       />
       </div>
   );
