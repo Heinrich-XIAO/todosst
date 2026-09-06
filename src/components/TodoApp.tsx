@@ -2055,7 +2055,8 @@ function TodoTask() {
     <div className="w-full max-w-[720px] bg-background md:border md:border-foreground">
       <div className="flex items-center justify-between border-b border-foreground px-3 py-2 text-xs">
         <span className="flex flex-1 items-center gap-2">
-          {!online && <span className="opacity-40">offline</span>}
+          <span>E2E Encrypted</span>
+          {!online && <span className="opacity-40">· offline</span>}
           {pendingCaptures.length > 0 && (
             <span className="opacity-40" title="captured offline — syncs when you're back online">
               · {pendingCaptures.length} offline capture{pendingCaptures.length !== 1 ? "s" : ""}
