@@ -2127,9 +2127,10 @@ function TodoTask() {
         </div>
       )}
 
-      {/* top controls — desktop only; mobile creates via the nav "+" sheet */}
+      {/* top controls — desktop-width only; below md and on touch devices,
+          the nav "+" sheet is the only create affordance */}
       {!isTouch && (
-      <div className="flex flex-wrap gap-2 border-b border-foreground p-3">
+      <div className="hidden flex-wrap gap-2 border-b border-foreground p-3 md:flex">
         <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
           <div className="flex-1 relative">
             <input
