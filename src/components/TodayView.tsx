@@ -112,7 +112,7 @@ export function buildTodayItems(
     if (!tn) continue;
     const meta = n.metadata as PlainNode["metadata"];
     // the auto-habit meta-task is fed by reaching all clear — never a today row
-    if (meta.habit) continue;
+
     const rs = recurStates.get(n._id as string) ?? null;
     if (rs?.isRecurring) {
       if (rs.expired || rs.windowDay > today) continue;
