@@ -1,14 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { dayIndexLocal, dayIndexToStart, formatMinutes, type CompletionMode } from "@/lib/recur";
 import { MONTHS } from "@/lib/months";
 
-// GitHub-style 53-week heatmap of counts per local day.
+// GitHub-style heatmap of counts per local day.
 // Columns run oldest -> newest, rows Sun..Sat, ending at the current week.
 // Time mode interprets counts as minutes with minute-sized buckets.
+// The column count adapts to the container width (by whole 12px columns) so
+// narrow screens show fewer recent months instead of a clipped full year.
 
 const LEVELS = ["bg-foreground/5", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
+const CELL_PX = 12; // 10px cell + 2px gap
 
 function levelFor(count: number): number {
   if (count <= 0) return 0;
@@ -36,15 +39,35 @@ export function Heatmap({
 }: {
   counts: Map<number, number>;
   nowTs: number;
+  /** max weeks to render — the grid may show fewer when space runs out */
   weeks?: number;
   mode?: CompletionMode;
 }) {
+  const gridWrapRef = useRef<HTMLDivElement>(null);
+  const [gridWidth, setGridWidth] = useState<number | null>(null);
+
+  // measure the space the grid actually gets; ResizeObserver keeps it current
+  // across viewport changes and carousel slide widths
+  useEffect(() => {
+    const el = gridWrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const w = entries[0]?.contentRect.width;
+      if (typeof w === "number") setGridWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // whole columns only — before the first measurement fall back to the full span
+  const fitWeeks = gridWidth === null ? weeks : Math.max(4, Math.min(weeks, Math.floor(gridWidth / CELL_PX)));
+
   const grid = useMemo(() => {
     const endIdx = dayIndexLocal(nowTs);
     // extend to the end (Saturday) of the current week so today is always rendered
     const endDow = new Date(dayIndexToStart(endIdx)).getDay();
     const alignedEnd = endIdx + (6 - endDow);
-    const startIdx = alignedEnd - weeks * 7 + 1;
+    const startIdx = alignedEnd - fitWeeks * 7 + 1;
     const startDow = new Date(dayIndexToStart(startIdx)).getDay(); // 0 = Sun
     const aligned = startIdx - startDow;
     const colCount = Math.ceil((alignedEnd - aligned + 1) / 7);
@@ -73,7 +96,7 @@ export function Heatmap({
       }
     });
     return { cols, monthLabels, aligned };
-  }, [counts, nowTs, weeks]);
+  }, [counts, nowTs, fitWeeks]);
 
   return (
     <div className="text-[10px]">
@@ -85,7 +108,7 @@ export function Heatmap({
             </span>
           ))}
         </div>
-        <div>
+        <div ref={gridWrapRef} className="min-w-0 flex-1">
           <div className="relative mb-1 h-3">
             {grid.monthLabels.map((m) => (
               <span
