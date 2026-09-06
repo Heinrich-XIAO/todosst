@@ -153,7 +153,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
           mode === "recover"
             ? "invalid username or recovery key."
             : mode === "signIn"
-              ? "invalid username or password."
+              ? "user doesn't exist or password is incorrect."
               : "account already exists. try signing in."
         );
       } else if (msg.toLowerCase().includes("already")) {

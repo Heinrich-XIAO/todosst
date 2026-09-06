@@ -1,4 +1,4 @@
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 
 // Fixed-window brute-force throttle for credential providers (recovery-code
@@ -27,7 +27,7 @@ export const hit = internalMutation({
       return;
     }
     if (row.count >= max) {
-      throw new Error("too many attempts — try again in a few minutes");
+      throw new ConvexError("too many attempts — try again in a few minutes");
     }
     await ctx.db.patch(row._id, { count: row.count + 1 });
   },
