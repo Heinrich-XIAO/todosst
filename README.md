@@ -8,6 +8,7 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - 🌲 **Tasks are directories** — any task can have sub-tasks. Navigate with the URL (`/host hackathon/outreach`), breadcrumbs, double-click, or `!cd`.
 - ⌨️ **Command-style input** — one input box creates paths, navigates, and attaches recurrence rules, with tab-completion (intellisense).
 - 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox, tally-count, or time (minutes) modes, thresholds/goals, grace hours, and a GitHub-style past-year heatmap per task.
+- 📅 **Today view as the daily ritual** — all clear records the day (nudge escalates after two missed days) and auto-checks an optional `open todosst ~daily` habit whose heatmap becomes your streak — tracked locally per device.
 - 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
 - 💾 **Encrypted export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from vault settings; import it into any account to restore or merge.
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
@@ -37,6 +38,13 @@ Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc
 - The UI always shows the **current window**; past windows are frozen history and feed the heatmap.
 - Completions are stored as **counts per window**. Checkbox mode = checked iff `count >= threshold`; tally mode = click to increment/decrement; time mode = count is minutes logged via `+/−` steps, done once the goal (threshold) is reached. Switching modes never loses data.
 - **Grace hours** (default 4, max 48) let a count after midnight still land in yesterday's window.
+
+## The daily ritual
+
+The **today** view is the daily surface: recurring tasks with an open window plus anything due today or earlier. Reaching **all clear** is the ritual's completion, and it does three things — all tracked locally per device, the server never learns whether you opened the app:
+
+- it records the day, so the header can escalate after two consecutive missed days ("missed twice — today is the one that matters"). Misses are free; pairs aren't.
+- on the first visit it offers to create `open todosst ~daily` — an auto-habit that checks itself on every all clear, so its past-year heatmap becomes your streak, fed as a side effect of the ritual rather than as another box.
 
 ## Stack
 
@@ -108,6 +116,7 @@ src/
     ConvexClientProvider.tsx — ConvexAuthNextjsProvider
     EncryptionContext.tsx    — vault key state, remember-me, lock/unlock
     TodoApp.tsx    — tree rendering, command input, filters, details panel
+    TodayView.tsx  — the daily ritual surface (all clear, miss nudge, habit offer)
     MetadataPanel.tsx — task details (notes, recurrence editor, heatmap)
     RruleEditor.tsx — graphical + text RRULE editor
     Heatmap.tsx    — GitHub-style past-year heatmap
@@ -118,6 +127,7 @@ src/
   lib/
     crypto.ts      — PBKDF2 + AES-GCM primitives, payload schemas
     recur.ts       — windowed recurrence engine, input syntax, counts codec
+    ritual.ts      — per-device daily-ritual state (miss streak, habit offer)
     tree.ts        — path/sibling/tree helpers
     grammar.ts     — input grammar registry (commands, `/path`, `~recur`), dispatcher + `!help` source
     cdPath.ts      — `!cd` path resolution

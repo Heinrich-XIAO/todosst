@@ -192,6 +192,10 @@ export type PlainNode = {
     stepMin?: number; // time mode: minutes per + click (default 15)
     graceHours?: number; // window lock grace past midnight (default 4)
     counts?: Record<string, number>; // current window only (day-index -> count; time mode stores minutes); full history lives in todoHistory
+    // auto-habit meta-task (see src/lib/ritual.ts) — the first-visit offer
+    // creates "open todosst ~daily"; the app checks it whenever the today view
+    // reaches all clear, feeding its heatmap as a side effect of the ritual
+    habit?: boolean;
     // stopwatch (see src/lib/stopwatch.ts) — optional timing on check/count
     // tasks; time mode logs minutes via counts instead. One active session per
     // task, unlimited tasks in parallel; elapsed is derived from timestamps so

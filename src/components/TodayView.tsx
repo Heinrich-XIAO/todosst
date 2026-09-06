@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
 import { dayIndexLocal, modeOf, stepOf, thresholdOf, type RecurState } from "@/lib/recur";
+import { missCopy } from "@/lib/ritual";
 import { normalizeDueAt } from "@/lib/due";
 import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
 import { CountControl } from "./CountControl";
@@ -24,6 +25,21 @@ export type TodayItem = {
 };
 
 const GROUP_LABELS = ["overdue", "today", "still open"] as const;
+
+/** A row still wants action today: a recurring count below threshold, or an
+ * uncompleted plain task. Completed overdue rows are settled history — they
+ * no longer block all clear (the ritual must be reachable). */
+export function rowIsOpen(i: TodayItem): boolean {
+  const rs = i.rs;
+  if (rs?.isRecurring) return rs.count < thresholdOf(i.node.metadata as PlainNode["metadata"]);
+  return !i.node.isCompleted;
+}
+
+export function openCountOf(items: TodayItem[]): number {
+  let n = 0;
+  for (const i of items) if (rowIsOpen(i)) n++;
+  return n;
+}
 
 export function buildTodayItems(
   nodes: DecryptedNode[] | null,
@@ -38,6 +54,8 @@ export function buildTodayItems(
     const tn = tree.map.get(n._id as string);
     if (!tn) continue;
     const meta = n.metadata as PlainNode["metadata"];
+    // the auto-habit meta-task is fed by reaching all clear — never a today row
+    if (meta.habit) continue;
     const rs = recurStates.get(n._id as string) ?? null;
     if (rs?.isRecurring) {
       if (rs.expired || rs.windowDay > today) continue;
@@ -137,6 +155,10 @@ export function TodayView({
   items,
   nowTs,
   map,
+  misses = 0,
+  showHabitOffer = false,
+  onCreateHabit,
+  onDismissHabitOffer,
   onToggle,
   onCountUp,
   onCountDown,
@@ -146,6 +168,11 @@ export function TodayView({
   items: TodayItem[] | null;
   nowTs: number;
   map: Map<string, TreeNode>;
+  /** consecutive missed days entering today (tracked locally, per device) */
+  misses?: number;
+  showHabitOffer?: boolean;
+  onCreateHabit: () => void;
+  onDismissHabitOffer: () => void;
   onToggle: (node: TreeNode) => Promise<void>;
   onCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
@@ -153,12 +180,8 @@ export function TodayView({
   onJump: (parts: string[]) => void;
 }) {
   const dateLabel = new Date(nowTs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
-  const open = (items ?? []).filter((i) => {
-    if (i.group === 0) return true;
-    const rs = i.rs;
-    if (rs?.isRecurring) return rs.count < thresholdOf(i.node.metadata as PlainNode["metadata"]);
-    return !i.node.isCompleted;
-  }).length;
+  const open = openCountOf(items ?? []);
+  const escalate = missCopy(misses);
 
   if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
 
@@ -170,6 +193,25 @@ export function TodayView({
         <span className="font-mono">{dateLabel}</span>
         <span className="opacity-60">{open === 0 ? "all clear" : `${open} open`}</span>
       </div>
+      {open > 0 && escalate && (
+        <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px]">{escalate}</div>
+      )}
+      {showHabitOffer && (
+        <div className="border-b border-foreground/10 px-3 py-2 text-xs">
+          <p className="opacity-80">
+            keep a streak without another box? add <span className="font-mono">open todosst ~daily</span> — it checks
+            itself whenever you reach all clear.
+          </p>
+          <div className="mt-1 flex gap-3">
+            <button onClick={onCreateHabit} className="underline underline-offset-4">
+              add it
+            </button>
+            <button onClick={onDismissHabitOffer} className="opacity-40 hover:opacity-100">
+              no thanks
+            </button>
+          </div>
+        </div>
+      )}
       {items.length === 0 ? (
         <div className="px-3 py-12 text-sm opacity-60">
           <p>nothing due today.</p>
@@ -177,7 +219,9 @@ export function TodayView({
         </div>
       ) : (
         groups.map((g) => {
-          const rows = items.filter((i) => i.group === g);
+          // labeled groups (overdue / still open) hide settled rows so they can
+          // never render as an empty header; today's own rows keep the fade
+          const rows = items.filter((i) => i.group === g && (g === 1 || rowIsOpen(i)));
           if (rows.length === 0) return null;
           return (
             <div key={g}>

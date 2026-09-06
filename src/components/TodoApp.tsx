@@ -48,7 +48,8 @@ import {
 import { HelpPanel } from "./HelpPanel";
 import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
-import { buildTodayItems, TodayView } from "./TodayView";
+import { buildTodayItems, openCountOf, TodayView } from "./TodayView";
+import { dismissHabitOffer, missedDays, openRitual, recordClearDay } from "@/lib/ritual";
 import {
   buildTree,
   childrenOf,
@@ -81,6 +82,10 @@ import { AwayPromptDialog, StopwatchWidget, type AwayItem } from "./StopwatchWid
 type Filter = "all" | "active" | "completed";
 
 const DUPLICATE_MSG = "a task with that path already exists";
+
+// the auto-habit meta-task, offered on the first today visit; created via
+// parseRecurInput(`${HABIT_TITLE} ~daily`) so the offered string is the truth
+const HABIT_TITLE = "open todosst";
 
 // ---- away-time bookkeeping (per device, localStorage) ----
 // Written whenever the app hides/locks/closes so the next unlock can ask
@@ -1103,6 +1108,37 @@ function TodoTask() {
     [nodes, tree, recurStates, nowTs]
   );
 
+  // ---- daily ritual: miss streak + auto-habit meta-task (local, per device) ----
+  // Reaching all clear is the ritual's completion: it records the day locally
+  // (never-miss-twice nudge) and auto-checks the habit task, feeding its
+  // heatmap as a side effect. All bookkeeping stays on the device.
+  const [ritualMisses, setRitualMisses] = useState(0);
+  // null = unknown until the local store is read (avoids offer flash for
+  // devices that already declined)
+  const [habitOfferGone, setHabitOfferGone] = useState<boolean | null>(null);
+  const todayIdx = dayIndexLocal(nowTs);
+  useEffect(() => {
+    const s = openRitual(todayIdx);
+    setRitualMisses(missedDays(todayIdx, s));
+    setHabitOfferGone(s.habitOfferDismissed);
+  }, [todayIdx]);
+
+  // the auto-habit meta-task — flagged in metadata so renames keep it working
+  const habitNode = useMemo(
+    () => nodes?.find((n) => (n.metadata as PlainNode["metadata"]).habit === true) ?? null,
+    [nodes]
+  );
+  const habitId = habitNode ? (habitNode._id as string) : null;
+  const habitRs = habitId ? (recurStates?.get(habitId) ?? null) : null;
+  const openToday = useMemo(() => (todayItems ? openCountOf(todayItems) : null), [todayItems]);
+
+  // first-visit offer: no habit yet, not declined, and no root task already
+  // named "open todosst" (avoid a duplicate crash on accept)
+  const showHabitOffer = useMemo(() => {
+    if (habitOfferGone !== false || habitNode) return false;
+    return !nodes?.some((n) => (n.parentId ?? null) === null && n.title === HABIT_TITLE);
+  }, [nodes, habitNode, habitOfferGone]);
+
   // intellisense: autocomplete for "/..." paths and "!cd ..." commands
   const slashComplete = useMemo(
     () => resolveSlashSuggest(newRootTitle, nodes, tree.roots, tree.map, decodedPath),
@@ -1272,6 +1308,32 @@ function TodoTask() {
       next.delete(parentId);
       return next;
     });
+  }
+
+  // the offered auto-habit meta-task: "open todosst ~daily" at root
+  async function handleCreateHabit() {
+    if (!key || !nodes) return;
+    const { title, ruleStr } = parseRecurInput(`${HABIT_TITLE} ~daily`);
+    if (!ruleStr || nodes.some((n) => (n.parentId ?? null) === null && n.title === title)) {
+      setNotice(DUPLICATE_MSG);
+      return;
+    }
+    const roots = childrenOf(tree.roots, tree.map, null);
+    const order = roots.length ? Math.max(...roots.map((r) => r.order)) + 1 : 0;
+    const node = toPlainNode({
+      title,
+      isCompleted: false,
+      parentId: null,
+      order,
+      metadata: { recur: ruleStr, habit: true },
+    });
+    const { ciphertext, iv } = await cryptoEncNode(node);
+    await createTodo({ ciphertext, iv });
+  }
+
+  function handleDismissHabitOffer() {
+    dismissHabitOffer();
+    setHabitOfferGone(true);
   }
 
   async function pushHistory(todoId: string, windowDay: number, count: number, durationMs?: number) {
@@ -1471,6 +1533,28 @@ function TodoTask() {
     await applyCountWrite(node, rs, Math.max(currentCount(node, rs) - delta, 0));
   }
 
+  // Reaching all clear records the day and auto-checks the habit meta-task.
+  // Signature-guarded so re-renders (30s tick, decrypt churn) never re-fire
+  // it; a failed write resets the signature to retry on the next eligible run.
+  const habitAutoSigRef = useRef<string | null>(null);
+  const applyCountWriteRef = useRef(applyCountWrite);
+  applyCountWriteRef.current = applyCountWrite;
+  useEffect(() => {
+    if (openToday === null || openToday > 0) return;
+    const sig = `${todayIdx}|${habitId ?? "-"}|${habitRs ? String(habitRs.count) : "-"}`;
+    if (habitAutoSigRef.current === sig) return;
+    habitAutoSigRef.current = sig;
+    recordClearDay(todayIdx);
+    setRitualMisses(0);
+    const tn = habitId ? tree.map.get(habitId) : null;
+    if (!tn || !habitRs?.isRecurring || habitRs.expired) return;
+    const th = thresholdOf(tn.metadata as PlainNode["metadata"]);
+    if (habitRs.count >= th) return;
+    applyCountWriteRef.current(tn, habitRs, th).catch(() => {
+      habitAutoSigRef.current = null;
+    });
+  }, [openToday, todayIdx, habitId, habitRs, tree.map]);
+
   function startEdit(node: TreeNode) {
     setEditingId(node._id);
     setEditValue(node.title);
@@ -1533,6 +1617,11 @@ function TodoTask() {
     }
     await Promise.all(historyIds.map((hid) => historyRemove({ id: hid })));
     if (selectedId && ids.includes(selectedId)) setSelectedId(null);
+    // deleting the auto-habit task also dismisses the first-visit offer
+    if (snapNodes.some((s) => s.plain.metadata.habit === true)) {
+      dismissHabitOffer();
+      setHabitOfferGone(true);
+    }
     setConfirmDeleteId(null);
     setUndoState({ snap: { nodes: snapNodes, history: snapHistory, count: ids.length }, ttl: UNDO_TTL_SECONDS });
   }
@@ -1968,6 +2057,10 @@ function TodoTask() {
           items={todayItems}
           nowTs={nowTs}
           map={tree.map}
+          misses={ritualMisses}
+          showHabitOffer={showHabitOffer}
+          onCreateHabit={() => void handleCreateHabit()}
+          onDismissHabitOffer={handleDismissHabitOffer}
           onToggle={handleToggle}
           onCountUp={handleCountUp}
           onCountDown={handleCountDown}
