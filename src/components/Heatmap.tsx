@@ -114,7 +114,9 @@ export function Heatmap({
               <span
                 key={`${m.label}-${m.col}`}
                 className="absolute opacity-40"
-                style={{ left: `${m.col * 12}px` }}
+                // a label on the last column would stick out past the grid's
+                // right edge and stretch the scroll area — right-align it
+                style={m.col === grid.cols.length - 1 ? { right: 0 } : { left: `${m.col * 12}px` }}
               >
                 {m.label}
               </span>
