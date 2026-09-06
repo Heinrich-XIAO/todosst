@@ -8,10 +8,10 @@
 // open), plus plain tasks with a due date of today or earlier. Everything else
 // stays in the tree view.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
-import { dayIndexLocal, modeOf, stepOf, thresholdOf, type RecurState } from "@/lib/recur";
+import { dayIndexLocal, modeOf, stepOf, thresholdOf, type CompletionMode, type RecurState } from "@/lib/recur";
 import { missCopy } from "@/lib/ritual";
 import { normalizeDueAt } from "@/lib/due";
 import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
@@ -152,11 +152,79 @@ function TodayRow({
   );
 }
 
+/** One carousel slide: a past-year heatmap for a single task (or the
+ * "all tasks" aggregate). */
+export type PastYearSlide = {
+  id: string;
+  title: string;
+  mode: CompletionMode;
+  counts: Map<number, number>;
+};
+
+// Horizontal past-year carousel. Native scroll-snap does the paging (trackpad
+// + touch for free); the dots mirror and drive the active slide. Squares, not
+// circles — everything else on this surface is square.
+function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: number }) {
+  const trackRef = useRef<HTMLDivElement>(null);
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      const i = Math.round(el.scrollLeft / el.clientWidth);
+      setActive(Math.max(0, Math.min(slides.length - 1, i)));
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [slides.length]);
+
+  const goTo = (i: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+  };
+
+  return (
+    <div className="border-b border-foreground/10 px-3 py-2">
+      <div className="mb-1 flex items-baseline justify-between gap-3 text-[10px]">
+        <span className="shrink-0 opacity-40">past year</span>
+        <span className="truncate font-mono opacity-60" title={slides[active]?.title}>
+          {slides[active]?.title}
+        </span>
+      </div>
+      <div
+        ref={trackRef}
+        className="flex snap-x snap-mandatory overflow-x-auto [&::-webkit-scrollbar]:hidden"
+        style={{ scrollbarWidth: "none" }}
+      >
+        {slides.map((s) => (
+          <div key={s.id} className="w-full shrink-0 snap-center">
+            <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} />
+          </div>
+        ))}
+      </div>
+      {slides.length > 1 && (
+        <div className="mt-2 flex justify-center gap-[6px]">
+          {slides.map((s, i) => (
+            <button
+              key={s.id}
+              onClick={() => goTo(i)}
+              aria-label={`past year: ${s.title}`}
+              className={`h-[5px] w-[5px] ${i === active ? "bg-foreground" : "bg-foreground/25 hover:bg-foreground/50"}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function TodayView({
   items,
   nowTs,
   map,
-  pastYear = null,
+  slides = [],
   misses = 0,
   showHabitOffer = false,
   onCreateHabit,
@@ -170,8 +238,8 @@ export function TodayView({
   items: TodayItem[] | null;
   nowTs: number;
   map: Map<string, TreeNode>;
-  /** per-day completion totals across all tasks, for the past-year heatmap */
-  pastYear?: Map<number, number> | null;
+  /** past-year heatmap carousel: "all tasks" + one slide per task with history */
+  slides?: PastYearSlide[];
   /** consecutive missed days entering today (tracked locally, per device) */
   misses?: number;
   showHabitOffer?: boolean;
@@ -193,12 +261,7 @@ export function TodayView({
 
   return (
     <div className="min-h-[180px] pb-2">
-      {pastYear && pastYear.size > 0 && (
-        <div className="border-b border-foreground/10 px-3 py-2">
-          <p className="mb-1 text-[10px] opacity-40">past year</p>
-          <Heatmap counts={pastYear} nowTs={nowTs} />
-        </div>
-      )}
+      {slides.length > 0 && <PastYearCarousel slides={slides} nowTs={nowTs} />}
       <div className="flex items-baseline justify-between border-b border-foreground/10 px-3 py-2 text-xs">
         <span className="font-mono">{dateLabel}</span>
         <span className="opacity-60">{open === 0 ? "all clear" : `${open} open`}</span>

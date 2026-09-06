@@ -36,7 +36,7 @@ import { normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
-import { buildTodayItems, openCountOf, TodayView } from "./TodayView";
+import { buildTodayItems, openCountOf, TodayView, type PastYearSlide } from "./TodayView";
 import { dismissHabitOffer, missedDays, openRitual, recordClearDay } from "@/lib/ritual";
 import {
   buildTree,
@@ -975,27 +975,35 @@ function TodoTask() {
     [nodes, tree, recurStates, nowTs]
   );
 
-  // ---- past-year heatmap (today tab): per-day totals across every task ----
+  // ---- past-year carousel (today tab): one heatmap per task, "all" first ----
   // history records are authoritative; current-window counts from metadata /
   // recur state top them up in case history is still loading or a write behind
-  const pastYearCounts = useMemo(() => {
-    const m = new Map<number, number>();
-    const bump = (day: number, n: number) => {
-      if (!Number.isInteger(day) || !Number.isFinite(n) || n <= 0) return;
-      m.set(day, (m.get(day) ?? 0) + n);
-    };
+  const pastYearSlides = useMemo(() => {
+    type Slide = PastYearSlide & { latest: number };
+    const per: Slide[] = [];
+    const all = new Map<number, number>();
     for (const n of nodes ?? []) {
       const id = n._id as string;
-      const perTodo = new Map(history?.byTodo.get(id) ?? []);
       const meta = n.metadata as PlainNode["metadata"];
+      const m = new Map(history?.byTodo.get(id) ?? []);
       for (const [day, c] of Object.entries(meta.counts ?? {})) {
-        if (typeof c === "number" && c > (perTodo.get(Number(day)) ?? 0)) perTodo.set(Number(day), c);
+        if (typeof c === "number" && c > (m.get(Number(day)) ?? 0)) m.set(Number(day), c);
       }
       const rs = recurStates?.get(id);
-      if (rs?.isRecurring && rs.count > (perTodo.get(rs.windowDay) ?? 0)) perTodo.set(rs.windowDay, rs.count);
-      for (const [day, c] of perTodo) bump(day, c);
+      if (rs?.isRecurring && rs.count > (m.get(rs.windowDay) ?? 0)) m.set(rs.windowDay, rs.count);
+      if (m.size === 0) continue;
+      let latest = 0;
+      for (const [day, c] of m) {
+        if (c <= 0) continue;
+        all.set(day, (all.get(day) ?? 0) + c);
+        if (day > latest) latest = day;
+      }
+      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest });
     }
-    return m;
+    // most recently active task first; the aggregate slide always leads
+    per.sort((a, b) => b.latest - a.latest || a.title.localeCompare(b.title));
+    if (all.size > 0) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: all, latest: 0 });
+    return per;
   }, [nodes, history, recurStates]);
 
   // ---- daily ritual: miss streak + auto-habit meta-task (local, per device) ----
@@ -1852,7 +1860,7 @@ function TodoTask() {
           items={todayItems}
           nowTs={nowTs}
           map={tree.map}
-          pastYear={pastYearCounts}
+          slides={pastYearSlides}
           misses={ritualMisses}
           showHabitOffer={showHabitOffer}
           onCreateHabit={() => void handleCreateHabit()}
