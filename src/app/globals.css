@@ -38,3 +38,23 @@ body {
   color: var(--foreground);
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
+
+/* all-clear caret — the input's typewriter voice, once the day is closed */
+@keyframes all-clear-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.all-clear-caret {
+  animation: all-clear-caret 1.1s step-end infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .all-clear-caret {
+    animation: none;
+  }
+}

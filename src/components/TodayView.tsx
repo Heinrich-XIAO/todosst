@@ -18,6 +18,62 @@ import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
 import { CountControl } from "./CountControl";
 import { Heatmap } from "./Heatmap";
 
+// the all-clear payoff lines — typed out in the input's typewriter voice when
+// the day closes. One is picked per mount, typed once, and held: the moment
+// should not erase itself.
+const ALL_CLEAR_PHRASES = [
+  "all clear — the day is closed",
+  "all clear — nothing left to open",
+  "all clear — rest is earned",
+];
+
+function AllClearMoment({ doneToday, nothingDue }: { doneToday: number; nothingDue: boolean }) {
+  const [phrase, setPhrase] = useState("");
+  const [text, setText] = useState("");
+  const [typing, setTyping] = useState(true);
+  useEffect(() => {
+    // impure pick lives here, not in render — the moment is typed once per mount
+    const p = ALL_CLEAR_PHRASES[Math.floor(Math.random() * ALL_CLEAR_PHRASES.length)];
+    setPhrase(p);
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setText(p);
+      setTyping(false);
+      return;
+    }
+    let i = 0;
+    let timer: number;
+    const tick = () => {
+      i += 1;
+      setText(p.slice(0, i));
+      if (i < p.length) {
+        timer = window.setTimeout(tick, 42 + Math.random() * 38);
+      } else {
+        setTyping(false);
+      }
+    };
+    // the beat: a breath between the last fade-out and the line landing
+    timer = window.setTimeout(tick, 500);
+    return () => window.clearTimeout(timer);
+  }, []);
+  return (
+    <div className="border-y border-foreground bg-foreground text-background">
+      <div className="flex flex-col items-center gap-1.5 px-3 py-10 text-center">
+        <p className="font-mono text-base">
+          <span aria-hidden>
+            {text}
+            <span
+              className={`all-clear-caret ml-0.5 inline-block h-[1.05em] w-[0.55em] translate-y-[0.18em] bg-current ${typing ? "" : "opacity-60"}`}
+            />
+          </span>
+          <span className="sr-only">{phrase}</span>
+        </p>
+        {doneToday > 0 && <p className="text-[11px] opacity-60">{doneToday} done today</p>}
+        {nothingDue && <p className="text-[11px] opacity-60">recurring tasks with an open window and tasks due today show up here.</p>}
+      </div>
+    </div>
+  );
+}
+
 export type TodayItem = {
   node: TreeNode;
   rs: RecurState | null;
@@ -285,11 +341,14 @@ export function TodayView({
           </div>
         </div>
       )}
-      {items.length === 0 ? (
-        <div className="px-3 py-12 text-sm opacity-60">
-          <p>nothing due today.</p>
-          <p className="mt-1 text-xs opacity-60">recurring tasks with an open window and tasks due today show up here.</p>
-        </div>
+      {open === 0 ? (
+        <>
+          {/* the all-clear moment — full-bleed, typed, held */}
+          <AllClearMoment
+            doneToday={items.reduce((n, i) => n + (i.group === 1 && !rowIsOpen(i) ? 1 : 0), 0)}
+            nothingDue={items.length === 0}
+          />
+        </>
       ) : (
         groups.map((g) => {
           // labeled groups (overdue / still open) hide settled rows so they can
