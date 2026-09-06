@@ -53,8 +53,10 @@ export default function RootLayout({
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       <body className="min-h-full flex flex-col bg-background text-foreground">
+        {/* theme init runs before first paint; as the first child of <body> it
+            is valid HTML — React 19 rejects <script> as a child of <html> */}
+        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
         <ConvexAuthNextjsServerProvider>
           <ConvexClientProvider>
             <EncryptionProvider>{children}</EncryptionProvider>
