@@ -34,6 +34,7 @@ import {
 import type { RecurState } from "@/lib/recur";
 import { normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
+import { ComposerSheet, type ComposerDraft, type ComposerMode } from "./ComposerSheet";
 import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
 import { buildTodayItems, openCountOf, TodayView, type PastYearSlide } from "./TodayView";
@@ -60,6 +61,17 @@ import {
   remindTimesFor,
 } from "@/lib/reminders";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
+import { registerServiceWorker } from "@/lib/push";
+import { useOnline } from "@/lib/useOnline";
+import {
+  openCapture,
+  outboxAddCapture,
+  outboxDelete,
+  outboxList,
+  outboxMarkAttempt,
+  OUTBOX_MAX_ATTEMPTS,
+  type OutboxEntry,
+} from "@/lib/outbox";
 import { UnlockScreen } from "./UnlockScreen";
 import { MetadataPanel } from "./MetadataPanel";
 import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
@@ -73,6 +85,24 @@ const DUPLICATE_MSG = "a task with that path already exists";
 // the auto-habit meta-task, offered on the first today visit; created via
 // parseRecurInput(`${HABIT_TITLE} ~daily`) so the offered string is the truth
 const HABIT_TITLE = "open todosst";
+
+// heuristic for "this mutation failed because the network did" — the input is
+// parked in the outbox instead of surfaced as an error (replay converges:
+// existing path nodes are reused, duplicates are caught)
+function isNetworkError(err: unknown): boolean {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) return true;
+  if (err instanceof TypeError) return true; // "Failed to fetch" et al.
+  const msg = err instanceof Error ? err.message : String(err);
+  return /failed to fetch|networkerror|network error|fetch failed|load failed|offline/i.test(msg);
+}
+
+function clippedLine(raw: string): string {
+  return `“${raw.length > 80 ? raw.slice(0, 77) + "…" : raw}”`;
+}
+
+function captureToastLine(raw: string): string {
+  return `${clippedLine(raw)} — syncs when you're back online`;
+}
 
 // how long a completed task takes to fade away
 const FADE_MS = 3000;
@@ -124,6 +154,10 @@ type RowCtx = {
   setDragId: Dispatch<SetStateAction<string | null>>;
   setDropHint: Dispatch<SetStateAction<{ id: string; pos: DropPos } | null>>;
   navigateToPwd: (parts: string[]) => void;
+  // touch devices route "+child" through the composer sheet instead of the
+  // inline input (less keyboard)
+  isTouch: boolean;
+  openChildComposer: (parentId: Id<"todos">, parentTitle: string) => void;
 };
 
 function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
@@ -162,6 +196,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     setDragId,
     setDropHint,
     navigateToPwd,
+    isTouch,
+    openChildComposer,
   } = ctx;
   const isExpanded = !collapsed.has(node._id) || !!search; // folders open by default; search auto-expands
   const isEditing = editingId === node._id;
@@ -320,7 +356,14 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         )}
 
         <span className="flex gap-2 text-xs shrink-0 items-center">
-          <button onClick={() => setAddChildParent(node._id)} className="opacity-40 hover:opacity-100">
+          <button
+            onClick={() =>
+              isTouch
+                ? openChildComposer(node._id, node.title)
+                : setAddChildParent(node._id)
+            }
+            className="opacity-40 hover:opacity-100"
+          >
             +child
           </button>
           <button onClick={() => setSelectedId(node._id)} className="opacity-40 hover:opacity-100 hidden sm:inline">
@@ -384,6 +427,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 
 function TodoTask() {
   const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
+  const online = useOnline();
   const [hasRemembered, setHasRemembered] = useState(false);
   useEffect(() => {
     try {
@@ -436,6 +480,14 @@ function TodoTask() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [isSlashFocused, setIsSlashFocused] = useState(false);
   const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
+  // open mobile composer sheet: root-level (from the nav +) or under a parent
+  const [composer, setComposer] = useState<ComposerMode | null>(null);
+  // touch-first device (phone/tablet) — swaps keyboard-heavy affordances for
+  // tap-first ones. Desktop unchanged.
+  const isTouch = useMemo(
+    () => typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches === true,
+    []
+  );
 
   const [nodes, setNodes] = useState<DecryptedNode[] | null>(null);
   const [decryptError, setDecryptError] = useState<string | null>(null);
@@ -932,6 +984,17 @@ function TodoTask() {
 
   const pwdParts = useMemo(() => decodePathToParts(decodedPath), [decodedPath]);
 
+  // pickable directories for the mobile composer: every node with children,
+  // as a title path; root first, then alphabetical for scannability
+  const dirOptions = useMemo(() => {
+    const opts: string[][] = [[]];
+    for (const t of tree.map.values()) {
+      if (t.children.length) opts.push([...getAncestors(t._id, tree.map).map((a) => a.title), t.title]);
+    }
+    opts.sort((a, b) => a.join("/").localeCompare(b.join("/")));
+    return opts;
+  }, [tree]);
+
   // Change the URL without a reload (breadcrumbs, "!cd"). The popstate dance
   // ensures Next's usePathname syncs (pushState is patched but popstate helps in some builds).
   const pushPath = useCallback((decodedPath: string) => {
@@ -1073,22 +1136,20 @@ function TodoTask() {
     [newRootTitle, slashComplete]
   );
 
-  async function handleCreateRoot(e: React.FormEvent) {
-    e.preventDefault();
-    const raw = newRootTitle.trim();
-    if (!raw || !key) return;
-    // grammar registry decides: !commands run via ctx, creation forms return a plan
-    const rawOutcome = runInput(raw, commandCtx);
-    // a task typed inside a nonexistent directory (e.g. after a typo'd !cd)
-    // resolves like an absolute slash path from root: the missing directory
-    // chain is created and the task lands where the user is standing, instead
-    // of silently falling back to root while the header still says "(not found)"
-    const outcome: InputOutcome =
-      rawOutcome.type === "create-task" && !currentDirInfo.exists && rawOutcome.title.length <= 200
-        ? { type: "create-slash", parts: [...currentDirInfo.parts, rawOutcome.title], recur: rawOutcome.recur }
-        : rawOutcome;
+  // Shared creation core for grammar outcomes — used live by the input box
+  // and on replay by the offline outbox, so path reuse/dedup/order behave
+  // identically in both paths. Returns true when a create mutation was
+  // actually issued; false for dedup drops, notices and no-ops. Throws on
+  // failure so callers can decide between surfacing an error and parking
+  // the input for offline replay. recentTitles carries titles created earlier
+  // in the same drain — the tree snapshot is stale mid-drain (query push
+  // lags the mutation ack), so dedup must consult it too.
+  async function createForOutcome(
+    outcome: InputOutcome,
+    opts?: { parentId?: Id<"todos"> | null; recentTitles?: Set<string> }
+  ): Promise<Id<"todos"> | null> {
     if (outcome.type === "create-slash") {
-      if (!nodes) return;
+      if (!nodes) return null;
       // Build slash-separated hierarchy: each "/" segment may contain spaces.
       // e.g. "/host hackathon/outreach write email template" -> ["host hackathon","outreach write email template"]
       // Reuse existing nodes by exact title + parentId match; create missing.
@@ -1114,9 +1175,11 @@ function TodoTask() {
         const curMax = maxOrderByParent.get(parentId);
         const order = curMax !== undefined ? curMax + 1 : 0;
         maxOrderByParent.set(parentId, order);
-        // recurrence applies to the final segment of the path
+        // recurrence + structured metadata apply to the final segment of the path
         const isLast = segIdx === slashParts.length - 1;
-        const metadata: PlainNode["metadata"] = isLast && outcome.recur ? { recur: outcome.recur } : {};
+        const metadata: PlainNode["metadata"] = isLast
+          ? { ...(outcome.metadata ?? {}), ...(outcome.recur ? { recur: outcome.recur } : {}) }
+          : {};
         const node = toPlainNode({ title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata });
         const { ciphertext, iv } = await cryptoEncNode(node);
         const newId = await createTodo({ ciphertext, iv });
@@ -1132,7 +1195,7 @@ function TodoTask() {
       }
       if (createdCount === 0) {
         setNotice(DUPLICATE_MSG);
-        return;
+        return null;
       }
       // ensure all ancestors of newly created path are un-collapsed (visible)
       if (chainIds.length > 1) {
@@ -1142,20 +1205,20 @@ function TodoTask() {
           return next;
         });
       }
-      setNewRootTitle("");
-      return;
+      return (chainIds[chainIds.length - 1] ?? null) as Id<"todos"> | null;
     }
     if (outcome.type === "create-task") {
-      // fallback: single task — creates in current directory (pwd) when scoped
+      // single task — creates in the current directory (pwd) unless replay
+      // overrides the parent with the capture-time directory
       const title = outcome.title;
-      if (title.length > 200) return;
-      // unreachable for a nonexistent dir: the redirect above turned that case
-      // into a slash plan, so the current directory is guaranteed to exist here
-      const targetParentId = currentDirInfo.id as Id<"todos"> | null;
+      if (title.length > 200) return null;
+      const targetParentId =
+        opts && "parentId" in opts ? (opts.parentId as Id<"todos"> | null) : (currentDirInfo.id as Id<"todos"> | null);
       const siblings = childrenOf(tree.roots, tree.map, targetParentId);
-      if (siblings.some((r) => r.title === title)) {
+      const dedupKey = `${String(targetParentId ?? "root")}|${title}`;
+      if (siblings.some((r) => r.title === title) || opts?.recentTitles?.has(dedupKey)) {
         setNotice(DUPLICATE_MSG);
-        return;
+        return null;
       }
       const order = siblings.length ? Math.max(...siblings.map((r) => r.order)) + 1 : 0;
       const node = toPlainNode({
@@ -1163,49 +1226,266 @@ function TodoTask() {
         isCompleted: false,
         parentId: targetParentId,
         order,
-        metadata: outcome.recur ? { recur: outcome.recur } : {},
+        metadata: { ...(outcome.metadata ?? {}), ...(outcome.recur ? { recur: outcome.recur } : {}) },
       });
       const { ciphertext, iv } = await cryptoEncNode(node);
-      await createTodo({ ciphertext, iv });
+      const newId = await createTodo({ ciphertext, iv });
+      opts?.recentTitles?.add(dedupKey);
+      return newId as Id<"todos">;
+    }
+    return null;
+  }
+
+  // Park a raw capture in the local outbox (vault-encrypted) and confirm via
+  // toast. parts = the working-directory titles the capture was made under.
+  async function parkCapture(raw: string, parts: string[]) {
+    if (!key) return;
+    let saved = false;
+    try {
+      saved = await outboxAddCapture(key, { input: raw, parts });
+    } catch {}
+    setRemindToast(
+      saved
+        ? { title: "captured offline", lines: [captureToastLine(raw)] }
+        : { title: "capture not saved", lines: ["local storage is unavailable — try again once you're back online"] }
+    );
+    refreshPendingCaptures();
+  }
+
+  // Offline path for the main input: validate against the same limits the
+  // online create path enforces (an unsyncable capture would just burn its
+  // retry attempts), then park.
+  async function captureOffline(raw: string, outcome: InputOutcome) {
+    const tooLong =
+      (outcome.type === "create-task" && outcome.title.length > 200) ||
+      (outcome.type === "create-slash" && outcome.parts.some((p) => p.length > 200));
+    if (tooLong) {
+      setNotice("task titles are limited to 200 characters");
+      return;
+    }
+    setNewRootTitle("");
+    await parkCapture(raw, pwdParts);
+  }
+
+  // Replay one outbox entry through the grammar. Returns the decrypted input
+  // (for the sync toast) or null when the entry is a no-op; throws on failure
+  // (network, wrong key, corrupt row) so the caller can attempt-cap it.
+  async function replayCapture(entry: OutboxEntry, recentTitles?: Set<string>): Promise<string | null> {
+    if (!key || !nodes) throw new Error("vault not ready");
+    const cap = await openCapture(key, entry.payload);
+    const outcome = runInput(cap.input, {
+      currentPath: "/",
+      pushPath: () => {},
+      showHelp: () => {},
+    });
+    if (outcome.type === "create-task") {
+      // re-resolve the capture-time working directory against the current tree
+      let parentId: string | null = null;
+      let resolved = true;
+      for (const part of cap.parts) {
+        const found = findChildByTitle(nodes, parentId, part);
+        if (!found) {
+          resolved = false;
+          break;
+        }
+        parentId = found._id as string;
+      }
+      if (resolved) {
+        await createForOutcome(outcome, { parentId: parentId as Id<"todos"> | null, recentTitles });
+      } else {
+        // the directory vanished since capture — recreate the chain, task last
+        await createForOutcome({
+          type: "create-slash",
+          parts: [...cap.parts, outcome.title],
+          recur: outcome.recur,
+        });
+      }
+      return cap.input;
+    }
+    if (outcome.type === "create-slash") {
+      await createForOutcome(outcome);
+      return cap.input;
+    }
+    // commands/unknown/ignored were never enqueued; drop defensively
+    return null;
+  }
+
+  async function handleCreateRoot(e: React.FormEvent) {
+    e.preventDefault();
+    const raw = newRootTitle.trim();
+    if (!raw || !key) return;
+    // grammar registry decides: !commands run via ctx, creation forms return a plan
+    const rawOutcome = runInput(raw, commandCtx);
+    if (rawOutcome.type === "unknown-command") {
+      setNotice(`unknown command: !${rawOutcome.name} (try !help)`);
+      return;
+    }
+    if (rawOutcome.type === "ignored") {
       setNewRootTitle("");
       return;
     }
-    if (outcome.type === "unknown-command") {
-      // same convention as other input errors: notice shown, text kept for fixing
-      setNotice(`unknown command: !${outcome.name} (try !help)`);
+    // offline: !cd/!help already ran above (pure client-side); captures park
+    // in the outbox and replay on the next unlocked+online open
+    if (!online) {
+      if (rawOutcome.type === "create-task" || rawOutcome.type === "create-slash") {
+        await captureOffline(raw, rawOutcome);
+        return;
+      }
+      setNewRootTitle("");
       return;
     }
-    // command executed (cd/help) or nothing to create — clear input
+    // a task typed inside a nonexistent directory (e.g. after a typo'd !cd)
+    // resolves like an absolute slash path from root: the missing directory
+    // chain is created and the task lands where the user is standing, instead
+    // of silently falling back to root while the header still says "(not found)"
+    const outcome: InputOutcome =
+      rawOutcome.type === "create-task" && !currentDirInfo.exists && rawOutcome.title.length <= 200
+        ? { type: "create-slash", parts: [...currentDirInfo.parts, rawOutcome.title], recur: rawOutcome.recur }
+        : rawOutcome;
+    if (outcome.type === "create-task" && outcome.title.length > 200) {
+      setNotice("task titles are limited to 200 characters");
+      return;
+    }
+    if (outcome.type === "create-slash" || outcome.type === "create-task") {
+      let created = false;
+      try {
+        created = (await createForOutcome(outcome)) !== null;
+      } catch (err) {
+        // the connection dropped mid-capture — park the raw input instead of
+        // losing the thought; replay reuses existing path nodes so a partial
+        // create converges instead of duplicating
+        if (isNetworkError(err)) {
+          await captureOffline(raw, rawOutcome);
+          return;
+        }
+        throw err;
+      }
+      // dedup drops and no-ops keep the text (same convention as before:
+      // notice shown, input kept for fixing)
+      if (!created) return;
+    }
     setNewRootTitle("");
   }
 
-  async function handleAddChild(parentId: Id<"todos">) {
-    const parsedRecur = parseRecurInput(addChildTitle.trim());
-    const title = parsedRecur.title;
-    if (!title || title.length > 200 || !key) return;
+  // Shared child-creation core for the inline input and the mobile composer
+  // sheet: dedup, append order, encrypt, create, keep the parent un-collapsed.
+  // Returns the new node id, or null when blocked (duplicate → notice shown).
+  async function createChildNode(
+    parentId: Id<"todos">,
+    title: string,
+    metadata: PlainNode["metadata"]
+  ): Promise<Id<"todos"> | null> {
     const parent = tree.map.get(parentId);
-    if (!parent) return;
+    if (!parent || title.length > 200 || !key) return null;
     if (parent.children.some((c) => c.title === title)) {
       setNotice(DUPLICATE_MSG);
-      return;
+      return null;
     }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
-    const node = toPlainNode({
-      title,
-      isCompleted: false,
-      parentId,
-      order,
-      metadata: parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {},
-    });
+    const node = toPlainNode({ title, isCompleted: false, parentId, order, metadata });
     const { ciphertext, iv } = await cryptoEncNode(node);
-    await createTodo({ ciphertext, iv });
-    setAddChildTitle("");
-    setAddChildParent(null);
+    const newId = await createTodo({ ciphertext, iv });
     setCollapsed((prev) => {
       const next = new Set(prev);
       next.delete(parentId);
       return next;
     });
+    return newId as Id<"todos">;
+  }
+
+  async function handleAddChild(parentId: Id<"todos">) {
+    const rawChild = addChildTitle.trim();
+    const parsedRecur = parseRecurInput(rawChild);
+    const title = parsedRecur.title;
+    if (!title || title.length > 200 || !key) return;
+    const parent = tree.map.get(parentId);
+    if (!parent) return;
+    const childParts = [...getAncestors(parentId, tree.map).map((a) => a.title), parent.title];
+    // offline: park the raw input (replay re-resolves the directory chain)
+    if (!online) {
+      setAddChildTitle("");
+      setAddChildParent(null);
+      await parkCapture(rawChild, childParts);
+      return;
+    }
+    try {
+      const created = await createChildNode(parentId, title, parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {});
+      if (created === null) return; // duplicate — notice shown, keep the text
+    } catch (err) {
+      if (isNetworkError(err)) {
+        setAddChildTitle("");
+        setAddChildParent(null);
+        await parkCapture(rawChild, childParts);
+        return;
+      }
+      throw err;
+    }
+    setAddChildTitle("");
+    setAddChildParent(null);
+  }
+
+  // Mobile composer sheet submission. Composes the same outcomes the grammar
+  // input produces (create-slash / create-task with a ~recur token), plus
+  // structured metadata (dueAt, priority) the grammar can't express. Offline
+  // (and network-failure) captures park the grammar-equivalent raw string;
+  // the sheet disables due/priority while offline since they can't be encoded.
+  async function submitSheet(draft: ComposerDraft): Promise<boolean> {
+    if (!key) return false;
+    const { ruleStr } = draft.recurToken ? parseRecurInput(draft.recurToken) : { ruleStr: null as string | null };
+    const metadata: PlainNode["metadata"] = {
+      ...(ruleStr ? { recur: ruleStr } : {}),
+      ...(draft.dueAt != null ? { dueAt: draft.dueAt } : {}),
+      ...(draft.priority ? { priority: draft.priority } : {}),
+    };
+    const raw = draft.recurToken ? `${draft.title} ${draft.recurToken}` : draft.title;
+
+    if (composer && composer.kind === "child") {
+      const parent = tree.map.get(composer.parentId);
+      if (!parent) return false;
+      const childParts = [...getAncestors(composer.parentId, tree.map).map((a) => a.title), parent.title];
+      if (!online) {
+        await parkCapture(raw, childParts);
+        return true;
+      }
+      const created = await createChildNode(composer.parentId, draft.title, metadata).catch(async (err: unknown) => {
+        // the connection dropped mid-create — park instead of losing the draft
+        if (isNetworkError(err)) {
+          await parkCapture(raw, childParts);
+          return null;
+        }
+        throw err;
+      });
+      if (created !== null) return true;
+      // duplicate → notice already shown and the sheet stays open
+      return false;
+    }
+
+    const parts = draft.dirParts;
+    if (draft.title.length > 200 || parts.some((p) => p.length > 200)) {
+      setNotice("task titles are limited to 200 characters");
+      return false;
+    }
+    const rawWithPath = [...parts, draft.title].join("/") + (draft.recurToken ? ` ${draft.recurToken}` : "");
+    if (!online) {
+      await parkCapture(rawWithPath, parts);
+      return true;
+    }
+    const outcome: InputOutcome = parts.length
+      ? { type: "create-slash", parts: [...parts, draft.title], recur: ruleStr, metadata }
+      : { type: "create-task", title: draft.title, recur: ruleStr, metadata };
+    // the composer's [] is an explicit root pick — override create-task's
+    // current-directory fallback so "/" in the sheet means "/"
+    const created = await createForOutcome(outcome, parts.length ? undefined : { parentId: null }).catch(
+      async (err: unknown) => {
+        if (isNetworkError(err)) {
+          await parkCapture(rawWithPath, parts);
+          return null;
+        }
+        throw err;
+      }
+    );
+    if (created !== null) return true;
+    return false;
   }
 
 // the offered auto-habit meta-task: "open todosst ~daily" at root
@@ -1628,6 +1908,85 @@ function TodoTask() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [confirmDeleteId]);
 
+  // ---- offline capture outbox ----
+  // Captures made offline replay here: FIFO, only when the vault is unlocked
+  // and the connection is back. Each raw input re-runs through the grammar
+  // (createForOutcome), so path resolution, node reuse and dedup apply
+  // exactly as they did live; failures count against a retry cap instead of
+  // looping forever.
+  const [pendingCaptures, setPendingCaptures] = useState<OutboxEntry[]>([]);
+  const refreshPendingCaptures = useCallback(() => {
+    void outboxList()
+      .then(setPendingCaptures)
+      .catch(() => {});
+  }, []);
+  // refresh on unlock/connectivity flips and on re-focus (the subway case:
+  // come back to the app, the queue syncs without a reload)
+  useEffect(() => {
+    refreshPendingCaptures();
+    const onVisible = () => {
+      if (!document.hidden) refreshPendingCaptures();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshPendingCaptures, online, key]);
+
+  const drainingRef = useRef(false);
+  const deadNotifiedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!online || !key || !nodes || isDecrypting) return;
+    if (pendingCaptures.length === 0 || drainingRef.current) return;
+    drainingRef.current = true;
+    void (async () => {
+      try {
+        const entries = await outboxList();
+        // let the reconnect settle before replaying: buffered mutations flush
+        // and the query push delivers fresh rows — replaying against a stale
+        // tree snapshot would double-create same-title captures
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const recentTitles = new Set<string>();
+        const synced: string[] = [];
+        for (const entry of entries) {
+          if (entry.attempts >= OUTBOX_MAX_ATTEMPTS) continue;
+          try {
+            const text = await replayCapture(entry, recentTitles);
+            await outboxDelete(entry.id);
+            if (text !== null) synced.push(text);
+          } catch {
+            // server likely still unreachable — keep the entry, retry on the
+            // next trigger (reconnect, unlock, re-focus, data change)
+            await outboxMarkAttempt(entry.id).catch(() => {});
+            break;
+          }
+        }
+        if (synced.length > 0) {
+          refreshPendingCaptures();
+          setRemindToast({
+            title: `offline capture${synced.length !== 1 ? "s" : ""} synced`,
+            lines: synced.map(clippedLine),
+          });
+        }
+        const dead = entries.filter((e) => e.attempts >= OUTBOX_MAX_ATTEMPTS);
+        const newDead = dead.filter((d) => !deadNotifiedRef.current.has(d.id));
+        if (newDead.length > 0) {
+          for (const d of newDead) deadNotifiedRef.current.add(d.id);
+          setRemindToast({
+            title: "offline capture stuck",
+            lines: [
+              `${newDead.length} capture${newDead.length !== 1 ? "s" : ""} couldn't sync after several tries — kept in this browser`,
+            ],
+          });
+        }
+      } finally {
+        drainingRef.current = false;
+      }
+    })();
+    // replayCapture is a render-scope closure over nodes/tree/key — all
+    // already deps here (tree derives from nodes); adding its identity would
+    // re-run this effect on every render. drainingRef makes reruns harmless.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [online, key, nodes, isDecrypting, pendingCaptures, refreshPendingCaptures]);
+
   if (isLocked) {
     if (!isReady) return <p className="text-sm opacity-60">preparing vault…</p>;
     return <UnlockScreen />;
@@ -1671,6 +2030,9 @@ function TodoTask() {
     setDragId,
     setDropHint,
     navigateToPwd,
+    isTouch,
+    openChildComposer: (parentId, parentTitle) =>
+      setComposer({ kind: "child", parentId, parentTitle }),
   };
 
   return (
@@ -1678,6 +2040,12 @@ function TodoTask() {
       <div className="flex items-center justify-between border-b border-foreground px-3 py-2 text-xs">
         <span className="flex flex-1 items-center gap-2">
           <span>E2E Encrypted</span>
+          {!online && <span className="opacity-40">· offline</span>}
+          {pendingCaptures.length > 0 && (
+            <span className="opacity-40" title="captured offline — syncs when you're back online">
+              · {pendingCaptures.length} offline capture{pendingCaptures.length !== 1 ? "s" : ""}
+            </span>
+          )}
         </span>
         <span className="hidden items-center gap-3 md:flex">
           <button
@@ -1749,7 +2117,7 @@ function TodoTask() {
           <div className="flex-1 relative">
             <input
               ref={newRootInputRef}
-              autoFocus
+              autoFocus={!isTouch}
               value={newRootTitle}
               onChange={(e) => setNewRootTitle(e.target.value)}
               onFocus={() => setIsSlashFocused(true)}
@@ -1960,19 +2328,57 @@ function TodoTask() {
         />
       )}
 
-      <BottomNav view={view} setView={setView} />
+      {composer && (
+        <ComposerSheet
+          mode={composer}
+          dirOptions={dirOptions}
+          online={online}
+          onClose={() => setComposer(null)}
+          onSubmit={submitSheet}
+        />
+      )}
+
+      <BottomNav
+        view={view}
+        setView={setView}
+        onAdd={() => setComposer({ kind: "root", initialDirParts: pwdParts })}
+      />
       </div>
   );
 }
 
-function BottomNav({ view, setView }: { view: "today" | "tree"; setView: (v: "today" | "tree") => void }) {
+function BottomNav({
+  view,
+  setView,
+  onAdd,
+}: {
+  view: "today" | "tree";
+  setView: (v: "today" | "tree") => void;
+  onAdd: () => void;
+}) {
   const tabs = [
     { id: "today" as const, label: "today" },
     { id: "tree" as const, label: "tree" },
   ];
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-foreground bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
-      {tabs.map((t) => (
+      {tabs.slice(0, 1).map((t) => (
+        <button
+          key={t.id}
+          onClick={() => setView(t.id)}
+          className={`flex-1 py-3 text-xs ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
+        >
+          {t.label}
+        </button>
+      ))}
+      <button
+        onClick={onAdd}
+        aria-label="new task"
+        className="border-x border-foreground/10 px-8 py-3 text-base leading-none hover:opacity-80"
+      >
+        +
+      </button>
+      {tabs.slice(1).map((t) => (
         <button
           key={t.id}
           onClick={() => setView(t.id)}
@@ -1986,6 +2392,28 @@ function BottomNav({ view, setView }: { view: "today" | "tree"; setView: (v: "to
 }
 
 export function TodoApp() {
+  const online = useOnline();
+  const [offlineBootstrapped, setOfflineBootstrapped] = useState(false);
+  const isAuthed = useQuery(api.auth.isAuthenticated);
+  // register the service worker on every visit — it backs both the push
+  // subscription (PushAutoEnable) and the offline shell cache
+  useEffect(() => {
+    void registerServiceWorker();
+  }, []);
+  // Offline fresh open: the auth/salt queries can never resolve, so the auth
+  // gate would hang on "loading…" forever. With a remembered vault key the
+  // app can boot straight into the capture UI (EncryptionContext unlocks
+  // offline from the same key); once online, the auth gate takes over again.
+  useEffect(() => {
+    if (isAuthed === false) {
+      // signed out for real (valid token check while online) — back to the gate
+      setOfflineBootstrapped(false);
+      return;
+    }
+    if (offlineBootstrapped || online) return;
+    if (getRememberedKey()) setOfflineBootstrapped(true);
+  }, [online, offlineBootstrapped, isAuthed]);
+  if (offlineBootstrapped) return <TodoTask />;
   return (
     <>
       <AuthLoading>

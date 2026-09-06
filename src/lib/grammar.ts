@@ -12,6 +12,7 @@
 import { parseSlashPath } from "./slashPath";
 import { parseRecurInput, type ParsedInput } from "./recur";
 import { resolveCdPath } from "./cdPath";
+import type { PlainNode } from "./crypto";
 
 // ---------- types ----------
 
@@ -159,8 +160,10 @@ export type InputOutcome =
   | { type: "ignored" }
   | { type: "unknown-command"; name: string }
   | { type: "command"; name: string }
-  | { type: "create-slash"; parts: string[]; recur: string | null }
-  | { type: "create-task"; title: string; recur: string | null };
+  // metadata carries extra fields (dueAt, priority, …) composed by structured
+  // creators like the mobile composer sheet; grammar-parsed inputs never set it
+  | { type: "create-slash"; parts: string[]; recur: string | null; metadata?: PlainNode["metadata"] }
+  | { type: "create-task"; title: string; recur: string | null; metadata?: PlainNode["metadata"] };
 
 /**
  * Interpret raw input via the GRAMMAR registry. Commands (cd/help) run

@@ -11,6 +11,8 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - 📅 **Today view as the daily ritual** — all clear records the day (nudge escalates after two missed days) and auto-checks an optional `open todosst ~daily` habit whose heatmap becomes your streak — tracked locally per device.
 - 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
 - 💾 **Encrypted export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from vault settings; import it into any account to restore or merge.
+- 📴 **Offline capture** — thoughts typed while offline (subway, plane) park in a vault-encrypted IndexedDB outbox on the device and replay through the normal create path on the next online open. The service worker caches the app shell so the installed PWA opens without network; captures made at a particular working directory land in that directory on replay.
+- 🏁 **The all-clear moment** — closing the day's last window lands hard: a full-bleed inverted band types out "all clear — …" in the input's typewriter voice, holds with a blinking caret, and counts what you did today (reduced-motion aware).
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
 - 🌗 **Light / dark / auto theme** — follows the system by default; the header toggle overrides it and is remembered per device.
 
@@ -134,6 +136,8 @@ src/
     slashPath.ts   — `/path` creation parsing
     slashComplete.ts — tab-completion intellisense
     vaultFile.ts   — passphrase-encrypted backup files (export/import)
+    outbox.ts      — offline capture outbox (IndexedDB + localStorage fallback, vault-encrypted payloads)
+    useOnline.ts   — connectivity signal (navigator.onLine + events)
     months.ts      — shared MONTHS constant
   proxy.ts         — convexAuthNextjsMiddleware
 ```

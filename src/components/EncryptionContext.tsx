@@ -1,7 +1,7 @@
 "use client";
 /* eslint-disable react-hooks/set-state-in-effect */
 
-import React, { createContext, useContext, useCallback, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deriveKey,
   deriveRecoveryKey,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/crypto";
 import { useConvex, useQuery, type ConvexReactClient } from "convex/react";
 import { api } from "../../convex/_generated/api";
+import { useOnline } from "@/lib/useOnline";
 
 type EncryptedState = {
   key: CryptoKey | null;
@@ -118,8 +119,13 @@ function setCachedSalt(username: string, salt: string) {
   } catch {}
 }
 
+// navigator.onLine is the only signal that a stuck query is offline rather
+// than merely slow — with cached credentials the app can proceed without the
+// server (offline capture, unlock from the remembered key)
+
 export function EncryptionProvider({ children }: { children: React.ReactNode }) {
   const [key, setKey] = useState<CryptoKey | null>(null);
+  const online = useOnline();
   // Set when the user locks manually — suppresses auto-unlock from the
   // remembered key until they explicitly unlock again (password/recovery).
   const [manualLock, setManualLock] = useState(false);
@@ -130,12 +136,33 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   // mySalt is fetched when authenticated to know current user's salt
   const mySalt = useQuery(api.encryption.getMySalt);
 
-  // When mySalt loads, cache it and mark ready
+  // Set when an offline unlock trusted the remembered key before the server
+  // salt could be checked — verified against the server salt on reconnect.
+  const offlineUnlockSaltRef = useRef<string | null>(null);
+
+  // When mySalt loads, cache it and mark ready. Re-runs on connectivity
+  // flips: offline, the salt query can never resolve — cached credentials
+  // decide readiness instead of hanging on "preparing vault…"
   useEffect(() => {
-    if (mySalt === undefined) return; // loading
+    if (mySalt === undefined) {
+      if (!online) setIsReady(true);
+      return;
+    }
+    // an offline unlock trusted the device key before the server salt
+    // arrived — verify it still belongs to this account, and lock before any
+    // wrong-key ciphertext can be written if it doesn't
+    const offlineSalt = offlineUnlockSaltRef.current;
+    if (offlineSalt !== null) {
+      offlineUnlockSaltRef.current = null;
+      if (mySalt !== offlineSalt) {
+        setManualLock(true);
+        setKey(null);
+        return;
+      }
+    }
     if (mySalt) setSalt(mySalt);
     setIsReady(true);
-  }, [mySalt]);
+  }, [mySalt, online]);
 
   const setKeyFromRaw = useCallback(
     async (keyB64: string, saltB64: string) => {
@@ -226,13 +253,35 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   // If a remembered key exists and its salt matches the server salt, import it.
   // Skipped while manualLock is set — lock() must keep the vault locked even
   // though the remembered key is still in localStorage.
+  // Offline (salt query unresolvable), a remembered key unlocks on its own —
+  // it carries the salt it was saved with; re-verified on reconnect above.
   useEffect(() => {
     if (key) return;
     if (manualLock) return; // user locked manually — stay locked until explicit unlock
-    if (mySalt === undefined) return; // still loading
-    if (!mySalt) return; // no server salt yet
     const stored = getRememberedKey();
     if (!stored) return;
+    if (mySalt === undefined) {
+      if (online) return; // still loading
+      // offline fresh open: the server salt is unreachable — the remembered
+      // key carries the salt it was saved with, so unlock from it alone
+      let cancelled = false;
+      (async () => {
+        try {
+          const k = await importKeyB64(stored.keyB64);
+          if (cancelled) return;
+          offlineUnlockSaltRef.current = stored.salt;
+          setKey(k);
+          setSalt(stored.salt);
+        } catch {
+          // corrupted or invalid stored key -> clear it
+          clearRememberedKey();
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!mySalt) return; // no server salt yet
     if (stored.salt !== mySalt) return; // salt mismatch -> belongs to different user or rotated
     let cancelled = false;
     (async () => {
@@ -249,7 +298,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     return () => {
       cancelled = true;
     };
-  }, [key, mySalt, manualLock]);
+  }, [key, mySalt, manualLock, online]);
 
   const value = useMemo<EncryptedState>(
     () => ({
