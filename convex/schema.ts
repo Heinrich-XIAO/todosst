@@ -78,6 +78,18 @@ export default defineSchema({
     .index("by_due", ["remindAt"])
     .index("by_todo", ["todoId"]),
 
+  // daily ritual nudge: one row per user. Plaintext local time-of-day + UTC
+  // offset — the server learns *when* to ping, never *what* (the cron fires
+  // blind; the service worker renders generic copy).
+  dailyNudges: defineTable({
+    userId: v.string(),
+    hourLocal: v.number(), // 0-23, user's chosen local hour
+    minuteLocal: v.number(), // 0-59
+    utcOffsetMin: v.number(), // client-reported offset (minutes east of UTC), refreshed on app open
+    enabled: v.boolean(),
+    lastFiredDay: v.number(), // local day index (offset-adjusted) of last dispatch — daily dedupe
+  }).index("by_user", ["userId"]),
+
   // single-use, 10-minute grant created during recovery sign-in, allowing one
   // password change without the current password.
   recoveryGrants: defineTable({

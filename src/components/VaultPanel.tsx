@@ -18,6 +18,7 @@ import {
   wrapKeyB64,
 } from "@/lib/crypto";
 import { decodeHistoryPayload, encodeHistoryPayload } from "@/lib/recur";
+import { NudgeSettings } from "./DailyNudge";
 import {
   buildExportFile,
   countsToRecord,
@@ -369,6 +370,9 @@ export function VaultPanel({ onClose }: { onClose: () => void }) {
             </div>
           )}
         </div>
+
+        {/* ---- daily nudge ---- */}
+        <NudgeSettings />
 
         {/* ---- export / import ---- */}
         <div className="mt-3 border border-foreground/20 p-3">

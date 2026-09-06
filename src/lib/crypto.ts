@@ -196,18 +196,6 @@ export type PlainNode = {
     // creates "open todosst ~daily"; the app checks it whenever the today view
     // reaches all clear, feeding its heatmap as a side effect of the ritual
     habit?: boolean;
-    // stopwatch (see src/lib/stopwatch.ts) — optional timing on check/count
-    // tasks; time mode logs minutes via counts instead. One active session per
-    // task, unlimited tasks in parallel; elapsed is derived from timestamps so
-    // reloads/other devices render correctly without periodic writes.
-    timer?: {
-      startedAt: number; // wall clock when the session began
-      elapsedMs: number; // net ms accumulated in finished stretches
-      state: "running" | "paused";
-      resumeAt?: number; // start ts of the current stretch (iff running)
-      windowDay: number; // day-index the session's completion applies to
-    };
-    sessions?: { s: number; e: number; ms: number }[]; // finished sessions of the current window (start, end, net ms)
   };
 };
 
