@@ -44,7 +44,7 @@ export function StopwatchWidget({
   if (!selected) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 w-[260px] border border-foreground bg-background px-3 py-2 shadow-sm">
+    <div className="fixed bottom-20 right-4 z-40 w-[260px] border border-foreground bg-background px-3 py-2 shadow-sm md:bottom-4">
       <div className="flex items-center justify-between text-[10px] opacity-40">
         <span>stopwatch{runningCount !== 1 ? ` · ${runningCount} running` : ""}</span>
         <span>{timers.length > 1 ? `${timers.indexOf(selected) + 1}/${timers.length}` : ""}</span>

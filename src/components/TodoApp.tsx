@@ -21,7 +21,6 @@ import {
   dayIndexLocal,
   decodeHistoryPayload,
   encodeHistoryPayload,
-  formatMinutes,
   modeOf,
   nextCountOnClick,
   normalizeRruleString,
@@ -48,6 +47,8 @@ import {
 } from "@/lib/stopwatch";
 import { HelpPanel } from "./HelpPanel";
 import { ReminderToast } from "./ReminderToast";
+import { CountControl } from "./CountControl";
+import { buildTodayItems, TodayView } from "./TodayView";
 import {
   buildTree,
   childrenOf,
@@ -286,42 +287,27 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         </button>
 
         {mode !== "check" ? (
-          // tally/time rendering — storage underneath is still a count
-          // (time mode interprets the count as minutes)
-          <div className={`flex h-[18px] shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
-            <button
-              onClick={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
-              disabled={count <= 0}
-              className="w-4 text-[10px] leading-none disabled:opacity-30"
-              aria-label={mode === "time" ? "decrease logged time" : "decrement tally"}
-            >
-              −
-            </button>
-            <span
-              className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
-                (mode === "time" || threshold < Infinity ? count >= threshold : count > 0) ? "bg-foreground text-background" : "bg-background"
-              }`}
-            >
-              {mode === "time" ? formatMinutes(count) : count}
-            </span>
-            <button
-              onClick={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
-              disabled={count >= COUNT_MAX}
-              className="w-4 text-[10px] leading-none disabled:opacity-30"
-              aria-label={mode === "time" ? "log time" : "increment tally"}
-              title={mode === "time" ? `click to log +${stepOf(meta)}m` : "click to count +1"}
-            >
-              +
-            </button>
-          </div>
+          <CountControl
+            mode={mode}
+            count={count}
+            threshold={threshold}
+            checked={checked}
+            meta={meta}
+            onToggle={() => handleToggle(node)}
+            onCountUp={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
+            onCountDown={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
+          />
         ) : (
-          <button
-            onClick={() => handleToggle(node)}
-            className={`h-4 w-4 shrink-0 border flex items-center justify-center ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"}`}
-            aria-label="toggle"
-          >
-            {checked && <span className="text-[10px] leading-none">✓</span>}
-          </button>
+          <CountControl
+            mode={mode}
+            count={count}
+            threshold={threshold}
+            checked={checked}
+            meta={meta}
+            onToggle={() => handleToggle(node)}
+            onCountUp={() => handleCountUp(node)}
+            onCountDown={() => handleCountDown(node)}
+          />
         )}
 
         {mode !== "time" && !checked && !hasChildren && (
@@ -488,6 +474,7 @@ function TodoTask() {
   const pathname = usePathname() ?? "/";
   const [newRootTitle, setNewRootTitle] = useState("");
   const [filter, setFilter] = useState<Filter>("active");
+  const [view, setView] = useState<"today" | "tree">("today");
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<Id<"todos"> | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -1087,14 +1074,33 @@ function TodoTask() {
     [pushPath]
   );
 
-  // context handed to bang commands (!cd, !help) via the grammar registry
+  // context handed to bang commands (!cd, !help) via the grammar registry.
+  // Navigating while on the today view switches to the tree — you asked to be
+  // somewhere, so show the tree.
   const commandCtx = useMemo<CommandContext>(
     () => ({
       currentPath: decodedPath,
-      pushPath,
+      pushPath: (path: string) => {
+        pushPath(path);
+        setView("tree");
+      },
       showHelp: () => setHelpOpen(true),
     }),
     [decodedPath, pushPath]
+  );
+
+  // jump from a today row to the task's directory in the tree view
+  const jumpToDir = useCallback(
+    (parts: string[]) => {
+      navigateToPwd(parts);
+      setView("tree");
+    },
+    [navigateToPwd]
+  );
+
+  const todayItems = useMemo(
+    () => buildTodayItems(nodes, tree, recurStates, nowTs),
+    [nodes, tree, recurStates, nowTs]
   );
 
   // intellisense: autocomplete for "/..." paths and "!cd ..." commands
@@ -1779,10 +1785,24 @@ function TodoTask() {
   return (
     <div className="w-full max-w-[720px] border border-foreground bg-background">
       <div className="flex items-center justify-between border-b border-foreground px-3 py-2 text-xs">
-        <span className="flex items-center gap-2">
+        <span className="flex flex-1 items-center gap-2">
           <span>E2E Encrypted</span>
         </span>
-        <span className="flex items-center gap-3">
+        <span className="hidden items-center gap-3 md:flex">
+          <button
+            onClick={() => setView("today")}
+            className={view === "today" ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}
+          >
+            today
+          </button>
+          <button
+            onClick={() => setView("tree")}
+            className={view === "tree" ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}
+          >
+            tree
+          </button>
+        </span>
+        <span className="flex flex-1 items-center justify-end gap-3">
           {hasRemembered && (
             <button
               onClick={() => {
@@ -1807,8 +1827,9 @@ function TodoTask() {
         </span>
       </div>
 
-      {/* breadcrumb path — clickable: each segment -> that dir */}
-      <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
+      {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
+      {view === "tree" && (
+        <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
         <span className="font-mono flex items-center gap-1 truncate">
           <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
             /
@@ -1827,7 +1848,8 @@ function TodoTask() {
           ))}
         </span>
         {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40 shrink-0">(not found)</span>}
-      </div>
+        </div>
+      )}
 
       {/* top controls */}
       <div className="flex flex-wrap gap-2 border-b border-foreground p-3">
@@ -1917,28 +1939,43 @@ function TodoTask() {
         </form>
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">
-        <input
-          ref={searchInputRef}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              e.currentTarget.blur();
-            }
-          }}
-          placeholder="search titles/tags…"
-          className="flex-1 min-w-[140px] bg-transparent py-1 placeholder:text-foreground/40 focus:outline-none"
-        />
-        <span className="flex gap-2 items-center">
-          {(["all", "active", "completed"] as Filter[]).map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={filter === f ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}>
-              {f}
-            </button>
-          ))}
-        </span>
-      </div>
+      {view === "tree" && (
+        <div className="flex flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">
+          <input
+            ref={searchInputRef}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.currentTarget.blur();
+              }
+            }}
+            placeholder="search titles/tags…"
+            className="flex-1 min-w-[140px] bg-transparent py-1 placeholder:text-foreground/40 focus:outline-none"
+          />
+          <span className="flex gap-2 items-center">
+            {(["all", "active", "completed"] as Filter[]).map((f) => (
+              <button key={f} onClick={() => setFilter(f)} className={filter === f ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}>
+                {f}
+              </button>
+            ))}
+          </span>
+        </div>
+      )}
 
+      {view === "today" ? (
+        <TodayView
+          items={todayItems}
+          nowTs={nowTs}
+          map={tree.map}
+          onToggle={handleToggle}
+          onCountUp={handleCountUp}
+          onCountDown={handleCountDown}
+          onSelect={(node) => setSelectedId(node._id)}
+          onJump={jumpToDir}
+        />
+      ) : (
+      <>
       {/* drag hint */}
       <div
         className="min-h-[180px]"
@@ -1987,6 +2024,8 @@ function TodoTask() {
           </ul>
         )}
       </div>
+      </>
+      )}
 
       {confirmNode && (
         <DeleteConfirmDialog
@@ -2030,7 +2069,29 @@ function TodoTask() {
           historyDurations={history?.dursByTodo.get(selectedNode._id as string) ?? null}
         />
       )}
-    </div>
+
+      <BottomNav view={view} setView={setView} />
+      </div>
+  );
+}
+
+function BottomNav({ view, setView }: { view: "today" | "tree"; setView: (v: "today" | "tree") => void }) {
+  const tabs = [
+    { id: "today" as const, label: "today" },
+    { id: "tree" as const, label: "tree" },
+  ];
+  return (
+    <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-foreground bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
+      {tabs.map((t) => (
+        <button
+          key={t.id}
+          onClick={() => setView(t.id)}
+          className={`flex-1 py-3 text-xs ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
+        >
+          {t.label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
