@@ -116,9 +116,9 @@ export function TaskSheet({
         aria-modal="true"
         aria-label={mode.kind === "create-child" ? "new sub-task" : "new task"}
         onClick={(e) => e.stopPropagation()}
-        className="absolute inset-x-0 flex flex-col border-t border-foreground bg-background"
+        className="absolute inset-x-0 bottom-0 flex flex-col border-t border-foreground bg-background"
         style={{
-          bottom: keyboardInset || undefined,
+          bottom: keyboardInset,
           paddingBottom: keyboardInset ? undefined : "env(safe-area-inset-bottom)",
           maxHeight: `calc(100dvh - ${keyboardInset + 24}px)`,
         }}
