@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useConvex } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import {
@@ -29,6 +29,23 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const captureFrameRef = useRef<HTMLIFrameElement>(null);
+
+  // The browser's password manager only offers to save credentials on a real
+  // form submission — the React handler calls preventDefault(), so nothing is
+  // ever "submitted". After a successful password sign-in/sign-up, submit the
+  // form for real into a hidden same-origin iframe to trigger the save prompt
+  // without navigating away. Never fires for recovery sign-in.
+  function captureCredentials() {
+    const form = formRef.current;
+    const frame = captureFrameRef.current;
+    if (!form || !frame) return;
+    const prevTarget = form.target;
+    form.target = frame.name;
+    form.submit();
+    form.target = prevTarget;
+  }
 
   async function fetchSalt(name: string): Promise<string | null> {
     try {
@@ -97,6 +114,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       formData.set("password", password);
       formData.set("flow", mode);
       await signIn("password", formData);
+      captureCredentials();
 
       // Post-auth: legacy accounts may not have a salt yet — create one.
       // The auth token can take a moment to propagate to the convex client,
@@ -174,7 +192,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       </div>
 
       <div className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form ref={formRef} onSubmit={handleSubmit} method="post" className="space-y-4">
           {mode === "recover" && (
             <p className="text-xs leading-relaxed opacity-60">
               forgot your password? sign in with your username and the recovery key you generated while unlocked. the
@@ -185,6 +203,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
             <span className="text-sm">username</span>
             <input
               type="text"
+              name="username"
               autoComplete="username"
               required
               minLength={3}
@@ -214,6 +233,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
                 <span className="text-sm">password</span>
                 <input
                   type="password"
+                  name="password"
                   autoComplete={mode === "signIn" ? "current-password" : "new-password"}
                   required
                   minLength={8}
@@ -229,6 +249,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
                   <span className="text-sm">confirm password</span>
                   <input
                     type="password"
+                    name="confirmPassword"
                     autoComplete="new-password"
                     required
                     maxLength={128}
@@ -255,6 +276,9 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
           </button>
         </form>
       </div>
+
+      {/* submission target for captureCredentials() */}
+      <iframe ref={captureFrameRef} name="password-capture" title="password capture" hidden />
     </div>
   );
 }
