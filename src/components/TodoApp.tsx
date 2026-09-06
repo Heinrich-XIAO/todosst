@@ -975,6 +975,29 @@ function TodoTask() {
     [nodes, tree, recurStates, nowTs]
   );
 
+  // ---- past-year heatmap (today tab): per-day totals across every task ----
+  // history records are authoritative; current-window counts from metadata /
+  // recur state top them up in case history is still loading or a write behind
+  const pastYearCounts = useMemo(() => {
+    const m = new Map<number, number>();
+    const bump = (day: number, n: number) => {
+      if (!Number.isInteger(day) || !Number.isFinite(n) || n <= 0) return;
+      m.set(day, (m.get(day) ?? 0) + n);
+    };
+    for (const n of nodes ?? []) {
+      const id = n._id as string;
+      const perTodo = new Map(history?.byTodo.get(id) ?? []);
+      const meta = n.metadata as PlainNode["metadata"];
+      for (const [day, c] of Object.entries(meta.counts ?? {})) {
+        if (typeof c === "number" && c > (perTodo.get(Number(day)) ?? 0)) perTodo.set(Number(day), c);
+      }
+      const rs = recurStates?.get(id);
+      if (rs?.isRecurring && rs.count > (perTodo.get(rs.windowDay) ?? 0)) perTodo.set(rs.windowDay, rs.count);
+      for (const [day, c] of perTodo) bump(day, c);
+    }
+    return m;
+  }, [nodes, history, recurStates]);
+
   // ---- daily ritual: miss streak + auto-habit meta-task (local, per device) ----
   // Reaching all clear is the ritual's completion: it records the day locally
   // (never-miss-twice nudge) and auto-checks the habit task, feeding its
@@ -1829,6 +1852,7 @@ function TodoTask() {
           items={todayItems}
           nowTs={nowTs}
           map={tree.map}
+          pastYear={pastYearCounts}
           misses={ritualMisses}
           showHabitOffer={showHabitOffer}
           onCreateHabit={() => void handleCreateHabit()}

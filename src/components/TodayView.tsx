@@ -16,6 +16,7 @@ import { missCopy } from "@/lib/ritual";
 import { normalizeDueAt } from "@/lib/due";
 import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
 import { CountControl } from "./CountControl";
+import { Heatmap } from "./Heatmap";
 
 export type TodayItem = {
   node: TreeNode;
@@ -155,6 +156,7 @@ export function TodayView({
   items,
   nowTs,
   map,
+  pastYear = null,
   misses = 0,
   showHabitOffer = false,
   onCreateHabit,
@@ -168,6 +170,8 @@ export function TodayView({
   items: TodayItem[] | null;
   nowTs: number;
   map: Map<string, TreeNode>;
+  /** per-day completion totals across all tasks, for the past-year heatmap */
+  pastYear?: Map<number, number> | null;
   /** consecutive missed days entering today (tracked locally, per device) */
   misses?: number;
   showHabitOffer?: boolean;
@@ -189,6 +193,12 @@ export function TodayView({
 
   return (
     <div className="min-h-[180px] pb-2">
+      {pastYear && pastYear.size > 0 && (
+        <div className="border-b border-foreground/10 px-3 py-2">
+          <p className="mb-1 text-[10px] opacity-40">past year</p>
+          <Heatmap counts={pastYear} nowTs={nowTs} />
+        </div>
+      )}
       <div className="flex items-baseline justify-between border-b border-foreground/10 px-3 py-2 text-xs">
         <span className="font-mono">{dateLabel}</span>
         <span className="opacity-60">{open === 0 ? "all clear" : `${open} open`}</span>
