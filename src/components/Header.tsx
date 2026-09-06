@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Authenticated } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import Link from "next/link";
+import { LogOut, Settings } from "lucide-react";
 import { clearRecoverySession, useEncryption } from "./EncryptionContext";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./useTheme";
@@ -19,9 +20,10 @@ export function Header() {
       <div className="mx-auto flex max-w-[640px] items-center justify-between px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] sm:px-0">
         <Link href="/" className="flex items-center gap-2 text-[15px] font-medium tracking-tight text-foreground">
           <Logo className="h-[18px] w-[18px]" />
-          <span className="font-mono">todosst</span>
+          {/* small screens keep the mark only — the wordmark earns its width there */}
+          <span className="hidden font-mono sm:inline">todosst</span>
         </Link>
-        <div className="flex items-center gap-3 text-sm">
+        <div className="flex items-center gap-4 text-sm">
           <ThemeToggle />
           <Authenticated>
             {/* vault settings need the unlocked vault — hidden while locked */}
@@ -29,9 +31,10 @@ export function Header() {
               <button
                 onClick={() => setSettingsOpen(true)}
                 className="opacity-60 hover:opacity-100"
-                title="change password, recovery key, export / import"
+                aria-label="settings"
+                title="settings — change password, recovery key, export / import"
               >
-                settings
+                <Settings className="h-[18px] w-[18px]" aria-hidden />
               </button>
             )}
             <button
@@ -41,8 +44,10 @@ export function Header() {
                 void signOut();
               }}
               className="opacity-60 hover:opacity-100"
+              aria-label="sign out"
+              title="sign out"
             >
-              sign out
+              <LogOut className="h-[18px] w-[18px]" aria-hidden />
             </button>
           </Authenticated>
         </div>

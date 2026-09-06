@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
+import { Moon, Sun, SunMoon } from "lucide-react";
 
 type Theme = "auto" | "light" | "dark";
 
@@ -61,14 +62,16 @@ export function ThemeToggle() {
     for (const listener of listeners) listener();
   }, []);
 
+  // icon, not text — the state lives in the glyph (auto/light/dark)
+  const Icon = theme === "auto" ? SunMoon : theme === "light" ? Sun : Moon;
   return (
     <button
       onClick={cycle}
       aria-label={`Color theme: ${theme}`}
-      title="Cycle color theme"
+      title={`theme: ${theme}`}
       className="opacity-60 hover:opacity-100"
     >
-      theme: {theme}
+      <Icon className="h-[18px] w-[18px]" aria-hidden />
     </button>
   );
 }
