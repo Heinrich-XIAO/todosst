@@ -2127,7 +2127,8 @@ function TodoTask() {
         </div>
       )}
 
-      {/* top controls */}
+      {/* top controls — desktop only; mobile creates via the nav "+" sheet */}
+      {!isTouch && (
       <div className="flex flex-wrap gap-2 border-b border-foreground p-3">
         <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
           <div className="flex-1 relative">
@@ -2214,6 +2215,7 @@ function TodoTask() {
           </button>
         </form>
       </div>
+      )}
 
       {view === "tree" && (
         <div className="flex flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">
