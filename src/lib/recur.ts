@@ -264,12 +264,7 @@ export function mergeCounts(maps: Iterable<Map<number, number>>): Map<number, nu
 
 // ---------- per-todo history payload (stored E2E-encrypted in todoHistory) ----------
 
-export type HistoryData = { todoId: string; counts: Map<number, number>; durations?: Map<number, number> };
-
-// Per-day duration totals (ms) — same "d<day>:<value>" codec as counts but with
-// a much larger value range (ms, accumulated stopwatch time per day).
-const DURATION_MAX = 1e12; // ~31.7 years of ms — sanity clamp only
-const DURATION_TOKEN_RE = /^d(\d{3,7}):(\d{1,13})$/;
+export type HistoryData = { todoId: string; counts: Map<number, number> };
 
 function encodePairs(src: Iterable<[number, number] | readonly [number, number]> | Record<string, number>, max: number): string {
   const entries: [number, number][] =
@@ -293,28 +288,8 @@ export function encodeCounts(src: Iterable<[number, number] | readonly [number, 
   return encodePairs(src, COUNT_MAX);
 }
 
-/** Per-day stopwatch duration totals (ms), ascending, zero days omitted. */
-export function encodeDurations(src: Iterable<[number, number] | readonly [number, number]> | Record<string, number>): string {
-  return encodePairs(src, DURATION_MAX);
-}
-
-/** Per-day duration totals (ms) parsed from the history payload's `t` field. */
-export function decodeDurations(s: string): Map<number, number> {
-  const out = new Map<number, number>();
-  if (!s) return out;
-  for (const token of s.split(";")) {
-    const m = DURATION_TOKEN_RE.exec(token.trim());
-    if (!m) continue;
-    const day = Number(m[1]);
-    const ms = Math.min(Number(m[2]), DURATION_MAX);
-    if (ms > 0) out.set(day, ms);
-  }
-  return out;
-}
-
 export function encodeHistoryPayload(data: HistoryData): string {
-  const t = data.durations && data.durations.size > 0 ? encodeDurations(data.durations) : "";
-  return JSON.stringify({ v: 1, todoId: data.todoId, c: encodeCounts(data.counts), ...(t ? { t } : {}) });
+  return JSON.stringify({ v: 1, todoId: data.todoId, c: encodeCounts(data.counts) });
 }
 
 export function decodeHistoryPayload(json: string): HistoryData | null {
@@ -322,8 +297,7 @@ export function decodeHistoryPayload(json: string): HistoryData | null {
     const o = JSON.parse(json) as Record<string, unknown>;
     if (!o || typeof o !== "object" || o.v !== 1 || typeof o.todoId !== "string" || !o.todoId) return null;
     const counts = decodeCounts(typeof o.c === "string" ? o.c : "");
-    const durations = typeof o.t === "string" ? decodeDurations(o.t) : undefined;
-    return { todoId: o.todoId, counts, durations };
+    return { todoId: o.todoId, counts };
   } catch {
     return null;
   }
