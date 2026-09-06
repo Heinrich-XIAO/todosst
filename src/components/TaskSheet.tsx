@@ -123,29 +123,32 @@ export function TaskSheet({
           maxHeight: `calc(100dvh - ${keyboardInset + 24}px)`,
         }}
       >
-        <div className="flex items-center justify-between border-b border-foreground/10 px-4 py-2 text-xs">
-          <span className="font-mono opacity-60">
-            {mode.kind === "create-child" ? `new sub-task — under ${mode.parentTitle}` : "new task"}
-          </span>
-          <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="close">
-            ✕
-          </button>
-        </div>
-
+        {/* title + close share one pinned row — no header, no label: the
+            dialog's aria-label names it and the placeholder does the rest */}
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3 text-xs">
-            <label className="block">
-              <span className="opacity-60">task</span>
+          <div className="flex items-center gap-3 border-b border-foreground/10 px-4 py-2">
+            <label className="min-w-0 flex-1">
+              <span className="sr-only">task</span>
               <input
                 autoFocus
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={200}
                 placeholder="what needs doing?"
-                className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-base placeholder:text-foreground/40 focus:outline-none"
+                className="w-full border-b border-foreground bg-transparent py-1 text-base placeholder:text-foreground/40 focus:outline-none"
               />
             </label>
+            <button onClick={onClose} className="shrink-0 p-1 opacity-60 hover:opacity-100" aria-label="close">
+              ✕
+            </button>
+          </div>
+          {mode.kind === "create-child" && (
+            <div className="border-b border-foreground/10 px-4 py-1 font-mono text-[10px] opacity-60">
+              new sub-task — under {mode.parentTitle}
+            </div>
+          )}
 
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-4 py-3 text-xs">
             {mode.kind === "create" && (
               <div>
                 <span className="opacity-60">in</span>
