@@ -67,14 +67,14 @@ export function MetadataPanel({
     onUpdateMetadata(node._id, merged);
   };
   return (
-    <div className="border-t border-foreground bg-background p-3 text-xs">
-      <div className="flex items-center justify-between">
+    <div className="flex max-h-[70dvh] flex-col border-t border-foreground bg-background p-3 text-xs">
+      <div className="flex shrink-0 items-center justify-between">
         <span className="font-medium">{node.title} — details</span>
         <button onClick={onClose} className="opacity-60 hover:opacity-100">
           close
         </button>
       </div>
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
         <RecurrenceField metadata={node.metadata as PlainNode["metadata"]} anchorTs={node._creationTime} onPatch={onPatch} />
         <CompletionStyleField metadata={node.metadata as PlainNode["metadata"]} onPatch={onPatch} />
         <PayloadField payloadLen={payloadLen} />
