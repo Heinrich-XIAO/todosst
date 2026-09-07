@@ -2061,7 +2061,7 @@ function TodoTask() {
   };
 
   return (
-    <div className="w-full max-w-[720px] bg-background md:border md:border-foreground">
+    <div className="w-full max-w-[720px] bg-background pb-[calc(3rem+env(safe-area-inset-bottom))] md:border md:border-foreground md:pb-0">
       <div className="flex items-center justify-between border-b border-foreground px-3 py-2 text-xs">
         <span className="flex flex-1 items-center gap-2">
           <span>E2E Encrypted</span>
