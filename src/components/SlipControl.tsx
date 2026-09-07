@@ -90,7 +90,7 @@ export function SlipControl({
           onPointerCancel={clearTimer}
           onClick={onClick}
           onContextMenu={(e) => e.preventDefault()}
-          className={`flex flex-1 touch-none items-center justify-center border-x border-foreground text-[10px] leading-none ${
+          className={`flex flex-1 touch-none items-center justify-center border-l border-foreground text-[10px] leading-none ${
             slips > 0 ? "bg-foreground text-background" : "bg-background"
           }`}
           aria-label={`log a slip (${slips} so far)`}
