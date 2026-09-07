@@ -354,7 +354,7 @@ export function TodayView({
       {slides.length > 0 && <PastYearCarousel slides={slides} nowTs={nowTs} />}
       <div className="flex items-baseline justify-between border-b border-foreground/10 px-3 py-2 text-xs">
         <span className="font-mono">{dateLabel}</span>
-        <span className="opacity-60">{open === 0 ? "all clear" : `${open} open`}</span>
+        <span className="opacity-60">{open === 0 ? "all clear" : `${open} left`}</span>
       </div>
       {open > 0 && escalate && (
         <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px]">{escalate}</div>
