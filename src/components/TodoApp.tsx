@@ -28,16 +28,19 @@ import {
   nextCountOnClick,
   normalizeRruleString,
   parseRecurInput,
+  prevWindowDay,
   recurState,
   stepOf,
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
+import { parseNegInput, buildHoldItems, holdOf, isNegative, withHold, type HoldItem } from "@/lib/negative";
 import { dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
 import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
+import { SlipControl } from "./SlipControl";
 import { buildTodayItems, openCountOf, TodayView, type PastYearSlide } from "./TodayView";
 import { dismissHabitOffer, missedDays, openRitual, recordClearDay } from "@/lib/ritual";
 import {
@@ -288,7 +291,13 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           {hasChildren ? (isExpanded ? "▾" : "▸") : "•"}
         </button>
 
-        {mode !== "check" ? (
+        {isNegative(meta) ? (
+          <SlipControl
+            slips={count}
+            onSlip={() => void handleCountUp(node)}
+            onUndo={() => void handleCountDown(node)}
+          />
+        ) : mode !== "check" ? (
           <CountControl
             mode={mode}
             count={count}
@@ -655,18 +664,35 @@ function TodoTask() {
   }, [nodes, history, key, historyRemove]);
 
   const [recurStates, setRecurStates] = useState<Map<string, RecurState> | null>(null);
+  // negative tasks: the window that just ended (one level back) — drives the
+  // holds section's confirm/failed rows
+  const [priorWindows, setPriorWindows] = useState<Map<string, number | null> | null>(null);
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!nodes) {
-        if (!cancelled) setRecurStates(null);
+        if (!cancelled) {
+          setRecurStates(null);
+          setPriorWindows(null);
+        }
         return;
       }
       const m = new Map<string, RecurState>();
+      const prior = new Map<string, number | null>();
       for (const n of nodes) {
-        m.set(n._id as string, await recurState(n.metadata as PlainNode["metadata"], n._creationTime, nowTs));
+        const rs = await recurState(n.metadata as PlainNode["metadata"], n._creationTime, nowTs);
+        m.set(n._id as string, rs);
+        if (isNegative(n.metadata as PlainNode["metadata"]) && rs.isRecurring) {
+          prior.set(
+            n._id as string,
+            await prevWindowDay(String((n.metadata as PlainNode["metadata"]).recur), n._creationTime, rs.windowDay)
+          );
+        }
       }
-      if (!cancelled) setRecurStates(m);
+      if (!cancelled) {
+        setRecurStates(m);
+        setPriorWindows(prior);
+      }
     })();
     return () => {
       cancelled = true;
@@ -1072,6 +1098,53 @@ function TodoTask() {
     return per;
   }, [nodes, history, recurStates]);
 
+  // ---- negative tasks (holds section) ----
+  // merged counts per node (history is authoritative, current-window metadata
+  // and recur state top it up while writes/loads are in flight)
+  const negCounts = useMemo(() => {
+    const m = new Map<string, Map<number, number>>();
+    for (const n of nodes ?? []) {
+      const id = n._id as string;
+      const meta = n.metadata as PlainNode["metadata"];
+      const map = new Map(history?.byTodo.get(id) ?? []);
+      for (const [day, c] of Object.entries(meta.counts ?? {})) {
+        if (typeof c === "number" && c > (map.get(Number(day)) ?? 0)) map.set(Number(day), c);
+      }
+      const rs = recurStates?.get(id);
+      if (rs?.isRecurring && rs.count > (map.get(rs.windowDay) ?? 0)) map.set(rs.windowDay, rs.count);
+      m.set(id, map);
+    }
+    return m;
+  }, [nodes, history, recurStates]);
+
+  const holdItems = useMemo<HoldItem[] | null>(
+    () => buildHoldItems({ nodes, tree, recurStates, priorWindows, counts: negCounts, nowTs }),
+    [nodes, tree, recurStates, priorWindows, negCounts, nowTs]
+  );
+
+  // manual "held" confirm for a negative task's ended window — records the
+  // confirmation in the encrypted metadata and celebrates with a toast
+  async function handleConfirmHold(node: TreeNode, windowDay: number) {
+    if (!key) return;
+    const meta = node.metadata as PlainNode["metadata"];
+    if (holdOf(meta, windowDay) !== undefined) return;
+    const updated = withHold(meta, windowDay, Date.now());
+    await handleUpdateMetadata(node._id, { holds: updated.holds });
+    const slips = negCounts.get(node._id as string)?.get(windowDay) ?? 0;
+    const tol = typeof meta.tol === "number" && Number.isFinite(meta.tol) ? Math.max(0, Math.floor(meta.tol)) : 0;
+    const day = new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    setRemindToast({
+      title: "held",
+      lines: [
+        `${node.title} — ${day} held ✓ (${slips === 0 ? "0 slips" : `${slips} slip${slips === 1 ? "" : "s"}, within tolerance of ${tol}`})`,
+      ],
+    });
+  }
+
   // ---- daily ritual: miss streak + auto-habit meta-task (local, per device) ----
   // Reaching all clear is the ritual's completion: it records the day locally
   // (never-miss-twice nudge) and auto-checks the habit task, feeding its
@@ -1178,10 +1251,14 @@ function TodoTask() {
         const curMax = maxOrderByParent.get(parentId);
         const order = curMax !== undefined ? curMax + 1 : 0;
         maxOrderByParent.set(parentId, order);
-        // recurrence + structured metadata apply to the final segment of the path
+        // recurrence + negative marker + structured metadata apply to the final segment of the path
         const isLast = segIdx === slashParts.length - 1;
         const metadata: PlainNode["metadata"] = isLast
-          ? withReminderDefault({ ...(outcome.metadata ?? {}), ...(outcome.recur ? { recur: outcome.recur } : {}) })
+          ? withReminderDefault({
+              ...(outcome.metadata ?? {}),
+              ...(outcome.neg ? { neg: true } : {}),
+              ...(outcome.recur ? { recur: outcome.recur } : {}),
+            })
           : {};
         const node = toPlainNode({ title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata });
         const { ciphertext, iv } = await cryptoEncNode(node);
@@ -1231,6 +1308,7 @@ function TodoTask() {
         order,
         metadata: withReminderDefault({
           ...(outcome.metadata ?? {}),
+          ...(outcome.neg ? { neg: true } : {}),
           ...(outcome.recur ? { recur: outcome.recur } : {}),
         }),
       });
@@ -1304,6 +1382,7 @@ function TodoTask() {
           type: "create-slash",
           parts: [...cap.parts, outcome.title],
           recur: outcome.recur,
+          neg: outcome.neg,
         });
       }
       return cap.input;
@@ -1401,8 +1480,8 @@ function TodoTask() {
 
   async function handleAddChild(parentId: Id<"todos">) {
     const rawChild = addChildTitle.trim();
-    const parsedRecur = parseRecurInput(rawChild);
-    const title = parsedRecur.title;
+    const parsed = parseNegInput(rawChild);
+    const title = parsed.title;
     if (!title || title.length > 200 || !key) return;
     const parent = tree.map.get(parentId);
     if (!parent) return;
@@ -1418,7 +1497,10 @@ function TodoTask() {
       const created = await createChildNode(
         parentId,
         title,
-        withReminderDefault(parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {})
+        withReminderDefault({
+          ...(parsed.neg ? { neg: true } : {}),
+          ...(parsed.ruleStr ? { recur: parsed.ruleStr } : {}),
+        })
       );
       if (created === null) return; // duplicate — notice shown, keep the text
     } catch (err) {
@@ -1456,13 +1538,16 @@ function TodoTask() {
     if (!key) return false;
     const ruleStr = draft.metadata.recur ?? null;
     const recurToken = recurTokenFor(ruleStr);
-    // offline raw: grammar input the replay path can re-create
+    // offline raw: grammar input the replay path can re-create (the "!"
+    // negative marker rides the recurrence token, like the live input)
     const metadata: PlainNode["metadata"] = online
       ? withReminderDefault(draft.metadata)
       : recurToken
         ? { recur: ruleStr! }
         : {};
-    const raw = recurToken ? `${draft.title} ${recurToken}` : draft.title;
+    const raw = recurToken
+      ? `${draft.title} ${recurToken}${draft.metadata.neg ? " !" : ""}`
+      : draft.title;
 
     if (composer && composer.kind === "create-child") {
       const parent = tree.map.get(composer.parentId);
@@ -2251,6 +2336,7 @@ function TodoTask() {
       {view === "today" ? (
         <TodayView
           items={todayItems}
+          holds={holdItems}
           nowTs={nowTs}
           map={tree.map}
           slides={pastYearSlides}
@@ -2263,6 +2349,9 @@ function TodoTask() {
           onCountDown={handleCountDown}
           onSelect={(node) => setSelectedId(node._id)}
           onJump={jumpToDir}
+          onSlip={(node) => void handleCountUp(node)}
+          onUndoSlip={(node) => void handleCountDown(node)}
+          onConfirmHold={(node, windowDay) => void handleConfirmHold(node, windowDay)}
         />
       ) : (
       <>

@@ -11,12 +11,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
-import { dayIndexLocal, modeOf, stepOf, thresholdOf, type CompletionMode, type RecurState } from "@/lib/recur";
+import { dayIndexLocal, dayIndexToStart, modeOf, stepOf, thresholdOf, type CompletionMode, type RecurState } from "@/lib/recur";
+import { isNegative, type HoldItem } from "@/lib/negative";
 import { missCopy } from "@/lib/ritual";
 import { normalizeDueAt } from "@/lib/due";
 import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
 import { CountControl } from "./CountControl";
 import { Heatmap } from "./Heatmap";
+import { SlipControl } from "./SlipControl";
 
 // the all-clear payoff lines — typed out in the input's typewriter voice when
 // the day closes. One is picked per mount, typed once, and held: the moment
@@ -111,6 +113,8 @@ export function buildTodayItems(
     const tn = tree.map.get(n._id as string);
     if (!tn) continue;
     const meta = n.metadata as PlainNode["metadata"];
+    // negative tasks live in the holds section — they never gate all clear
+    if (isNegative(meta)) continue;
     // the auto-habit meta-task is fed by reaching all clear — never a today row
 
     const rs = recurStates.get(n._id as string) ?? null;
@@ -215,7 +219,86 @@ export type PastYearSlide = {
   title: string;
   mode: CompletionMode;
   counts: Map<number, number>;
+  /** negative task — heatmap levels are slips (more = worse) */
+  negative?: boolean;
 };
+
+function holdDayLabel(windowDay: number): string {
+  return new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+// One holds-section row. Open windows carry the slip control; ended windows
+// either ask for the held-confirm (clean) or state the failure — a failure
+// needs no action, it drops out when the next window rolls.
+function HoldRow({
+  item,
+  onSlip,
+  onUndoSlip,
+  onConfirmHold,
+  onSelect,
+}: {
+  item: HoldItem;
+  onSlip: (node: TreeNode) => void;
+  onUndoSlip: (node: TreeNode) => void;
+  onConfirmHold: (node: TreeNode, windowDay: number) => void;
+  onSelect: (node: TreeNode) => void;
+}) {
+  const { node, kind, windowDay, slips, tol } = item;
+  const day = holdDayLabel(windowDay);
+  const slipWord = slips === 1 ? "1 slip" : `${slips} slips`;
+  if (kind === "open") {
+    return (
+      <li className="border-b border-foreground/10 last:border-b-0">
+        <div className="flex items-center gap-2 px-3 py-2 text-sm">
+          <SlipControl slips={slips} onSlip={() => onSlip(node)} onUndo={() => onUndoSlip(node)} />
+          <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
+            {node.title}
+          </button>
+          <span className="shrink-0 text-[10px] opacity-40">{slips > 0 ? slipWord : "hold to slip"}</span>
+        </div>
+      </li>
+    );
+  }
+  if (kind === "confirm") {
+    return (
+      <li className="border-b border-foreground/10 last:border-b-0">
+        <div className="flex items-center gap-2 px-3 py-2 text-sm">
+          <button
+            onClick={() => onConfirmHold(node, windowDay)}
+            className="h-[18px] w-16 shrink-0 border border-foreground text-[10px] leading-none hover:bg-foreground hover:text-background"
+            aria-label={`confirm ${node.title} held`}
+          >
+            ✓ held?
+          </button>
+          <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
+            {node.title}
+          </button>
+          <span className="shrink-0 text-[10px] opacity-40">{day} — clean, confirm</span>
+        </div>
+      </li>
+    );
+  }
+  return (
+    <li className="border-b border-foreground/10 last:border-b-0">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-60">
+        <span className="flex h-[18px] w-16 shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[10px] leading-none text-background">
+          ✕ failed
+        </span>
+        <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
+          {node.title}
+        </button>
+        <span className="shrink-0 text-[10px] opacity-60">
+          {day} — {slipWord}
+          {tol > 0 ? ` (tolerated ${tol})` : ""}
+        </span>
+      </div>
+    </li>
+  );
+}
 
 // Horizontal past-year carousel. Native scroll-snap does the paging (trackpad
 // + touch for free); the dots mirror and drive the active slide. Squares, not
@@ -312,6 +395,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
 
 export function TodayView({
   items,
+  holds,
   nowTs,
   map,
   slides = [],
@@ -324,8 +408,13 @@ export function TodayView({
   onCountDown,
   onSelect,
   onJump,
+  onSlip,
+  onUndoSlip,
+  onConfirmHold,
 }: {
   items: TodayItem[] | null;
+  /** negative-task rows (see buildHoldItems) — never count toward "N left" */
+  holds?: HoldItem[] | null;
   nowTs: number;
   map: Map<string, TreeNode>;
   /** past-year heatmap carousel: "all tasks" + one slide per task with history */
@@ -340,6 +429,9 @@ export function TodayView({
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
   onSelect: (node: TreeNode) => void;
   onJump: (parts: string[]) => void;
+  onSlip: (node: TreeNode) => void;
+  onUndoSlip: (node: TreeNode) => void;
+  onConfirmHold: (node: TreeNode, windowDay: number) => void;
 }) {
   const dateLabel = new Date(nowTs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const open = openCountOf(items ?? []);
@@ -348,6 +440,7 @@ export function TodayView({
   if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
 
   const groups: (0 | 1 | 2)[] = [0, 1, 2];
+  const holdRows = holds ?? [];
 
   return (
     <div className="min-h-[180px] pb-2">
@@ -377,7 +470,8 @@ export function TodayView({
       )}
       {open === 0 ? (
         <>
-          {/* the all-clear moment — full-bleed, typed, held */}
+          {/* the all-clear moment — full-bleed, typed, held. Negative tasks
+              never block it; their holds section renders below. */}
           <AllClearMoment
             doneToday={items.reduce((n, i) => n + (i.group === 1 && !rowIsOpen(i) ? 1 : 0), 0)}
             nothingDue={items.length === 0}
@@ -400,6 +494,16 @@ export function TodayView({
             </div>
           );
         })
+      )}
+      {holdRows.length > 0 && (
+        <div>
+          <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">holds</div>
+          <ul>
+            {holdRows.map((h) => (
+              <HoldRow key={`${h.node._id}:${h.kind}:${h.windowDay}`} item={h} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

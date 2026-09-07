@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PlainNode } from "@/lib/crypto";
 import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, modeOf, stepOf, thresholdOf } from "@/lib/recur";
+import { isNegative, toleranceOf } from "@/lib/negative";
 import {
   defaultDueTimeMin,
   formatDueInput,
@@ -65,25 +66,44 @@ export function RecurrenceField({
 
 export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata; onPatch: OnPatch }) {
   const mode = modeOf(metadata);
+  const neg = isNegative(metadata);
   return (
     <>
       <div className="flex flex-wrap gap-2">
         <label className="flex-1 block">
           <span className="opacity-60">completion style</span>
           <select
-            value={mode}
+            value={neg ? "avoid" : mode}
             onChange={(e) => {
               const v = e.target.value;
-              onPatch({ mode: v === "count" || v === "time" ? v : "check" });
+              if (v === "avoid") {
+                onPatch({ neg: true });
+              } else {
+                onPatch({ neg: undefined, mode: v === "count" || v === "time" ? v : "check" });
+              }
             }}
             className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
           >
             <option value="check">checkbox</option>
             <option value="count">tally count</option>
             <option value="time">time (minutes)</option>
+            <option value="avoid">avoid (slips)</option>
           </select>
         </label>
-        {mode === "check" && (
+        {neg && (
+          <label className="flex-1 block">
+            <span className="opacity-60">slips tolerated</span>
+            <input
+              type="number"
+              min={0}
+              max={999}
+              value={toleranceOf(metadata)}
+              onChange={(e) => onPatch({ tol: Math.min(999, Math.max(0, Math.floor(Number(e.target.value) || 0))) })}
+              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+            />
+          </label>
+        )}
+        {!neg && mode === "check" && (
           <label className="flex-1 block">
             <span className="opacity-60">checkbox threshold</span>
             <input
@@ -96,7 +116,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
             />
           </label>
         )}
-        {mode === "count" && (
+        {!neg && mode === "count" && (
           <label className="flex-1 block">
             <span className="opacity-60">goal (optional)</span>
             <input
@@ -114,7 +134,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
             />
           </label>
         )}
-        {mode === "time" && (
+        {!neg && mode === "time" && (
           <>
             <label className="flex-1 block">
               <span className="opacity-60">goal (minutes)</span>
@@ -154,7 +174,18 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
           </label>
         )}
       </div>
-      {metadata.recur ? (
+      {neg ? (
+        metadata.recur ? (
+          <p className="text-[10px] opacity-40 leading-tight">
+            negative task — you log slips, never completions. a window is held when it ends within tolerance; the
+            today view asks you to confirm held windows.
+          </p>
+        ) : (
+          <p className="text-[10px] opacity-40 leading-tight">
+            negative tasks need a schedule — add one under recurrence above.
+          </p>
+        )
+      ) : metadata.recur ? (
         <p className="text-[10px] opacity-40 leading-tight">
           recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
         </p>
