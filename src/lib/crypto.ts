@@ -200,6 +200,14 @@ export type PlainNode = {
     // creates "open todosst ~daily"; the app checks it whenever the today view
     // reaches all clear, feeding its heatmap as a side effect of the ritual
     habit?: boolean;
+    // negative (avoid) task — recurring only (see src/lib/negative.ts): you
+    // never complete it, you log slips; a window is held when it ends with
+    // slips within tolerance. Slips reuse the counts storage.
+    neg?: boolean;
+    // slips tolerated per window (default 0) — held iff slips <= tol
+    tol?: number;
+    // windowDay -> confirmation timestamp of manual "held" confirmations
+    holds?: Record<string, number>;
   };
 };
 

@@ -243,6 +243,20 @@ export async function recurState(meta: RecurMetadata, anchorTs: number, nowTs: n
 
 const COUNT_TOKEN_RE = /^d(\d{3,7}):(\d{1,5})$/;
 
+/** Day index of the occurrence immediately before the given window day
+ * (null when that day is the rule's first). Companion to recurState for
+ * "the window that just ended" views (negative tasks); rule parse is cached. */
+export async function prevWindowDay(
+  ruleStr: string,
+  anchorTs: number,
+  windowDay: number
+): Promise<number | null> {
+  const rule = await getRule(ruleStr, anchorTs);
+  if (!rule) return null;
+  const prev = rule.before(toNaiveLocal(dayIndexToStart(windowDay)), false);
+  return prev ? naiveDayIndex(prev) : null;
+}
+
 export function decodeCounts(s: string): Map<number, number> {
   const out = new Map<number, number>();
   if (!s) return out;

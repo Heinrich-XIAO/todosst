@@ -10,7 +10,8 @@
 // can never drift from behavior.
 
 import { parseSlashPath } from "./slashPath";
-import { parseRecurInput, type ParsedInput } from "./recur";
+import { type ParsedInput } from "./recur";
+import { parseNegInput } from "./negative";
 import { resolveCdPath } from "./cdPath";
 import type { PlainNode } from "./crypto";
 
@@ -53,8 +54,9 @@ export type ModifierEntry = {
   id: string;
   /** rows shown in the help panel */
   docs: GrammarDoc[];
-  /** strips its token from the input and returns the payload to attach */
-  parse: (input: string) => ParsedInput;
+  /** strips its token from the input and returns the payload to attach; the
+   * recur modifier also parses the trailing "!" negative marker */
+  parse: (input: string) => ParsedInput & { neg?: boolean };
 };
 
 export type GrammarEntry = CommandEntry | SyntaxEntry | ModifierEntry;
@@ -149,8 +151,9 @@ export const GRAMMAR: GrammarEntry[] = [
     docs: [
       { example: "stretch ~daily", note: "~daily ~weekly ~weekdays ~monthly ~yearly" },
       { example: "gym ~every 2w mon,thu", note: "~every N d/w/m/y — weekday list optional" },
+      { example: "no doomscrolling ~daily !", note: "trailing ! = avoid task — log slips, a clean window is a win" },
     ],
-    parse: parseRecurInput,
+    parse: parseNegInput,
   },
 ];
 
@@ -162,8 +165,8 @@ export type InputOutcome =
   | { type: "command"; name: string }
   // metadata carries extra fields (dueAt, priority, …) composed by structured
   // creators like the mobile composer sheet; grammar-parsed inputs never set it
-  | { type: "create-slash"; parts: string[]; recur: string | null; metadata?: PlainNode["metadata"] }
-  | { type: "create-task"; title: string; recur: string | null; metadata?: PlainNode["metadata"] };
+  | { type: "create-slash"; parts: string[]; recur: string | null; neg?: boolean; metadata?: PlainNode["metadata"] }
+  | { type: "create-task"; title: string; recur: string | null; neg?: boolean; metadata?: PlainNode["metadata"] };
 
 /**
  * Interpret raw input via the GRAMMAR registry. Commands (cd/help) run
@@ -194,12 +197,12 @@ export function runInput(raw: string, ctx: CommandContext): InputOutcome {
     const parsed = entry.parse(rest);
     if (!parsed) continue;
     if (parsed.kind === "slash") {
-      return { type: "create-slash", parts: parsed.parts, recur: recurParsed.ruleStr };
+      return { type: "create-slash", parts: parsed.parts, recur: recurParsed.ruleStr, neg: recurParsed.neg || undefined };
     }
     // empty titles and bare slash paths ("/", "//" — root is not a task) are ignored
     const title = parsed.title.trim();
     if (title === "" || /^\/+$/.test(title)) return { type: "ignored" };
-    return { type: "create-task", title: parsed.title, recur: recurParsed.ruleStr };
+    return { type: "create-task", title: parsed.title, recur: recurParsed.ruleStr, neg: recurParsed.neg || undefined };
   }
   return { type: "ignored" };
 }
