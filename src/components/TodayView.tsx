@@ -243,11 +243,8 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
 
   return (
     <div className="border-b border-foreground/10 px-3 py-2">
-      <div className="mb-1 flex items-baseline justify-between gap-3 text-[10px]">
-        <span className="shrink-0 opacity-40">past year</span>
-        <span className="truncate font-mono opacity-60" title={slides[active]?.title}>
-          {slides[active]?.title}
-        </span>
+      <div className="mb-1 truncate text-center font-mono text-xs font-bold" title={slides[active]?.title}>
+        {slides[active]?.title}
       </div>
       <div
         ref={trackRef}
