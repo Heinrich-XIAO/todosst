@@ -66,6 +66,9 @@ export function RecurrenceField({
 
 export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata; onPatch: OnPatch }) {
   const mode = modeOf(metadata);
+  // the select reflects the raw flag — avoid sticks even without a schedule
+  // (behavior stays gated on isNegative, which needs the rule)
+  const negRaw = metadata.neg === true;
   const neg = isNegative(metadata);
   return (
     <>
@@ -73,7 +76,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
         <label className="flex-1 block">
           <span className="opacity-60">completion style</span>
           <select
-            value={neg ? "avoid" : mode}
+            value={negRaw ? "avoid" : mode}
             onChange={(e) => {
               const v = e.target.value;
               if (v === "avoid") {
@@ -87,10 +90,10 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
             <option value="check">checkbox</option>
             <option value="count">tally count</option>
             <option value="time">time (minutes)</option>
-            <option value="avoid">avoid (slips)</option>
+            <option value="avoid">{metadata.recur ? "avoid (slips)" : "avoid (must be recurring)"}</option>
           </select>
         </label>
-        {neg && (
+        {negRaw && (
           <label className="flex-1 block">
             <span className="opacity-60">slips tolerated</span>
             <input
@@ -103,7 +106,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
             />
           </label>
         )}
-        {!neg && mode === "check" && (
+        {!negRaw && mode === "check" && (
           <label className="flex-1 block">
             <span className="opacity-60">checkbox threshold</span>
             <input
@@ -174,16 +177,14 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
           </label>
         )}
       </div>
-      {neg ? (
-        metadata.recur ? (
+      {negRaw ? (
+        neg ? (
           <p className="text-[10px] opacity-40 leading-tight">
             negative task — you log slips, never completions. a window is held when it ends within tolerance; the
             today view asks you to confirm held windows.
           </p>
         ) : (
-          <p className="text-[10px] opacity-40 leading-tight">
-            negative tasks need a schedule — add one under recurrence above.
-          </p>
+          <p className="text-[10px] opacity-40 leading-tight">avoid tasks need to be repeating — add a schedule under recurrence above.</p>
         )
       ) : metadata.recur ? (
         <p className="text-[10px] opacity-40 leading-tight">
