@@ -417,7 +417,7 @@ export function HeatmapField({
     <div>
       <span className="opacity-60">past year</span>
       <div className="mt-1">
-        <Heatmap counts={counts} nowTs={nowTs} mode={modeOf(metadata)} />
+        <Heatmap counts={counts} nowTs={nowTs} mode={modeOf(metadata)} negative={isNegative(metadata)} />
       </div>
     </div>
   );

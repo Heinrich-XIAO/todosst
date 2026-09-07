@@ -373,7 +373,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
       >
         {slides.map((s) => (
           <div key={s.id} className="w-full shrink-0 snap-center">
-            <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} />
+            <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} negative={s.negative} />
           </div>
         ))}
       </div>

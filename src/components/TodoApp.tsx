@@ -20,6 +20,7 @@ import { decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/c
 import { runInput, type CommandContext, type InputOutcome } from "@/lib/grammar";
 import {
   COUNT_MAX,
+  DAY_MS,
   dayIndexLocal,
   dayIndexToStart,
   decodeHistoryPayload,
@@ -34,7 +35,7 @@ import {
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
-import { parseNegInput, buildHoldItems, holdOf, isNegative, withHold, type HoldItem } from "@/lib/negative";
+import { parseNegInput, buildHoldItems, holdOf, isNegative, toleranceOf, withHold, type HoldItem } from "@/lib/negative";
 import { dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
@@ -715,8 +716,16 @@ function TodoTask() {
     for (const n of nodes) {
       const rs = recurStates?.get(n._id as string);
       const meta = n.metadata as PlainNode["metadata"];
-      const done = rs?.isRecurring ? rs.count >= thresholdOf(meta) : n.isCompleted;
-      for (const t of remindTimesFor(meta, done, now)) {
+      // negative tasks are never "done" mid-window — their check-in reminder
+      // is the window's end, not the due-soon offsets (which they skip)
+      const neg = isNegative(meta);
+      const done = neg ? false : rs?.isRecurring ? rs.count >= thresholdOf(meta) : n.isCompleted;
+      const times = remindTimesFor(meta, done, now);
+      if (neg && rs?.isRecurring && !rs.expired) {
+        const end = dayIndexToStart(rs.windowDay) + DAY_MS;
+        if (end > now) times.push(end);
+      }
+      for (const t of times) {
         items.push({ todoId: n._id, remindAt: t });
       }
     }
@@ -754,7 +763,8 @@ function TodoTask() {
     for (const n of list) {
       const meta = n.metadata as PlainNode["metadata"];
       const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
-      if (!dueAt || !meta.reminder?.enabled || isDone(n)) continue;
+      // negative tasks skip due-soon nags — they get a window-end check-in instead
+      if (!dueAt || !meta.reminder?.enabled || isDone(n) || isNegative(meta)) continue;
       for (const off of reminderOffsets(meta)) {
         const at = dueInstant(dueAt, meta.dueTimeMin) - off * 60_000;
         if (at > now || at <= now - 5 * 60_000) continue;
@@ -785,7 +795,8 @@ function TodoTask() {
     for (const n of list) {
       const meta = n.metadata as PlainNode["metadata"];
       const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
-      if (!dueAt || dueAt > now || isDone(n)) continue;
+      // negative tasks skip the "was due" nag — failure state lives in the holds section
+      if (!dueAt || dueAt > now || isDone(n) || isNegative(meta)) continue;
       const id = n._id as string;
       if (seen.has(id)) continue;
       ids.push(id);
@@ -1090,7 +1101,7 @@ function TodoTask() {
         all.set(day, (all.get(day) ?? 0) + c);
         if (day > latest) latest = day;
       }
-      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest });
+      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest, negative: isNegative(meta) });
     }
     // most recently active task first; the aggregate slide always leads
     per.sort((a, b) => b.latest - a.latest || a.title.localeCompare(b.title));
@@ -1131,7 +1142,7 @@ function TodoTask() {
     const updated = withHold(meta, windowDay, Date.now());
     await handleUpdateMetadata(node._id, { holds: updated.holds });
     const slips = negCounts.get(node._id as string)?.get(windowDay) ?? 0;
-    const tol = typeof meta.tol === "number" && Number.isFinite(meta.tol) ? Math.max(0, Math.floor(meta.tol)) : 0;
+    const tol = toleranceOf(meta);
     const day = new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
       weekday: "short",
       month: "short",

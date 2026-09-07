@@ -36,12 +36,15 @@ export function Heatmap({
   nowTs,
   weeks = 53,
   mode = "check",
+  negative = false,
 }: {
   counts: Map<number, number>;
   nowTs: number;
   /** max weeks to render — the grid may show fewer when space runs out */
   weeks?: number;
   mode?: CompletionMode;
+  /** negative task — a day's level is its slip count (more = worse) */
+  negative?: boolean;
 }) {
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const [gridWidth, setGridWidth] = useState<number | null>(null);
@@ -131,7 +134,9 @@ export function Heatmap({
                     title={
                       cell.future
                         ? undefined
-                        : `${cell.count > 0 ? `${mode === "time" ? formatMinutes(cell.count) : cell.count} on ` : ""}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
+                        : negative
+                          ? `${cell.count > 0 ? `${cell.count} slip${cell.count === 1 ? "" : "s"} on ` : `clean on `}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
+                          : `${cell.count > 0 ? `${mode === "time" ? formatMinutes(cell.count) : cell.count} on ` : ""}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
                     }
                     className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
                   />
@@ -142,11 +147,11 @@ export function Heatmap({
         </div>
       </div>
       <div className="mt-1 flex items-center justify-end gap-1 opacity-40">
-        <span>less</span>
+        <span>{negative ? "clean" : "less"}</span>
         {LEVELS.map((l, i) => (
           <span key={i} className={`h-[8px] w-[8px] ${l}`} />
         ))}
-        <span>more</span>
+        <span>{negative ? "slips" : "more"}</span>
       </div>
     </div>
   );
