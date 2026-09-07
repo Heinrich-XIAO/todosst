@@ -74,7 +74,9 @@ export function MetadataPanel({
           close
         </button>
       </div>
-      <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
+      {/* no overscroll-contain: at the body's end the swipe must chain to
+          the page so the panel bottom can rise clear of the fixed nav */}
+      <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
         <RecurrenceField metadata={node.metadata as PlainNode["metadata"]} anchorTs={node._creationTime} onPatch={onPatch} />
         <CompletionStyleField metadata={node.metadata as PlainNode["metadata"]} onPatch={onPatch} />
         <PayloadField payloadLen={payloadLen} />
