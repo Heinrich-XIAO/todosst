@@ -21,6 +21,7 @@ import { runInput, type CommandContext, type InputOutcome } from "@/lib/grammar"
 import {
   COUNT_MAX,
   dayIndexLocal,
+  dayIndexToStart,
   decodeHistoryPayload,
   encodeHistoryPayload,
   modeOf,
@@ -1066,7 +1067,7 @@ function TodoTask() {
     }
     // most recently active task first; the aggregate slide always leads
     per.sort((a, b) => b.latest - a.latest || a.title.localeCompare(b.title));
-    if (all.size > 0) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: all, latest: 0 });
+    if (all.size > 0 && per.length > 1) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: all, latest: 0 });
     return per;
   }, [nodes, history, recurStates]);
 
@@ -2358,7 +2359,15 @@ function TodoTask() {
       <BottomNav
         view={view}
         setView={setView}
-        onAdd={() => setComposer({ kind: "create", initialDirParts: pwdParts })}
+        onAdd={() =>
+          setComposer({
+            kind: "create",
+            initialDirParts: pwdParts,
+            // today tab: a fresh capture is a today task — prefill the due
+            // date with local midnight so it lands in the today list
+            initialDueAt: view === "today" ? dayIndexToStart(dayIndexLocal(nowTs)) : null,
+          })
+        }
       />
       </div>
   );

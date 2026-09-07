@@ -27,7 +27,8 @@ export type TaskDraft = {
 };
 
 export type TaskSheetMode =
-  | { kind: "create"; initialDirParts: string[] }
+  | { kind: "create"; initialDirParts: string[]; /** due date preset for the new task (e.g. today when opened from the today tab) */
+      initialDueAt?: number | null }
   | { kind: "create-child"; parentId: Id<"todos">; parentTitle: string };
 
 // Distance between the layout viewport bottom and the visual viewport bottom —
@@ -71,11 +72,12 @@ export function TaskSheet({
   const [title, setTitle] = useState("");
   const [dirParts, setDirParts] = useState<string[]>(mode.kind === "create" ? mode.initialDirParts : []);
   const [dirOpen, setDirOpen] = useState(false);
-  const [metadata, setMetadata] = useState<PlainNode["metadata"]>({});
+  const initialMetadata = mode.kind === "create" && mode.initialDueAt ? { dueAt: mode.initialDueAt } : {};
+  const [metadata, setMetadata] = useState<PlainNode["metadata"]>(initialMetadata);
   const [busy, setBusy] = useState(false);
   // mirror of metadata for submit-time reads — blur commits can land in the
   // same event tick as the submit tap, before the state update re-renders
-  const metaRef = useRef<PlainNode["metadata"]>({});
+  const metaRef = useRef<PlainNode["metadata"]>(initialMetadata);
   const keyboardInset = useKeyboardInset();
   const dirLabelRef = useRef<HTMLButtonElement>(null);
 
