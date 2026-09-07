@@ -9,7 +9,7 @@ import { GRAMMAR, type CommandEntry, type GrammarDoc, type ModifierEntry, type S
 
 function DocRows({ docs }: { docs: GrammarDoc[] }) {
   return docs.map((doc) => (
-    <div key={doc.example} className="flex flex-col gap-0.5 px-3 py-1.5 sm:flex-row sm:items-baseline sm:gap-3">
+    <div key={doc.example} className="flex flex-col gap-0.5 px-3 py-1.5 md:flex-row md:items-baseline md:gap-3">
       <code className="shrink-0 text-xs">{doc.example}</code>
       <span className="text-xs opacity-60">{doc.note}</span>
     </div>

@@ -21,7 +21,7 @@ export function Header() {
         <Link href="/" className="flex items-center gap-2 text-[15px] font-medium tracking-tight text-foreground">
           <Logo className="h-[18px] w-[18px]" />
           {/* small screens keep the mark only — the wordmark earns its width there */}
-          <span className="hidden font-mono sm:inline">todosst</span>
+          <span className="hidden font-mono md:inline">todosst</span>
         </Link>
         <div className="flex items-center gap-4 text-sm">
           <ThemeToggle />

@@ -366,7 +366,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           >
             +child
           </button>
-          <button onClick={() => setSelectedId(node._id)} className="opacity-40 hover:opacity-100 hidden sm:inline">
+          <button onClick={() => setSelectedId(node._id)} className="opacity-40 hover:opacity-100 hidden md:inline">
             edit
           </button>
           {confirmDeleteId === node._id ? (
@@ -2127,96 +2127,93 @@ function TodoTask() {
         </div>
       )}
 
-      {/* top controls — desktop-width only; below md and on touch devices,
-          the nav "+" sheet is the only create affordance */}
-      {!isTouch && (
+      {/* top controls — desktop-width only; below md, the nav "+" sheet is the only create affordance */}
       <div className="hidden flex-wrap gap-2 border-b border-foreground p-3 md:flex">
-        <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
-          <div className="flex-1 relative">
-            <input
-              ref={newRootInputRef}
-              autoFocus={!isTouch}
-              value={newRootTitle}
-              onChange={(e) => setNewRootTitle(e.target.value)}
-              onFocus={() => setIsSlashFocused(true)}
-              onBlur={() => setTimeout(() => setIsSlashFocused(false), 150)}
-              onKeyDown={(e) => {
-                if (!isSlashFocused || slashComplete.suggestions.length === 0) return;
-                if (e.key === "ArrowDown") {
-                  e.preventDefault();
-                  setActiveSuggestIdx((i) => (i + 1) % slashComplete.suggestions.length);
-                } else if (e.key === "ArrowUp") {
-                  e.preventDefault();
-                  setActiveSuggestIdx((i) => (i - 1 + slashComplete.suggestions.length) % slashComplete.suggestions.length);
-                } else if (e.key === "Enter" || e.key === "Tab") {
-                  const chosen = slashComplete.suggestions[activeSuggestIdx];
-                  // if exact match, let Enter submit instead of re-applying same value
-                  if (e.key === "Enter" && chosen && chosen.title.toLowerCase() === slashComplete.prefix.toLowerCase() && slashComplete.prefix.length > 0) {
-                    setIsSlashFocused(false);
-                    return;
-                  }
-                  // autocomplete active suggestion instead of submitting
-                  e.preventDefault();
-                  if (chosen) applySlashSuggestion(chosen.title);
-                } else if (e.key === "Escape") {
+      <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
+        <div className="flex-1 relative">
+          <input
+            ref={newRootInputRef}
+            autoFocus={!isTouch}
+            value={newRootTitle}
+            onChange={(e) => setNewRootTitle(e.target.value)}
+            onFocus={() => setIsSlashFocused(true)}
+            onBlur={() => setTimeout(() => setIsSlashFocused(false), 150)}
+            onKeyDown={(e) => {
+              if (!isSlashFocused || slashComplete.suggestions.length === 0) return;
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                setActiveSuggestIdx((i) => (i + 1) % slashComplete.suggestions.length);
+              } else if (e.key === "ArrowUp") {
+                e.preventDefault();
+                setActiveSuggestIdx((i) => (i - 1 + slashComplete.suggestions.length) % slashComplete.suggestions.length);
+              } else if (e.key === "Enter" || e.key === "Tab") {
+                const chosen = slashComplete.suggestions[activeSuggestIdx];
+                // if exact match, let Enter submit instead of re-applying same value
+                if (e.key === "Enter" && chosen && chosen.title.toLowerCase() === slashComplete.prefix.toLowerCase() && slashComplete.prefix.length > 0) {
                   setIsSlashFocused(false);
+                  return;
                 }
-              }}
-              maxLength={500}
-              className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
-            />
-            {newRootTitle === "" && (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-nowrap py-1 text-sm text-foreground/40"
-              >
-                <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={newRootTitle === ""} />
-              </span>
-            )}
-            {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
-              <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
-                <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
-                  {slashComplete.mode === "cd" ? "cd " : ""}
-                  {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
-                </div>
-                {slashComplete.suggestions.map((s, idx) => {
-                  const isActive = idx === activeSuggestIdx;
-                  const prefixLower = slashComplete.prefix.toLowerCase();
-                  const titleLower = s.title.toLowerCase();
-                  const matchLen = prefixLower && titleLower.startsWith(prefixLower) ? slashComplete.prefix.length : 0;
-                  return (
-                    <button
-                      key={s._id}
-                      type="button"
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        applySlashSuggestion(s.title);
-                      }}
-                      className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${isActive ? "bg-foreground text-background" : "hover:bg-foreground/10"}`}
-                    >
-                      <span className={`truncate ${isActive ? "" : ""}`}>
-                        {matchLen > 0 ? (
-                          <>
-                            <span className={isActive ? "opacity-60" : "opacity-40"}>{s.title.slice(0, matchLen)}</span>
-                            <span className="font-medium">{s.title.slice(matchLen)}</span>
-                          </>
-                        ) : (
-                          <span className="font-medium">{s.title}</span>
-                        )}
-                      </span>
-                      <span className={`ml-auto shrink-0 text-[10px] ${isActive ? "opacity-60" : "opacity-30"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
-                    </button>
-                  );
-                })}
+                // autocomplete active suggestion instead of submitting
+                e.preventDefault();
+                if (chosen) applySlashSuggestion(chosen.title);
+              } else if (e.key === "Escape") {
+                setIsSlashFocused(false);
+              }
+            }}
+            maxLength={500}
+            className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
+          />
+          {newRootTitle === "" && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-nowrap py-1 text-sm text-foreground/40"
+            >
+              <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={newRootTitle === ""} />
+            </span>
+          )}
+          {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
+            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
+              <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
+                {slashComplete.mode === "cd" ? "cd " : ""}
+                {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
               </div>
-            )}
-          </div>
-          <button type="submit" disabled={!newRootTitle.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
-            add task
-          </button>
-        </form>
+              {slashComplete.suggestions.map((s, idx) => {
+                const isActive = idx === activeSuggestIdx;
+                const prefixLower = slashComplete.prefix.toLowerCase();
+                const titleLower = s.title.toLowerCase();
+                const matchLen = prefixLower && titleLower.startsWith(prefixLower) ? slashComplete.prefix.length : 0;
+                return (
+                  <button
+                    key={s._id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      applySlashSuggestion(s.title);
+                    }}
+                    className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${isActive ? "bg-foreground text-background" : "hover:bg-foreground/10"}`}
+                  >
+                    <span className={`truncate ${isActive ? "" : ""}`}>
+                      {matchLen > 0 ? (
+                        <>
+                          <span className={isActive ? "opacity-60" : "opacity-40"}>{s.title.slice(0, matchLen)}</span>
+                          <span className="font-medium">{s.title.slice(matchLen)}</span>
+                        </>
+                      ) : (
+                        <span className="font-medium">{s.title}</span>
+                      )}
+                    </span>
+                    <span className={`ml-auto shrink-0 text-[10px] ${isActive ? "opacity-60" : "opacity-30"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        <button type="submit" disabled={!newRootTitle.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
+          add task
+        </button>
+      </form>
       </div>
-      )}
 
       {view === "tree" && (
         <div className="flex flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">

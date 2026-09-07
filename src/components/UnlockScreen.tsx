@@ -150,7 +150,7 @@ export function UnlockScreen() {
             className="h-3.5 w-3.5 border border-foreground bg-background accent-foreground"
           />
           <span className="opacity-80">store locally</span>
-          <span className="opacity-40 hidden sm:inline">— automatically unlock on this device</span>
+          <span className="opacity-40 hidden md:inline">— automatically unlock on this device</span>
         </label>
         {storeLocally && (
           <p className="text-[11px] opacity-40 leading-tight">
