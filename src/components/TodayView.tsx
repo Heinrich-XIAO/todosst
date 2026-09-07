@@ -219,10 +219,16 @@ export type PastYearSlide = {
 
 // Horizontal past-year carousel. Native scroll-snap does the paging (trackpad
 // + touch for free); the dots mirror and drive the active slide. Squares, not
-// circles — everything else on this surface is square.
+// circles — everything else on this surface is square. Autoscroll rotates the
+// slides but stands down while the user is engaged (hover, touch, or a recent
+// manual scroll) and under prefers-reduced-motion.
+const AUTO_MS = 6000;
+
 function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: number }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
+  const hoverRef = useRef(false);
+  const interactRef = useRef(0);
 
   useEffect(() => {
     const el = trackRef.current;
@@ -241,8 +247,38 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
     el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
   };
 
+  useEffect(() => {
+    if (slides.length < 2) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const tick = setInterval(() => {
+      if (document.hidden) return;
+      if (hoverRef.current || Date.now() - interactRef.current < AUTO_MS * 1.5) return;
+      const el = trackRef.current;
+      if (!el) return;
+      const i = Math.round(el.scrollLeft / el.clientWidth);
+      const next = (Math.max(0, Math.min(slides.length - 1, i)) + 1) % slides.length;
+      el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
+    }, AUTO_MS);
+    return () => clearInterval(tick);
+  }, [slides.length]);
+
+  const markInteract = () => {
+    interactRef.current = Date.now();
+  };
+
   return (
-    <div className="border-b border-foreground/10 px-3 py-2">
+    <div
+      className="border-b border-foreground/10 px-3 py-2"
+      onPointerEnter={() => {
+        hoverRef.current = true;
+      }}
+      onPointerLeave={() => {
+        hoverRef.current = false;
+      }}
+      onPointerDown={markInteract}
+      onTouchStart={markInteract}
+      onWheel={markInteract}
+    >
       <div className="mb-1 truncate text-center font-mono text-xs font-bold" title={slides[active]?.title}>
         {slides[active]?.title}
       </div>
