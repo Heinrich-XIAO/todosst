@@ -59,17 +59,38 @@ body {
   }
 }
 
-/* slip hold progress — the ✕ button fills with the opposite colour over the
-   long-press window (duration mirrors HOLD_MS in SlipControl.tsx) */
-@keyframes slip-fill {
+/* slip hold popup — a loupe-style pill floating above the finger: the control
+   itself is hidden under the thumb while holding, so progress fills the pill
+   instead. Width animates over the long-press window; duration mirrors
+   HOLD_MS in SlipControl.tsx. */
+@keyframes slip-pop-in {
   from {
-    transform: scaleX(0);
+    opacity: 0;
+    transform: translate(-50%, calc(-100% - 52px)) scale(0.85);
   }
   to {
-    transform: scaleX(1);
+    opacity: 1;
+    transform: translate(-50%, calc(-100% - 52px)) scale(1);
   }
 }
-.slip-fill {
-  transform: scaleX(0);
-  animation: slip-fill 500ms linear forwards;
+.slip-pop {
+  transform: translate(-50%, calc(-100% - 52px));
+  animation: slip-pop-in 120ms ease-out;
+}
+@keyframes slip-pop-fill {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+.slip-pop-fill {
+  width: 0;
+  animation: slip-pop-fill 500ms linear forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .slip-pop {
+    animation: none;
+  }
 }
