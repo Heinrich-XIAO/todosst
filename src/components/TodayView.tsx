@@ -221,7 +221,8 @@ export type PastYearSlide = {
 // + touch for free); the dots mirror and drive the active slide. Squares, not
 // circles — everything else on this surface is square. Autoscroll rotates the
 // slides but stands down while the user is engaged (hover, touch, or a recent
-// manual scroll) and under prefers-reduced-motion.
+// manual scroll); under prefers-reduced-motion it still rotates, just without
+// the smooth glide (instant jump instead).
 const AUTO_MS = 6000;
 
 function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: number }) {
@@ -249,7 +250,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
 
   useEffect(() => {
     if (slides.length < 2) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const tick = setInterval(() => {
       if (document.hidden) return;
       if (hoverRef.current || Date.now() - interactRef.current < AUTO_MS * 1.5) return;
@@ -257,7 +258,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
       if (!el) return;
       const i = Math.round(el.scrollLeft / el.clientWidth);
       const next = (Math.max(0, Math.min(slides.length - 1, i)) + 1) % slides.length;
-      el.scrollTo({ left: next * el.clientWidth, behavior: "smooth" });
+      el.scrollTo({ left: next * el.clientWidth, behavior: reduced ? "auto" : "smooth" });
     }, AUTO_MS);
     return () => clearInterval(tick);
   }, [slides.length]);
