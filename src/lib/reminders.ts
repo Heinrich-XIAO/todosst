@@ -29,6 +29,16 @@ export function normalizeCfg(cfg: ReminderCfg | null | undefined): { enabled: bo
   return { enabled: !!cfg?.enabled, offsetsMin };
 }
 
+/** Reminders default on: any task that has a due date or recurrence plan bakes
+ * in { enabled: true, offsetsMin: DEFAULT_OFFSETS_MIN } unless a reminder cfg
+ * already exists — an explicit off is respected. Used by creation flows and by
+ * the details panel when a due date/recurrence is added to an existing task. */
+export function withReminderDefault(meta: PlainNode["metadata"]): PlainNode["metadata"] {
+  if (meta.reminder) return meta;
+  if (!meta.dueAt && !meta.recur) return meta;
+  return { ...meta, reminder: { enabled: true, offsetsMin: DEFAULT_OFFSETS_MIN } };
+}
+
 /** Future remindAt timestamps (ms) for a node — [] if disabled/completed/no dueAt. */
 export function remindTimesFor(
   meta: PlainNode["metadata"],

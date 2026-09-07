@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
+import { withReminderDefault } from "@/lib/reminders";
 import {
   CompletionStyleField,
   DescriptionField,
@@ -72,7 +73,9 @@ export function TaskSheet({
   const [title, setTitle] = useState("");
   const [dirParts, setDirParts] = useState<string[]>(mode.kind === "create" ? mode.initialDirParts : []);
   const [dirOpen, setDirOpen] = useState(false);
-  const initialMetadata = mode.kind === "create" && mode.initialDueAt ? { dueAt: mode.initialDueAt } : {};
+  const initialMetadata = withReminderDefault(
+    mode.kind === "create" && mode.initialDueAt ? { dueAt: mode.initialDueAt } : {}
+  );
   const [metadata, setMetadata] = useState<PlainNode["metadata"]>(initialMetadata);
   const [busy, setBusy] = useState(false);
   // mirror of metadata for submit-time reads — blur commits can land in the
@@ -82,7 +85,7 @@ export function TaskSheet({
   const dirLabelRef = useRef<HTMLButtonElement>(null);
 
   const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
-    metaRef.current = { ...metaRef.current, ...patch };
+    metaRef.current = withReminderDefault({ ...metaRef.current, ...patch });
     setMetadata(metaRef.current);
   };
 

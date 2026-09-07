@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { TreeNode } from "@/lib/tree";
 import type { PlainNode } from "@/lib/crypto";
+import { withReminderDefault } from "@/lib/reminders";
 import {
   CompletionStyleField,
   DescriptionField,
@@ -58,7 +59,13 @@ export function MetadataPanel({
   }, []);
   if (!node) return null;
   const payloadLen = node._raw.ciphertext?.length ?? 0;
-  const onPatch = (patch: Partial<PlainNode["metadata"]>) => onUpdateMetadata(node._id, patch);
+  const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
+    // a patch that adds a due date or recurrence plan defaults remind on
+    // (withReminderDefault respects an existing cfg, incl. an explicit off);
+    // unrelated patches never touch reminder state
+    const merged = patch.dueAt || patch.recur ? withReminderDefault({ ...node.metadata, ...patch }) : patch;
+    onUpdateMetadata(node._id, merged);
+  };
   return (
     <div className="border-t border-foreground bg-background p-3 text-xs">
       <div className="flex items-center justify-between">

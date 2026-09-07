@@ -60,6 +60,7 @@ import {
   reminderKey,
   reminderOffsets,
   remindTimesFor,
+  withReminderDefault,
 } from "@/lib/reminders";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
 import { registerServiceWorker } from "@/lib/push";
@@ -1180,7 +1181,7 @@ function TodoTask() {
         // recurrence + structured metadata apply to the final segment of the path
         const isLast = segIdx === slashParts.length - 1;
         const metadata: PlainNode["metadata"] = isLast
-          ? { ...(outcome.metadata ?? {}), ...(outcome.recur ? { recur: outcome.recur } : {}) }
+          ? withReminderDefault({ ...(outcome.metadata ?? {}), ...(outcome.recur ? { recur: outcome.recur } : {}) })
           : {};
         const node = toPlainNode({ title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata });
         const { ciphertext, iv } = await cryptoEncNode(node);
@@ -1228,7 +1229,10 @@ function TodoTask() {
         isCompleted: false,
         parentId: targetParentId,
         order,
-        metadata: { ...(outcome.metadata ?? {}), ...(outcome.recur ? { recur: outcome.recur } : {}) },
+        metadata: withReminderDefault({
+          ...(outcome.metadata ?? {}),
+          ...(outcome.recur ? { recur: outcome.recur } : {}),
+        }),
       });
       const { ciphertext, iv } = await cryptoEncNode(node);
       const newId = await createTodo({ ciphertext, iv });
@@ -1411,7 +1415,11 @@ function TodoTask() {
       return;
     }
     try {
-      const created = await createChildNode(parentId, title, parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {});
+      const created = await createChildNode(
+        parentId,
+        title,
+        withReminderDefault(parsedRecur.ruleStr ? { recur: parsedRecur.ruleStr } : {})
+      );
       if (created === null) return; // duplicate — notice shown, keep the text
     } catch (err) {
       if (isNetworkError(err)) {
@@ -1450,7 +1458,7 @@ function TodoTask() {
     const recurToken = recurTokenFor(ruleStr);
     // offline raw: grammar input the replay path can re-create
     const metadata: PlainNode["metadata"] = online
-      ? draft.metadata
+      ? withReminderDefault(draft.metadata)
       : recurToken
         ? { recur: ruleStr! }
         : {};
