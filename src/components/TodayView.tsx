@@ -236,12 +236,15 @@ function holdDayLabel(windowDay: number): string {
 // needs no action, it drops out when the next window rolls.
 function HoldRow({
   item,
+  isTouch,
   onSlip,
   onUndoSlip,
   onConfirmHold,
   onSelect,
 }: {
   item: HoldItem;
+  /** touch-first device — the hold hint only makes sense where holding logs */
+  isTouch: boolean;
   onSlip: (node: TreeNode) => void;
   onUndoSlip: (node: TreeNode) => void;
   onConfirmHold: (node: TreeNode, windowDay: number) => void;
@@ -258,7 +261,7 @@ function HoldRow({
           <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
             {node.title}
           </button>
-          <span className="shrink-0 text-[10px] opacity-40">{slips > 0 ? slipWord : "hold to slip"}</span>
+          {isTouch && slips === 0 && <span className="shrink-0 text-[10px] opacity-40">hold to slip</span>}
         </div>
       </li>
     );
@@ -401,6 +404,7 @@ export function TodayView({
   slides = [],
   misses = 0,
   showHabitOffer = false,
+  isTouch = false,
   onCreateHabit,
   onDismissHabitOffer,
   onToggle,
@@ -422,6 +426,8 @@ export function TodayView({
   /** consecutive missed days entering today (tracked locally, per device) */
   misses?: number;
   showHabitOffer?: boolean;
+  /** touch-first device — gates the "hold to slip" hint to where holding logs */
+  isTouch?: boolean;
   onCreateHabit: () => void;
   onDismissHabitOffer: () => void;
   onToggle: (node: TreeNode) => Promise<void>;
@@ -497,10 +503,10 @@ export function TodayView({
       )}
       {holdRows.length > 0 && (
         <div>
-          <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">holds</div>
+          <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">battles</div>
           <ul>
             {holdRows.map((h) => (
-              <HoldRow key={`${h.node._id}:${h.kind}:${h.windowDay}`} item={h} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
+              <HoldRow key={`${h.node._id}:${h.kind}:${h.windowDay}`} item={h} isTouch={isTouch} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
             ))}
           </ul>
         </div>

@@ -2353,6 +2353,7 @@ function TodoTask() {
           slides={pastYearSlides}
           misses={ritualMisses}
           showHabitOffer={showHabitOffer}
+          isTouch={isTouch}
           onCreateHabit={() => void handleCreateHabit()}
           onDismissHabitOffer={handleDismissHabitOffer}
           onToggle={handleToggle}

@@ -58,3 +58,18 @@ body {
     animation: none;
   }
 }
+
+/* slip hold progress — the ✕ button fills with the opposite colour over the
+   long-press window (duration mirrors HOLD_MS in SlipControl.tsx) */
+@keyframes slip-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.slip-fill {
+  transform: scaleX(0);
+  animation: slip-fill 500ms linear forwards;
+}

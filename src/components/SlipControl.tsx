@@ -6,9 +6,10 @@ import { useRef, useState } from "react";
 // ✕ N slips for the current window; there is no "checked" state, a clean
 // window just reads ✕ 0. Logging a slip is an admission of failure, so it is
 // deliberately harder than a tap: mouse users click, touch users press and
-// hold (~500ms) — the box inverts while the press is armed. A plain touch tap
-// does nothing. The − step takes a slip back, undoable while the window is
-// open (slips are ordinary counts underneath).
+// hold (~500ms) — while the press is armed the box fills with the opposite
+// colour as a progress bar. A plain touch tap does nothing. The − step takes
+// a slip back, undoable while the window is open (slips are ordinary counts
+// underneath).
 
 const HOLD_MS = 500;
 
@@ -59,13 +60,8 @@ export function SlipControl({
   };
 
   return (
-    <div className={`flex h-[18px] w-16 shrink-0 items-stretch border border-foreground ${armed ? "bg-foreground" : ""}`}>
-      <button
-        onClick={onUndo}
-        disabled={slips <= 0}
-        className={`w-4 text-[10px] leading-none disabled:opacity-30 ${armed ? "text-background" : ""}`}
-        aria-label="take back a slip"
-      >
+    <div className="flex h-[18px] w-16 shrink-0 items-stretch border border-foreground">
+      <button onClick={onUndo} disabled={slips <= 0} className="w-4 text-[10px] leading-none disabled:opacity-30" aria-label="take back a slip">
         −
       </button>
       <button
@@ -75,13 +71,19 @@ export function SlipControl({
         onPointerCancel={clearTimer}
         onClick={onClick}
         onContextMenu={(e) => e.preventDefault()}
-        className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
-          armed ? "text-background" : slips > 0 ? "bg-foreground text-background" : "bg-background"
+        className={`relative flex flex-1 items-center justify-center overflow-hidden border-x border-foreground text-[10px] leading-none ${
+          slips > 0 ? "bg-foreground" : "bg-background"
         }`}
         aria-label={`log a slip (${slips} so far)`}
         title={slips > 0 ? "slips — press and hold (or click) to log another" : "clean — press and hold (or click) to log a slip"}
       >
-        ✕ {slips}
+        {armed && (
+          <span
+            aria-hidden
+            className={`slip-fill absolute inset-y-0 left-0 w-full origin-left ${slips > 0 ? "bg-background" : "bg-foreground"}`}
+          />
+        )}
+        <span className="relative text-white mix-blend-difference">✕ {slips}</span>
       </button>
     </div>
   );
