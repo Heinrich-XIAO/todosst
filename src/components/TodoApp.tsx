@@ -33,7 +33,7 @@ import {
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
-import { normalizeDueAt } from "@/lib/due";
+import { dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
 import { ReminderToast } from "./ReminderToast";
@@ -730,7 +730,7 @@ function TodoTask() {
       const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
       if (!dueAt || !meta.reminder?.enabled || isDone(n)) continue;
       for (const off of reminderOffsets(meta)) {
-        const at = dueAt - off * 60_000;
+        const at = dueInstant(dueAt, meta.dueTimeMin) - off * 60_000;
         if (at > now || at <= now - 5 * 60_000) continue;
         const k = reminderKey(n._id as string, at);
         if (shown.has(k)) continue;

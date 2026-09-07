@@ -34,3 +34,38 @@ export function normalizeDueAt(ts: number): number {
   const d = new Date(ts);
   return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()).getTime();
 }
+
+// A due date can carry a time of day, stored as minutes since LOCAL midnight
+// (metadata.dueTimeMin). Unset = date-only due: the due instant is midnight,
+// so "x minutes before" reminders land in the evening before (legacy behavior).
+
+/** Parse a time-input value ("HH:MM") as minutes since local midnight. */
+export function parseTimeInput(value: string): number | null {
+  const m = /^(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+/** Format minutes-since-local-midnight as a time-input value ("HH:MM"). */
+export function formatTimeInput(min: number): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(Math.floor(min / 60) % 24)}:${pad(min % 60)}`;
+}
+
+/** Default due time for a fresh date pick: now rounded up to the next full
+ * local hour, as minutes since local midnight (crossing midnight yields 0). */
+export function defaultDueTimeMin(now: number): number {
+  const d = new Date(now);
+  d.setMinutes(0, 0, 0);
+  d.setHours(d.getHours() + 1);
+  return d.getHours() * 60;
+}
+
+/** The due instant reminders count from: local midnight of the due day plus
+ * the optional time of day. Without a time it is midnight. */
+export function dueInstant(dueAt: number, dueTimeMin?: number): number {
+  return normalizeDueAt(dueAt) + (Number.isFinite(dueTimeMin) ? dueTimeMin! * 60_000 : 0);
+}

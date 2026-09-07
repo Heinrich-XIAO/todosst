@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
 import { withReminderDefault } from "@/lib/reminders";
+import { defaultDueTimeMin } from "@/lib/due";
 import {
   CompletionStyleField,
   DescriptionField,
@@ -74,7 +75,9 @@ export function TaskSheet({
   const [dirParts, setDirParts] = useState<string[]>(mode.kind === "create" ? mode.initialDirParts : []);
   const [dirOpen, setDirOpen] = useState(false);
   const initialMetadata = withReminderDefault(
-    mode.kind === "create" && mode.initialDueAt ? { dueAt: mode.initialDueAt } : {}
+    mode.kind === "create" && mode.initialDueAt
+      ? { dueAt: mode.initialDueAt, dueTimeMin: defaultDueTimeMin(nowTs) }
+      : {}
   );
   const [metadata, setMetadata] = useState<PlainNode["metadata"]>(initialMetadata);
   const [busy, setBusy] = useState(false);

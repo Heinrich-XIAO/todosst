@@ -3,7 +3,14 @@
 import { useState } from "react";
 import type { PlainNode } from "@/lib/crypto";
 import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, modeOf, stepOf, thresholdOf } from "@/lib/recur";
-import { formatDueInput, normalizeDueAt, parseDueInput } from "@/lib/due";
+import {
+  defaultDueTimeMin,
+  formatDueInput,
+  formatTimeInput,
+  normalizeDueAt,
+  parseDueInput,
+  parseTimeInput,
+} from "@/lib/due";
 import { DEFAULT_OFFSETS_MIN, normalizeCfg } from "@/lib/reminders";
 import { RruleEditor } from "./RruleEditor";
 import { Heatmap } from "./Heatmap";
@@ -243,7 +250,7 @@ export function parseTagsInput(raw: string): string[] {
 
 export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; onPatch: OnPatch }) {
   return (
-    <div className="flex gap-2">
+    <div className="flex flex-wrap gap-2">
       <label className="flex-1 block">
         <span className="opacity-60">priority</span>
         <select
@@ -266,13 +273,37 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
           type="date"
           value={metadata.dueAt ? formatDueInput(normalizeDueAt(metadata.dueAt)) : ""}
           onChange={(e) => {
-            // store local midnight of the picked day (UTC-midnight parses
-            // render a day early west of UTC)
-            onPatch({ dueAt: e.target.value ? parseDueInput(e.target.value) : null });
+            // clearing wipes the time of day with the date; a freshly added
+            // due date defaults the time to the next full hour, while edits
+            // to an existing date keep its time as-is
+            if (!e.target.value) {
+              onPatch({ dueAt: null, dueTimeMin: undefined });
+              return;
+            }
+            const ts = parseDueInput(e.target.value);
+            if (ts === null) return;
+            onPatch({
+              dueAt: ts,
+              dueTimeMin: metadata.dueAt ? metadata.dueTimeMin : defaultDueTimeMin(Date.now()),
+            });
           }}
           className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
         />
       </label>
+      {metadata.dueAt ? (
+        <label className="flex-1 block">
+          <span className="opacity-60">at</span>
+          <input
+            type="time"
+            value={metadata.dueTimeMin !== undefined ? formatTimeInput(metadata.dueTimeMin) : ""}
+            onChange={(e) => {
+              const min = e.target.value ? parseTimeInput(e.target.value) : null;
+              onPatch({ dueTimeMin: min ?? undefined });
+            }}
+            className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+          />
+        </label>
+      ) : null}
     </div>
   );
 }
@@ -309,6 +340,11 @@ export function RemindersField({ metadata, onPatch }: { metadata: Metadata; onPa
           ))}
           {cfg.offsetsMin.length === 0 ? <span className="text-[10px] opacity-40">no offsets selected</span> : null}
         </div>
+      ) : null}
+      {cfg.enabled && metadata.dueTimeMin === undefined ? (
+        <p className="mt-1 text-[10px] opacity-40 leading-tight">
+          no time set — offsets count from midnight, i.e. the evening before
+        </p>
       ) : null}
     </div>
   );

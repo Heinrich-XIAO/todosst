@@ -174,6 +174,10 @@ export type PlainNode = {
     // local midnight of the due day (see src/lib/due.ts) — legacy rows may
     // hold UTC midnight; normalizeDueAt migrates them on read
     dueAt?: number | null;
+    // time of day for the due date, minutes since local midnight — unset =
+    // date-only due (midnight), so "x minutes before" lands the evening
+    // before (see dueInstant in src/lib/due.ts)
+    dueTimeMin?: number;
     // reminders (see src/lib/reminders.ts) — only the derived remindAt
     // timestamps are mirrored to the server in plaintext; titles stay here
     reminder?: {
