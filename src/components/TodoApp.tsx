@@ -1078,16 +1078,22 @@ function TodoTask() {
     [nodes, tree, recurStates, nowTs]
   );
 
-  // ---- past-year carousel (today tab): one heatmap per task, "all" first ----
+  // ---- past-year carousel (today tab): one heatmap per task, aggregates first ----
   // history records are authoritative; current-window counts from metadata /
   // recur state top them up in case history is still loading or a write behind
   const pastYearSlides = useMemo(() => {
     type Slide = PastYearSlide & { latest: number };
     const per: Slide[] = [];
-    const all = new Map<number, number>();
+    // good and bad never mix: "all tasks" sums completions, "all battles"
+    // sums slips — a blended average would read as progress either way
+    const good = new Map<number, number>();
+    const bad = new Map<number, number>();
+    let goodCount = 0;
+    let badCount = 0;
     for (const n of nodes ?? []) {
       const id = n._id as string;
       const meta = n.metadata as PlainNode["metadata"];
+      const negative = isNegative(meta);
       const m = new Map(history?.byTodo.get(id) ?? []);
       for (const [day, c] of Object.entries(meta.counts ?? {})) {
         if (typeof c === "number" && c > (m.get(Number(day)) ?? 0)) m.set(Number(day), c);
@@ -1096,16 +1102,22 @@ function TodoTask() {
       if (rs?.isRecurring && rs.count > (m.get(rs.windowDay) ?? 0)) m.set(rs.windowDay, rs.count);
       if (m.size === 0) continue;
       let latest = 0;
+      const agg = negative ? bad : good;
       for (const [day, c] of m) {
         if (c <= 0) continue;
-        all.set(day, (all.get(day) ?? 0) + c);
+        agg.set(day, (agg.get(day) ?? 0) + c);
         if (day > latest) latest = day;
       }
-      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest, negative: isNegative(meta) });
+      if (negative) badCount += 1;
+      else goodCount += 1;
+      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest, negative });
     }
-    // most recently active task first; the aggregate slide always leads
+    // most recently active task first; aggregate slides always lead
     per.sort((a, b) => b.latest - a.latest || a.title.localeCompare(b.title));
-    if (all.size > 0 && per.length > 1) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: all, latest: 0 });
+    // an aggregate earns a slide only when it merges more than one task —
+    // otherwise it would just duplicate that task's own heatmap
+    if (badCount > 1 && bad.size > 0) per.unshift({ id: "all-bad", title: "all battles", mode: "check", counts: bad, latest: 0, negative: true });
+    if (goodCount > 1 && good.size > 0) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: good, latest: 0 });
     return per;
   }, [nodes, history, recurStates]);
 
