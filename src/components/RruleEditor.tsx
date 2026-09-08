@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Options, RRule as RRuleType } from "rrule";
 import { normalizeRruleString } from "@/lib/recur";
 import { MONTHS } from "@/lib/months";
@@ -175,12 +175,12 @@ export function RruleEditor({
   ruleStr,
   anchorTs,
   onApply,
-  onCancel,
+  onDone,
 }: {
   ruleStr: string | undefined;
   anchorTs: number;
   onApply: (ruleStr: string | null) => void;
-  onCancel: () => void;
+  onDone: () => void;
 }) {
   const [mod, setMod] = useState<RRuleModule | null>(null);
   const [tab, setTab] = useState<"build" | "text">("build");
@@ -188,16 +188,26 @@ export function RruleEditor({
   const [text, setText] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // untouched initial editor state — auto-save only fires after a real edit,
+  // so opening the editor never bakes a default rule into a one-off task
+  const [snap, setSnap] = useState<{ g: GState; text: string } | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef<string | null>(null);
+  const latestRef = useRef({ ruleStr, onApply, g, text });
+  useEffect(() => {
+    latestRef.current = { ruleStr, onApply, g, text };
+  });
 
   // load module + existing rule into both editors
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let clean = "";
       try {
         const m = await import("rrule");
         if (cancelled) return;
         setMod(m);
-        const clean = ruleStr ? normalizeRruleString(ruleStr) : "";
+        clean = ruleStr ? normalizeRruleString(ruleStr) : "";
         setText(clean);
         if (!clean) {
           setG(emptyG(anchorTs));
@@ -221,7 +231,7 @@ export function RruleEditor({
         // the anchored parse masks a DTSTART line in the string (option wins) — parse it separately
         const parsedDs = dtstartOf(clean);
         const ds = parsedDs ?? o.dtstart;
-        setG({
+        const nextG: GState = {
           freq: o.freq,
           interval: o.interval,
           dtstart: `${ds.getFullYear()}-${pad(ds.getMonth() + 1)}-${pad(ds.getDate())}`,
@@ -239,14 +249,19 @@ export function RruleEditor({
           byhour: listToState(o.byhour),
           byminute: listToState(o.byminute),
           bysecond: listToState(o.bysecond),
-        });
+        };
+        setG(nextG);
+        setSnap({ g: nextG, text: clean });
       } catch (e) {
         if (!cancelled) {
           setError(`could not parse existing rule — edit as text${e instanceof Error ? `: ${e.message}` : ""}`);
           setTab("text");
         }
       } finally {
-        if (!cancelled) setLoaded(true);
+        if (!cancelled) {
+          setSnap((s) => s ?? { g: emptyG(anchorTs), text: clean });
+          setLoaded(true);
+        }
       }
     })();
     return () => {
@@ -293,22 +308,67 @@ export function RruleEditor({
     }
   }, [mod, text, tab, anchorTs]);
 
-  function apply() {
-    if (tab === "text") {
-      const clean = normalizeRruleString(text);
-      if (!clean) return;
-      if (!textValid) {
-        setError("invalid RRULE text — fix errors before applying");
-        return;
+  // auto-save: the active tab's valid rule patches the task ~500ms after the
+  // last edit — no apply button. A patch re-renders with the stored string as
+  // ruleStr, so equality here prevents the effect from ever re-triggering.
+  const dirty =
+    loaded &&
+    snap != null &&
+    (JSON.stringify(g) !== JSON.stringify(snap.g) || text !== snap.text);
+  const activeRule = tab === "text" ? textValid : built?.rule ? normalizeRruleString(built.rule.toString()) : null;
+
+  const markClean = useCallback(() => {
+    setSnap({ g: latestRef.current.g, text: latestRef.current.text });
+  }, []);
+
+  useEffect(() => {
+    if (!loaded || !dirty || activeRule == null || activeRule === ruleStr) {
+      pendingRef.current = null;
+      return;
+    }
+    pendingRef.current = activeRule;
+    const t = setTimeout(() => {
+      pendingRef.current = null;
+      markClean();
+      latestRef.current.onApply(activeRule);
+    }, 500);
+    timerRef.current = t;
+    return () => {
+      clearTimeout(t);
+      timerRef.current = null;
+    };
+  }, [loaded, dirty, activeRule, ruleStr, markClean]);
+
+  // a patch still pending when the editor unmounts (panel closed mid-debounce) flushes here
+  useEffect(() => {
+    return () => {
+      const pending = pendingRef.current;
+      if (pending != null && pending !== latestRef.current.ruleStr) {
+        latestRef.current.onApply(pending);
       }
-      onApply(clean);
-      return;
+    };
+  }, []);
+
+  /** explicit removal — cancels any pending auto-save so it cannot resurrect the rule */
+  function remove() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = null;
+    pendingRef.current = null;
+    markClean();
+    onApply(null);
+  }
+
+  /** close: flush a pending auto-save immediately so nothing is lost */
+  function done() {
+    const pending = pendingRef.current;
+    if (pending != null && pending !== ruleStr) {
+      pendingRef.current = null;
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = null;
+      markClean();
+      onApply(pending);
     }
-    if (!built?.rule) {
-      setError(built?.error ?? "incomplete rule");
-      return;
-    }
-    onApply(normalizeRruleString(built.rule.toString()));
+    onDone();
   }
 
   const inputCls = "w-full border border-foreground/20 bg-transparent p-1 text-xs focus:outline-none";
@@ -544,16 +604,13 @@ export function RruleEditor({
       )}
 
       <div className="flex items-center gap-2 text-xs">
-        <button type="button" onClick={apply} className="border border-foreground bg-foreground px-3 py-1 text-background hover:opacity-90">
-          apply
-        </button>
         {ruleStr ? (
-          <button type="button" onClick={() => onApply(null)} className="border border-foreground/20 px-3 py-1 opacity-60 hover:opacity-100">
+          <button type="button" onClick={remove} className="border border-foreground/20 px-3 py-1 opacity-60 hover:opacity-100">
             remove recurrence
           </button>
         ) : null}
-        <button type="button" onClick={onCancel} className="ml-auto opacity-60 hover:opacity-100">
-          cancel
+        <button type="button" onClick={done} className="ml-auto opacity-60 hover:opacity-100">
+          done
         </button>
       </div>
     </div>

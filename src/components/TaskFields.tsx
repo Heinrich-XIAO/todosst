@@ -52,11 +52,8 @@ export function RecurrenceField({
           <RruleEditor
             ruleStr={metadata.recur}
             anchorTs={anchorTs}
-            onApply={(s) => {
-              onPatch({ recur: s ?? undefined });
-              setShowRuleEditor(false);
-            }}
-            onCancel={() => setShowRuleEditor(false)}
+            onApply={(s) => onPatch({ recur: s ?? undefined })}
+            onDone={() => setShowRuleEditor(false)}
           />
         </div>
       )}
