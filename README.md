@@ -45,7 +45,7 @@ Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc
 
 The **today** view is the daily surface: recurring tasks with an open window plus anything due today or earlier. Reaching **all clear** is the ritual's completion, and it does three things — all tracked locally per device, the server never learns whether you opened the app:
 
-- it records the day, so the header can escalate after two consecutive missed days ("missed twice — today is the one that matters"). Misses are free; pairs aren't.
+- it records the day, so the header can escalate after two consecutive missed days ("missed twice — today is the one that matters", naming the task when it's the only one left open). Misses are free; pairs aren't.
 - on the first visit it offers to create `open todosst ~daily` — an auto-habit that checks itself on every all clear, so its past-year heatmap becomes your streak, fed as a side effect of the ritual rather than as another box.
 
 ## Stack

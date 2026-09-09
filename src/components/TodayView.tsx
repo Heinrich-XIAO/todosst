@@ -480,7 +480,9 @@ export function TodayView({
 }) {
   const dateLabel = new Date(nowTs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const open = openCountOf(items ?? []);
-  const escalate = missCopy(misses);
+  // with a single open row, the ritual's "one that matters" is that task, named
+  const onlyOpen = open === 1 ? (items ?? []).find(rowIsOpen) ?? null : null;
+  const escalate = missCopy(misses, onlyOpen?.node.title ?? null);
 
   if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
 
@@ -495,7 +497,10 @@ export function TodayView({
         <span className="opacity-60">{open === 0 ? "all clear" : `${open} left`}</span>
       </div>
       {open > 0 && escalate && (
-        <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px]">{escalate}</div>
+        <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px]">
+          {escalate.head} {escalate.task ? <span className="font-mono">{escalate.task}</span> : "today"} is the one
+          that matters
+        </div>
       )}
       {showHabitOffer && (
         <div className="border-b border-foreground/10 px-3 py-2 text-xs">
