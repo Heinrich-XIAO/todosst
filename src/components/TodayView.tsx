@@ -137,6 +137,7 @@ export function buildTodayItems(
 function TodayRow({
   item,
   map,
+  missNote,
   onToggle,
   onCountUp,
   onCountDown,
@@ -145,6 +146,8 @@ function TodayRow({
 }: {
   item: TodayItem;
   map: Map<string, TreeNode>;
+  /** missed-days escalation, grey on the right — open rows only */
+  missNote?: string | null;
   onToggle: (node: TreeNode) => Promise<void>;
   onCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
@@ -206,6 +209,11 @@ function TodayRow({
           >
             {ancestors.map((a) => a.title).join("/")}
           </button>
+        )}
+        {missNote && (
+          <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={missNote}>
+            {missNote}
+          </span>
         )}
       </div>
     </li>
@@ -481,9 +489,7 @@ export function TodayView({
 }) {
   const dateLabel = new Date(nowTs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const open = openCountOf(items ?? []);
-  // with a single open row, the ritual's "one that matters" is that task, named
-  const onlyOpen = open === 1 ? (items ?? []).find(rowIsOpen) ?? null : null;
-  const escalate = missCopy(misses, onlyOpen?.node.title ?? null);
+  const escalate = missCopy(misses);
 
   if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
 
@@ -497,12 +503,6 @@ export function TodayView({
         <span className="font-mono">{dateLabel}</span>
         <span className="opacity-60">{open === 0 ? "all clear" : `${open} left`}</span>
       </div>
-      {open > 0 && escalate && (
-        <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px]">
-          {escalate.head} {escalate.task ? <span className="font-mono">{escalate.task}</span> : "today"} is the one
-          that matters
-        </div>
-      )}
       {showHabitOffer && (
         <div className="border-b border-foreground/10 px-3 py-2 text-xs">
           <p className="opacity-80">
@@ -539,7 +539,17 @@ export function TodayView({
               {g !== 1 && <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">{GROUP_LABELS[g]}</div>}
               <ul>
                 {rows.map((i) => (
-                  <TodayRow key={i.node._id} item={i} map={map} onToggle={onToggle} onCountUp={onCountUp} onCountDown={onCountDown} onSelect={onSelect} onJump={onJump} />
+                  <TodayRow
+                    key={i.node._id}
+                    item={i}
+                    map={map}
+                    missNote={escalate && rowIsOpen(i) ? escalate : null}
+                    onToggle={onToggle}
+                    onCountUp={onCountUp}
+                    onCountDown={onCountDown}
+                    onSelect={onSelect}
+                    onJump={onJump}
+                  />
                 ))}
               </ul>
             </div>
