@@ -31,6 +31,27 @@ function levelForMinutes(min: number): number {
 
 const DOW_LABELS: Record<number, string> = { 1: "mon", 3: "wed", 5: "fri" };
 
+function cellTooltip(
+  cell: { idx: number; count: number; future: boolean },
+  mode: CompletionMode,
+  negative: boolean,
+): string | null {
+  if (cell.future) return null;
+  const date = new Date(dayIndexToStart(cell.idx)).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+  if (negative) {
+    return cell.count > 0
+      ? `${cell.count} slip${cell.count === 1 ? "" : "s"} — ${date}`
+      : `clean — ${date}`;
+  }
+  if (cell.count <= 0) return `0 — ${date}`;
+  const amount = mode === "time" ? formatMinutes(cell.count) : `${cell.count}`;
+  return `${amount} — ${date}`;
+}
+
 export function Heatmap({
   counts,
   nowTs,
@@ -48,6 +69,9 @@ export function Heatmap({
 }) {
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const [gridWidth, setGridWidth] = useState<number | null>(null);
+  // hovered (desktop) or tapped (mobile) cell — tooltip position comes free
+  // from the column/row indices since cells sit on a fixed 12px grid
+  const [tip, setTip] = useState<{ c: number; r: number; text: string; below: boolean } | null>(null);
 
   // measure the space the grid actually gets; ResizeObserver keeps it current
   // across viewport changes and carousel slide widths
@@ -126,24 +150,55 @@ export function Heatmap({
               </span>
             ))}
           </div>
-          <div className="flex gap-[2px]">
+          <div
+            className="relative flex gap-[2px]"
+            // tapping anywhere else on the grid dismisses a tap-open tooltip
+            onPointerDown={() => setTip(null)}
+          >
             {grid.cols.map((col, c) => (
               <div key={c} className="flex flex-col gap-[2px]">
-                {col.map((cell) => (
-                  <span
-                    key={cell.idx}
-                    title={
-                      cell.future
-                        ? undefined
-                        : negative
-                          ? `${cell.count > 0 ? `${cell.count} slip${cell.count === 1 ? "" : "s"} on ` : `clean on `}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
-                          : `${cell.count > 0 ? `${mode === "time" ? formatMinutes(cell.count) : cell.count} on ` : ""}${new Date(dayIndexToStart(cell.idx)).toLocaleDateString()}`
-                    }
-                    className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
-                  />
-                ))}
+                {col.map((cell, r) => {
+                  const text = cellTooltip(cell, mode, negative);
+                  return (
+                    <span
+                      key={cell.idx}
+                      aria-label={text ?? undefined}
+                      onPointerEnter={(e) => {
+                        // touch fires a pointerenter before the tap's pointerdown;
+                        // guard so the dismiss above doesn't kill the tooltip
+                        if (e.pointerType !== "touch") {
+                          setTip(text ? { c, r, text, below: r < 2 } : null);
+                        }
+                      }}
+                      onPointerLeave={(e) => {
+                        if (e.pointerType !== "touch") setTip(null);
+                      }}
+                      onPointerUp={(e) => {
+                        // tap on mobile (and click on desktop) toggles the tooltip
+                        if (e.pointerType === "touch" && text) {
+                          setTip((t) => (t?.c === c && t?.r === r ? null : { c, r, text, below: r < 2 }));
+                        }
+                      }}
+                      className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
+                    />
+                  );
+                })}
               </div>
             ))}
+            {tip && (
+              <span
+                className={`pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 text-[10px] leading-4 text-background shadow-md ${tip.below ? "translate-y-0" : "-translate-y-full"}`}
+                // centered on the cell, above it by default (below for the top
+                // rows so it doesn't clip past the scroll container's top)
+                // and shifted inward near the grid edges
+                style={{
+                  left: Math.max(tip.c * 12 + 10, Math.min(tip.c * 12 + 5, (grid.cols.length - 1) * 12 + 5)),
+                  top: tip.below ? tip.r * 12 + 14 : tip.r * 12 - 4,
+                }}
+              >
+                {tip.text}
+              </span>
+            )}
           </div>
         </div>
       </div>
