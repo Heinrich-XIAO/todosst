@@ -460,7 +460,8 @@ export function TodayView({
   holds?: HoldItem[] | null;
   nowTs: number;
   map: Map<string, TreeNode>;
-  /** past-year heatmap carousel: "all tasks" + one slide per task with history */
+  /** past-year heatmap carousel: "all tasks" + one slide per repeating task
+   * with history — plain tasks never get a slide */
   slides?: PastYearSlide[];
   /** consecutive missed days entering today (tracked locally, per device) */
   misses?: number;

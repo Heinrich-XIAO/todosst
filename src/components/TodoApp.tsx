@@ -1078,7 +1078,7 @@ function TodoTask() {
     [nodes, tree, recurStates, nowTs]
   );
 
-  // ---- past-year carousel (today tab): one heatmap per task, aggregates first ----
+  // ---- past-year carousel (today tab): one heatmap per repeating task ----
   // history records are authoritative; current-window counts from metadata /
   // recur state top them up in case history is still loading or a write behind
   const pastYearSlides = useMemo(() => {
@@ -1094,12 +1094,15 @@ function TodoTask() {
       const id = n._id as string;
       const meta = n.metadata as PlainNode["metadata"];
       const negative = isNegative(meta);
+      // the carousel is a recurring-task ritual — plain tasks never earn a
+      // slide, even if stale history from an old rule lingers
+      const rs = recurStates?.get(id);
+      if (!rs?.isRecurring) continue;
       const m = new Map(history?.byTodo.get(id) ?? []);
       for (const [day, c] of Object.entries(meta.counts ?? {})) {
         if (typeof c === "number" && c > (m.get(Number(day)) ?? 0)) m.set(Number(day), c);
       }
-      const rs = recurStates?.get(id);
-      if (rs?.isRecurring && rs.count > (m.get(rs.windowDay) ?? 0)) m.set(rs.windowDay, rs.count);
+      if (rs.count > (m.get(rs.windowDay) ?? 0)) m.set(rs.windowDay, rs.count);
       if (m.size === 0) continue;
       let latest = 0;
       const agg = negative ? bad : good;
