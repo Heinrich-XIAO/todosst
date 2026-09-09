@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { dayIndexLocal, dayIndexToStart, formatMinutes, type CompletionMode } from "@/lib/recur";
 import { MONTHS } from "@/lib/months";
 
@@ -72,6 +72,13 @@ export function Heatmap({
   // hovered (desktop) or tapped (mobile) cell — tooltip position comes free
   // from the column/row indices since cells sit on a fixed 12px grid
   const [tip, setTip] = useState<{ c: number; r: number; text: string; below: boolean } | null>(null);
+  // measured tooltip width — clamps the pill inside the grid so it never
+  // clips past the scroll container's right edge (as whitespace-nowrap would)
+  const tipRef = useRef<HTMLSpanElement>(null);
+  const [tipW, setTipW] = useState(0);
+  useLayoutEffect(() => {
+    setTipW(tipRef.current?.offsetWidth ?? 0);
+  }, [tip]);
 
   // measure the space the grid actually gets; ResizeObserver keeps it current
   // across viewport changes and carousel slide widths
@@ -187,12 +194,17 @@ export function Heatmap({
             ))}
             {tip && (
               <span
+                ref={tipRef}
                 className={`pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 text-[10px] leading-4 text-background shadow-md ${tip.below ? "translate-y-0" : "-translate-y-full"}`}
                 // centered on the cell, above it by default (below for the top
-                // rows so it doesn't clip past the scroll container's top)
-                // and shifted inward near the grid edges
+                // rows so it doesn't clip past the scroll container's top).
+                // tipW clamps the pill fully inside the grid once measured —
+                // before that it just centers and may briefly overflow
                 style={{
-                  left: Math.max(tip.c * 12 + 10, Math.min(tip.c * 12 + 5, (grid.cols.length - 1) * 12 + 5)),
+                  left: Math.min(
+                    Math.max(tip.c * 12 + 5, tipW / 2),
+                    Math.max(tip.c * 12 + 5, gridWidth ?? 0) - tipW / 2,
+                  ),
                   top: tip.below ? tip.r * 12 + 14 : tip.r * 12 - 4,
                 }}
               >
