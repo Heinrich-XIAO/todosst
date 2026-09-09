@@ -224,6 +224,23 @@ test("buildHoldItems: a confirmed window stops prompting", async () => {
   expect(rows!.every((r: HoldItem) => r.kind !== "confirm")).toBe(true);
 });
 
+test("buildHoldItems: a sealed failed window stops showing", async () => {
+  const now = new Date().setHours(13, 0, 0, 0);
+  const anchor = now - 3 * DAY;
+  const today = dayIndexLocal(now);
+  const n = makeNode("a", anchor, meta({ neg: true, recur: DAILY, holds: { [String(today - 1)]: 1 } }));
+  const rs = await recurState(n.metadata, anchor, now);
+  const rows = buildHoldItems({
+    nodes: [n],
+    tree: treeWith([n]),
+    recurStates: new Map([["a", rs]]),
+    priorWindows: new Map([["a", today - 1]]),
+    counts: new Map([["a", new Map([[today - 1, 2]])]]), // over tolerance
+    nowTs: now,
+  });
+  expect(rows!.every((r: HoldItem) => r.kind !== "failed")).toBe(true);
+});
+
 test("buildHoldItems: slips come from counts or history, whichever is higher", async () => {
   const now = new Date().setHours(13, 0, 0, 0);
   const anchor = now - 3 * DAY;

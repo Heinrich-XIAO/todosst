@@ -5,11 +5,12 @@
 // end it is HELD when the slip count stayed within tolerance (metadata.tol,
 // default 0), FAILED otherwise. Slips reuse the counts storage (day-index →
 // count, same codec as tallies/time), so history and heatmap come free.
-// metadata.holds records manual "held" confirmations per window day: the user
-// confirms at window end (a prompt row in the today view), which stops the
-// asking; unconfirmed clean windows resolve silently once a newer window
-// rolls in (or after HOLD_GRACE_DAYS, whichever comes first — for daily and
-// weekly rules the next window always wins).
+// metadata.holds records manual per-window confirmations: the user confirms a
+// clean window as "held" (a prompt row in the today view), which stops the
+// asking; a failed window can be sealed the same way, freezing its record.
+// Unconfirmed ended windows resolve silently once a newer window rolls in (or
+// after HOLD_GRACE_DAYS, whichever comes first — for daily and weekly rules
+// the next window always wins).
 //
 // The only plaintext mirror beyond the ciphertext is the check-in reminder
 // timestamp (window end) synced like any other reminder — the server learns
@@ -52,7 +53,9 @@ export function windowOutcome(slips: number, tol: number): WindowOutcome {
   return slips <= tol ? "held" : "failed";
 }
 
-/** Confirmation timestamp of a window's manual hold, if confirmed. */
+/** Confirmation timestamp of a window's manual record — a "held" confirm for
+ * a clean window or a "seal" for a failed one; either way it closes the
+ * window for good. */
 export function holdOf(meta: Metadata, windowDay: number): number | undefined {
   const h = meta.holds?.[String(windowDay)];
   return typeof h === "number" && Number.isFinite(h) ? h : undefined;
@@ -86,7 +89,8 @@ export type HoldItem = {
   node: TreeNode;
   /** open = current window, still accepting slips; confirm = past window that
    * ended clean and awaits the user's held-confirm; failed = past window over
-   * tolerance (needs no confirmation — it drops when the next window rolls) */
+   * tolerance (no prompt needed — it drops when the next window rolls, but it
+   * can be sealed to freeze the record early) */
   kind: "open" | "confirm" | "failed";
   /** day index of the window this row is about */
   windowDay: number;
@@ -131,12 +135,14 @@ export function buildHoldItems(args: {
       return Math.max(0, c);
     };
     const endedRow = (windowDay: number): void => {
+      // a manual record (held confirm or failure seal) closes the window —
+      // it never prompts or accepts edits again
+      if (holdOf(meta, windowDay) !== undefined) return;
       const slips = slipsOf(windowDay);
       if (windowOutcome(slips, tol) === "failed") {
         rows.push({ node: tn, kind: "failed", windowDay, slips, tol });
         return;
       }
-      if (holdOf(meta, windowDay) !== undefined) return;
       if (args.nowTs >= dayIndexToStart(windowDay) + DAY_MS + HOLD_GRACE_DAYS * DAY_MS) return;
       rows.push({ node: tn, kind: "confirm", windowDay, slips, tol });
     };

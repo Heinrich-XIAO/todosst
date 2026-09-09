@@ -232,8 +232,10 @@ function holdDayLabel(windowDay: number): string {
 }
 
 // One holds-section row. Open windows carry the slip control; ended windows
-// either ask for the held-confirm (clean) or state the failure — a failure
-// needs no action, it drops out when the next window rolls.
+// either ask for the held-confirm (clean) or offer the seal (failed) — both
+// freeze the record for good. "slipped?" opens a stepper that corrects the
+// record until then — past-tolerance confirm rows flip to failed on their own,
+// and undoing a failure back within tolerance flips them back to confirm.
 function HoldRow({
   item,
   isTouch,
@@ -245,14 +247,43 @@ function HoldRow({
   item: HoldItem;
   /** touch-first device — the hold hint only makes sense where holding logs */
   isTouch: boolean;
-  onSlip: (node: TreeNode) => void;
-  onUndoSlip: (node: TreeNode) => void;
+  onSlip: (node: TreeNode, targetDay?: number) => void;
+  onUndoSlip: (node: TreeNode, targetDay?: number) => void;
   onConfirmHold: (node: TreeNode, windowDay: number) => void;
   onSelect: (node: TreeNode) => void;
 }) {
   const { node, kind, windowDay, slips, tol } = item;
   const day = holdDayLabel(windowDay);
   const slipWord = slips === 1 ? "1 slip" : `${slips} slips`;
+  const [correcting, setCorrecting] = useState(false);
+  const corrector = correcting ? (
+    <span className="flex h-[18px] shrink-0 items-stretch border border-foreground text-[10px] leading-none">
+      <button
+        onClick={() => onUndoSlip(node, windowDay)}
+        disabled={slips <= 0}
+        className="w-4 disabled:opacity-30"
+        aria-label="take back a slip"
+      >
+        −
+      </button>
+      <span className={`flex w-6 items-center justify-center border-l border-foreground ${slips > 0 ? "bg-foreground text-background" : ""}`}>✕ {slips}</span>
+      <button
+        onClick={() => onSlip(node, windowDay)}
+        className="w-4 border-l border-foreground"
+        aria-label="log a slip"
+      >
+        +
+      </button>
+    </span>
+  ) : (
+    <button
+      onClick={() => setCorrecting(true)}
+      className="shrink-0 text-[10px] underline underline-offset-4 opacity-60 hover:opacity-100"
+      aria-label={`log slips for ${node.title}`}
+    >
+      slipped?
+    </button>
+  );
   if (kind === "open") {
     return (
       <li className="border-b border-foreground/10 last:border-b-0">
@@ -280,7 +311,10 @@ function HoldRow({
           <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
             {node.title}
           </button>
-          <span className="shrink-0 text-[10px] opacity-40">{day} — clean, confirm</span>
+          {corrector}
+          <span className="shrink-0 text-[10px] opacity-40">
+            {day} — {slips === 0 ? "clean, confirm" : `${slipWord}, confirm`}
+          </span>
         </div>
       </li>
     );
@@ -288,12 +322,17 @@ function HoldRow({
   return (
     <li className="border-b border-foreground/10 last:border-b-0">
       <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-60">
-        <span className="flex h-[18px] w-16 shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[10px] leading-none text-background">
-          ✕ failed
-        </span>
+        <button
+          onClick={() => onConfirmHold(node, windowDay)}
+          className="flex h-[18px] w-16 shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[10px] leading-none text-background hover:border-foreground"
+          aria-label={`seal ${node.title} failed`}
+        >
+          ✕ seal?
+        </button>
         <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
           {node.title}
         </button>
+        {corrector}
         <span className="shrink-0 text-[10px] opacity-60">
           {day} — {slipWord}
           {tol > 0 ? ` (tolerated ${tol})` : ""}
@@ -435,8 +474,8 @@ export function TodayView({
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
   onSelect: (node: TreeNode) => void;
   onJump: (parts: string[]) => void;
-  onSlip: (node: TreeNode) => void;
-  onUndoSlip: (node: TreeNode) => void;
+  onSlip: (node: TreeNode, targetDay?: number) => void;
+  onUndoSlip: (node: TreeNode, targetDay?: number) => void;
   onConfirmHold: (node: TreeNode, windowDay: number) => void;
 }) {
   const dateLabel = new Date(nowTs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
@@ -506,7 +545,7 @@ export function TodayView({
           <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">battles</div>
           <ul>
             {holdRows.map((h) => (
-              <HoldRow key={`${h.node._id}:${h.kind}:${h.windowDay}`} item={h} isTouch={isTouch} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
+              <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} isTouch={isTouch} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
             ))}
           </ul>
         </div>

@@ -35,7 +35,7 @@ import {
   thresholdOf,
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
-import { parseNegInput, buildHoldItems, holdOf, isNegative, toleranceOf, withHold, type HoldItem } from "@/lib/negative";
+import { parseNegInput, buildHoldItems, holdOf, isNegative, toleranceOf, windowOutcome, withHold, type HoldItem } from "@/lib/negative";
 import { dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
@@ -1145,8 +1145,9 @@ function TodoTask() {
     [nodes, tree, recurStates, priorWindows, negCounts, nowTs]
   );
 
-  // manual "held" confirm for a negative task's ended window — records the
-  // confirmation in the encrypted metadata and celebrates with a toast
+  // manual record for a negative task's ended window — "held" for a clean
+  // window, "seal" for a failed one; either writes the confirmation into the
+  // encrypted metadata (closing the window for good) and celebrates with a toast
   async function handleConfirmHold(node: TreeNode, windowDay: number) {
     if (!key) return;
     const meta = node.metadata as PlainNode["metadata"];
@@ -1160,10 +1161,14 @@ function TodoTask() {
       month: "short",
       day: "numeric",
     });
+    const slipWord = slips === 1 ? "1 slip" : `${slips} slips`;
+    const held = windowOutcome(slips, tol) === "held";
     setRemindToast({
-      title: "held",
+      title: held ? "held" : "sealed",
       lines: [
-        `${node.title} — ${day} held ✓ (${slips === 0 ? "0 slips" : `${slips} slip${slips === 1 ? "" : "s"}, within tolerance of ${tol}`})`,
+        held
+          ? `${node.title} — ${day} held ✓ (${slips === 0 ? "0 slips" : `${slipWord}, within tolerance of ${tol}`})`
+          : `${node.title} — ${day} sealed ✗ (${slipWord}, over tolerance of ${tol})`,
       ],
     });
   }
@@ -1749,14 +1754,24 @@ function TodoTask() {
     await pushHistory(node._id as string, targetDay, nextCount);
   }
 
-  async function handleCountUp(node: TreeNode, delta = 1) {
+  // targetDay credits a specific (past) window — the slipped? stepper on a
+  // confirm row logs into the window that just ended, base count from history
+  async function handleCountUp(node: TreeNode, delta = 1, targetDay?: number) {
     const rs = recurStates?.get(node._id as string);
-    await applyCountWrite(node, rs, Math.min(currentCount(node, rs) + delta, COUNT_MAX));
+    const base =
+      targetDay !== undefined && targetDay !== rs?.windowDay
+        ? (negCounts.get(node._id as string)?.get(targetDay) ?? 0)
+        : currentCount(node, rs);
+    await applyCountWrite(node, rs, Math.min(base + delta, COUNT_MAX), { targetDay });
   }
 
-  async function handleCountDown(node: TreeNode, delta = 1) {
+  async function handleCountDown(node: TreeNode, delta = 1, targetDay?: number) {
     const rs = recurStates?.get(node._id as string);
-    await applyCountWrite(node, rs, Math.max(currentCount(node, rs) - delta, 0));
+    const base =
+      targetDay !== undefined && targetDay !== rs?.windowDay
+        ? (negCounts.get(node._id as string)?.get(targetDay) ?? 0)
+        : currentCount(node, rs);
+    await applyCountWrite(node, rs, Math.max(base - delta, 0), { targetDay });
   }
 
   // Reaching all clear records the day and auto-checks the habit meta-task.
@@ -2373,8 +2388,8 @@ function TodoTask() {
           onCountDown={handleCountDown}
           onSelect={(node) => setSelectedId(node._id)}
           onJump={jumpToDir}
-          onSlip={(node) => void handleCountUp(node)}
-          onUndoSlip={(node) => void handleCountDown(node)}
+          onSlip={(node, targetDay) => void handleCountUp(node, 1, targetDay)}
+          onUndoSlip={(node, targetDay) => void handleCountDown(node, 1, targetDay)}
           onConfirmHold={(node, windowDay) => void handleConfirmHold(node, windowDay)}
         />
       ) : (
