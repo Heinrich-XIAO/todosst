@@ -36,9 +36,14 @@ const day = (y, m, d) => dayIndexLocal(new Date(y, m, d, 12).getTime());
 test("missCopy escalates from the second consecutive miss", () => {
   expect(missCopy(0)).toBeNull();
   expect(missCopy(1)).toBeNull();
-  expect(missCopy(2)).toBe("missed twice — today is the one that matters");
-  expect(missCopy(3)).toBe("missed 3 days — today is the one that matters");
-  expect(missCopy(10)).toBe("missed 10 days — today is the one that matters");
+  // no task named -> the generic "today" fallback
+  expect(missCopy(2)).toEqual({ head: "missed twice —", task: null });
+  expect(missCopy(3)).toEqual({ head: "missed 3 days —", task: null });
+  expect(missCopy(10)).toEqual({ head: "missed 10 days —", task: null });
+  // a single open row is named — "today is the one that matters" becomes the task
+  expect(missCopy(2, "pay rent")).toEqual({ head: "missed twice —", task: "pay rent" });
+  expect(missCopy(3, "pay rent")).toEqual({ head: "missed 3 days —", task: "pay rent" });
+  expect(missCopy(10, "pay rent")).toEqual({ head: "missed 10 days —", task: "pay rent" });
 });
 
 test("missedDays counts full days after the last clear, clamped at zero", () => {

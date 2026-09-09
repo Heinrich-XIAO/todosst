@@ -9,7 +9,9 @@
 //
 // Model: a day is "cleared" when the today view reaches all clear. Missed
 // days are the consecutive days before today without a clear — misses are
-// free, pairs aren't: from two missed days on, the header nudge escalates.
+// free, pairs aren't: from two missed days on, the header nudge escalates,
+// naming the one open task when it's the only thing left between you and
+// all clear.
 
 const RITUAL_KEY = "todosst:ritual";
 
@@ -90,10 +92,20 @@ export function dismissHabitOffer(): void {
   saveRitual(s);
 }
 
-/** Escalated nudge copy once two consecutive days were missed; null = normal header. */
-export function missCopy(misses: number): string | null {
+/** Escalated nudge copy once two consecutive days were missed; null = normal
+ * header. `task` names the single open row — when it's the only thing left,
+ * "today is the one that matters" becomes "the task is". */
+export type MissNudge = {
+  /** "missed twice —" / "missed N days —" */
+  head: string;
+  /** the one open row's title; null falls back to the generic "today" */
+  task: string | null;
+};
+
+export function missCopy(misses: number, task: string | null = null): MissNudge | null {
   if (misses < 2) return null;
-  return misses === 2
-    ? "missed twice — today is the one that matters"
-    : `missed ${misses} days — today is the one that matters`;
+  return {
+    head: misses === 2 ? "missed twice —" : `missed ${misses} days —`,
+    task,
+  };
 }
