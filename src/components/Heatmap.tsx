@@ -47,7 +47,8 @@ function cellTooltip(
       ? `${cell.count} slip${cell.count === 1 ? "" : "s"} — ${date}`
       : `clean — ${date}`;
   }
-  if (cell.count <= 0) return `0 — ${date}`;
+  // empty cells show nothing — a "0" tooltip is just noise
+  if (cell.count <= 0) return null;
   const amount = mode === "time" ? formatMinutes(cell.count) : `${cell.count}`;
   return `${amount} — ${date}`;
 }
