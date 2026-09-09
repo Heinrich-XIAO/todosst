@@ -104,9 +104,10 @@ export function Heatmap({
   return (
     <div className="text-[10px]">
       <div className="flex gap-3 overflow-x-auto">
-        <div className="flex shrink-0 flex-col justify-between py-[1px] pr-1 opacity-40">
+        {/* pt-4 = month-label header height (h-3 12px + mb-1 4px) so rows line up */}
+        <div className="flex shrink-0 flex-col gap-[2px] pt-4 pr-1 opacity-40">
           {[0, 1, 2, 3, 4, 5, 6].map((r) => (
-            <span key={r} className="h-[10px] leading-[10px]">
+            <span key={r} className="flex h-[10px] items-center leading-[10px]">
               {DOW_LABELS[r] ?? ""}
             </span>
           ))}
