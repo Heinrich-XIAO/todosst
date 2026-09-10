@@ -410,7 +410,7 @@ export function TodayView({
   nowTs,
   map,
   slides = [],
-  misses = 0,
+  missesByTask,
   showHabitOffer = false,
   isTouch = false,
   onCreateHabit,
@@ -431,8 +431,9 @@ export function TodayView({
   map: Map<string, TreeNode>;
   /** past-year heatmap carousel: "all tasks" + one slide per task with history */
   slides?: PastYearSlide[];
-  /** consecutive missed days entering today (tracked locally, per device) */
-  misses?: number;
+  /** per-task missed days (see buildTaskMisses in TodoApp) — recurring rows
+   * whose own streak reaches two carry the escalation note */
+  missesByTask?: Map<string, number>;
   showHabitOffer?: boolean;
   /** touch-first device — gates the "hold to slip" hint to where holding logs */
   isTouch?: boolean;
@@ -449,7 +450,10 @@ export function TodayView({
 }) {
   const dateLabel = new Date(nowTs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
   const open = openCountOf(items ?? []);
-  const escalate = missCopy(misses);
+  const missNoteOf = (i: TodayItem) => {
+    const n = missesByTask?.get(String(i.node._id));
+    return n !== undefined && i.rs?.isRecurring && rowIsOpen(i) ? missCopy(n) : null;
+  };
 
   if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
 
@@ -503,7 +507,7 @@ export function TodayView({
                     key={i.node._id}
                     item={i}
                     map={map}
-                    missNote={escalate && rowIsOpen(i) && i.rs?.isRecurring ? escalate : null}
+                    missNote={missNoteOf(i)}
                     onToggle={onToggle}
                     onCountUp={onCountUp}
                     onCountDown={onCountDown}
