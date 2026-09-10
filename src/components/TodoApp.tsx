@@ -1124,9 +1124,11 @@ function TodoTask() {
     return per;
   }, [nodes, history, recurStates]);
 
-  // ---- per-task miss streaks (today rows): days since that task last hit
-  // its threshold — history records authoritative, metadata counts and recur
-  // state top them up; never-cleared tasks anchor on their creation day
+  // ---- per-task miss streaks (today rows): days since that task last recorded
+  // any activity — same rule as the heatmap (count > 0), never the threshold,
+  // which only gates today's checkbox; history records authoritative, metadata
+  // counts and recur state top them up; never-touched tasks anchor on their
+  // creation day
   const taskMisses = useMemo(() => {
     const m = new Map<string, number>();
     if (!nodes) return m;
@@ -1136,10 +1138,9 @@ function TodoTask() {
       const rs = recurStates?.get(id);
       if (!rs?.isRecurring) continue;
       const meta = n.metadata as PlainNode["metadata"];
-      const threshold = thresholdOf(meta);
       let last: number | null = null;
       const bump = (day: number, c: unknown) => {
-        if (typeof c !== "number" || c < threshold) return;
+        if (typeof c !== "number" || c <= 0) return;
         if (last === null || day > last) last = day;
       };
       for (const [day, c] of Object.entries(meta.counts ?? {})) bump(Number(day), c);
