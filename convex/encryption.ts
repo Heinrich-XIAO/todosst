@@ -32,6 +32,17 @@ export const getMySalt = query({
   },
 });
 
+// Authenticated: my stable userId (public to me — used to key the device-side
+// notification key the service worker reads)
+export const getMyId = query({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) return null;
+    return stableUserId(identity.subject);
+  },
+});
+
 // Authenticated: ensure salt exists (called after sign-in). Client generates salt.
 export const ensureSalt = mutation({
   args: { salt: v.string() },

@@ -75,29 +75,49 @@ export const removeSubscription = mutation({
 });
 
 // Full-state sync: the client computes the desired reminder rows for every
-// decrypted todo (remindAt timestamps only — titles stay encrypted) and sends
-// them here. Rows outside the desired set are deleted; existing rows keep
-// their `sent` flag so a re-sync never re-fires a delivered reminder.
+// decrypted todo (remindAt timestamps + an encrypted push-copy blob — the
+// plaintext title never leaves the client) and sends them here. Rows outside
+// the desired set are deleted; existing rows keep their `sent` flag so a
+// re-sync never re-fires a delivered reminder.
 export const syncReminders = mutation({
-  args: { items: v.array(v.object({ todoId: v.id("todos"), remindAt: v.number() })) },
+  args: {
+    items: v.array(
+      v.object({
+        todoId: v.id("todos"),
+        remindAt: v.number(),
+        nt: v.optional(v.object({ iv: v.string(), ct: v.string() })),
+      })
+    ),
+  },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
     if (args.items.length > MAX_ITEMS) throw new Error("too many reminders");
     const now = Date.now();
-    const desired = new Map<string, { todoId: Id<"todos">; remindAt: number }>();
+    const desired = new Map<string, { todoId: Id<"todos">; remindAt: number; nt?: { iv: string; ct: string } }>();
     for (const it of args.items) {
       if (!Number.isFinite(it.remindAt)) continue;
       // already fired too long ago (or absurdly far out) — don't store
       if (it.remindAt < now - PAST_DROP_MS) continue;
       if (it.remindAt > now + 5 * 365 * 24 * 60 * 60 * 1000) continue;
-      desired.set(`${it.todoId}:${it.remindAt}`, it);
+      // malformed blobs are dropped silently — pushes fall back to generic copy
+      const nt =
+        it.nt && it.nt.iv.length >= 10 && it.nt.iv.length <= 64 && it.nt.ct.length > 0 && it.nt.ct.length <= 2048
+          ? { iv: it.nt.iv, ct: it.nt.ct }
+          : undefined;
+      desired.set(`${it.todoId}:${it.remindAt}`, { todoId: it.todoId, remindAt: it.remindAt, nt });
     }
     const existing = await ctx.db
       .query("reminders")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
     for (const row of existing) {
-      if (desired.has(`${row.todoId}:${row.remindAt}`)) continue;
+      const want = desired.get(`${row.todoId}:${row.remindAt}`);
+      if (want) {
+        // refresh the copy blob when it changed (e.g. the task was renamed)
+        const changed = !!want.nt !== !!row.nt || (!!want.nt && !!row.nt && (want.nt.iv !== row.nt.iv || want.nt.ct !== row.nt.ct));
+        if (changed) await ctx.db.patch(row._id, { nt: want.nt });
+        continue;
+      }
       // a row that is still pending dispatch must survive a client sync that
       // already dropped it as "too old" — otherwise a sync racing the cron
       // deletes a due-but-unsent reminder before it can ever fire. Rows keep
@@ -110,8 +130,28 @@ export const syncReminders = mutation({
       if (existing.some((r) => r.todoId === it.todoId && r.remindAt === it.remindAt)) continue;
       const todo = await ctx.db.get(it.todoId);
       if (!todo || todo.userId !== userId) continue;
-      await ctx.db.insert("reminders", { userId, todoId: it.todoId, remindAt: it.remindAt, sent: false });
+      await ctx.db.insert("reminders", {
+        userId,
+        todoId: it.todoId,
+        remindAt: it.remindAt,
+        sent: false,
+        nt: it.nt,
+      });
     }
+  },
+});
+
+// Reminder rows for a push batch — returns only the fields the push action
+// needs (the blob is opaque; the server cannot decrypt it).
+export const remindersFor = internalQuery({
+  args: { ids: v.array(v.id("reminders")) },
+  handler: async (ctx, args) => {
+    const out: { todoId: Id<"todos">; nt: { iv: string; ct: string } | null }[] = [];
+    for (const id of args.ids) {
+      const row = await ctx.db.get(id);
+      if (row) out.push({ todoId: row.todoId, nt: row.nt ?? null });
+    }
+    return out;
   },
 });
 
@@ -136,8 +176,8 @@ export const deleteSubscription = internalMutation({
   },
 });
 
-// Minute cron: fire due reminders. One push per user per tick with the count
-// merged in — no titles ever leave the server.
+// Minute cron: fire due reminders. One push per user per tick, carrying the
+// client-encrypted copy blobs — titles stay unreadable to the server.
 // The index filters `sent: false` directly so delivered rows (deleted only by
 // cleanupOld a week later) can never crowd pending ones out of the take(200)
 // page. Rows are marked sent only after the push action reports an outcome —

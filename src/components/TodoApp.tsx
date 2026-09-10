@@ -63,9 +63,10 @@ import {
   overdueShownIds,
   reminderKey,
   reminderOffsets,
-  remindTimesFor,
+  remindItemsFor,
   withReminderDefault,
 } from "@/lib/reminders";
+import { encryptNotifBlob } from "@/lib/notifKey";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
 import { registerServiceWorker } from "@/lib/push";
 import { useOnline } from "@/lib/useOnline";
@@ -438,7 +439,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 }
 
 function TodoTask() {
-  const { key, isLocked, isReady, lock, clearStoredKey } = useEncryption();
+  const { key, notifKeyB64, isLocked, isReady, lock, clearStoredKey } = useEncryption();
   const online = useOnline();
   const [hasRemembered, setHasRemembered] = useState(false);
   useEffect(() => {
@@ -701,18 +702,21 @@ function TodoTask() {
   }, [nodes, nowTs]);
 
   // ---- reminders: server sync + in-app firing ----
-  // The client derives remindAt timestamps from decrypted metadata and syncs
-  // the full desired set to the server (plaintext times only). Completing,
-  // editing, deleting or un-deleting a task converges the rows automatically.
+  // The client derives remindAt timestamps (plus each one's offset in minutes)
+  // from decrypted metadata and syncs the full desired set to the server, each
+  // row carrying the push copy {name, min} encrypted under the notification
+  // key. Completing, editing, deleting or un-deleting a task converges the rows
+  // automatically; a rename re-syncs and refreshes the copy blobs.
   const syncReminders = useMutation(api.push.syncReminders);
   const syncedSigRef = useRef<string | null>(null);
+  const syncSeqRef = useRef(0);
   useEffect(() => {
     if (!nodes || !key) {
       syncedSigRef.current = null;
       return;
     }
     const now = Date.now();
-    const items: { todoId: Id<"todos">; remindAt: number }[] = [];
+    const plain: { todoId: Id<"todos">; remindAt: number; name: string; min: number }[] = [];
     for (const n of nodes) {
       const rs = recurStates?.get(n._id as string);
       const meta = n.metadata as PlainNode["metadata"];
@@ -720,23 +724,44 @@ function TodoTask() {
       // is the window's end, not the due-soon offsets (which they skip)
       const neg = isNegative(meta);
       const done = neg ? false : rs?.isRecurring ? rs.count >= thresholdOf(meta) : n.isCompleted;
-      const times = remindTimesFor(meta, done, now);
+      for (const it of remindItemsFor(meta, done, now)) {
+        plain.push({ todoId: n._id, remindAt: it.t, name: n.title, min: it.min });
+      }
       if (neg && rs?.isRecurring && !rs.expired) {
         const end = dayIndexToStart(rs.windowDay) + DAY_MS;
-        if (end > now) times.push(end);
-      }
-      for (const t of times) {
-        items.push({ todoId: n._id, remindAt: t });
+        if (end > now) plain.push({ todoId: n._id, remindAt: end, name: n.title, min: 0 });
       }
     }
-    items.sort((a, b) => (a.todoId < b.todoId ? -1 : a.todoId > b.todoId ? 1 : a.remindAt - b.remindAt));
-    const sig = JSON.stringify(items);
+    plain.sort((a, b) => (a.todoId < b.todoId ? -1 : a.todoId > b.todoId ? 1 : a.remindAt - b.remindAt));
+    // the key material is part of the signature so a key arrival (or rotation)
+    // re-syncs rows that were written without a copy blob
+    const sig = JSON.stringify([notifKeyB64, plain]);
     if (sig === syncedSigRef.current) return;
     syncedSigRef.current = sig;
-    void syncReminders({ items }).catch(() => {
-      syncedSigRef.current = null;
-    });
-  }, [nodes, recurStates, key, syncReminders]);
+    const seq = ++syncSeqRef.current;
+    void (async () => {
+      let items: { todoId: Id<"todos">; remindAt: number; nt?: { iv: string; ct: string } }[];
+      if (notifKeyB64) {
+        try {
+          items = await Promise.all(
+            plain.map(async (p) => ({
+              todoId: p.todoId,
+              remindAt: p.remindAt,
+              nt: await encryptNotifBlob(notifKeyB64, p.name, p.min),
+            }))
+          );
+        } catch {
+          items = plain.map((p) => ({ todoId: p.todoId, remindAt: p.remindAt }));
+        }
+      } else {
+        items = plain.map((p) => ({ todoId: p.todoId, remindAt: p.remindAt }));
+      }
+      if (seq !== syncSeqRef.current) return; // a newer desired set superseded this run
+      void syncReminders({ items }).catch(() => {
+        syncedSigRef.current = null;
+      });
+    })();
+  }, [nodes, recurStates, key, notifKeyB64, syncReminders]);
 
   const [remindToast, setRemindToast] = useState<{ title: string; lines: string[]; onUndo?: () => void } | null>(
     null

@@ -33,10 +33,14 @@ export default defineSchema({
 
   // vault master key, wrapped (AES-GCM) once per unlock method.
   // kind "password": wrapped with PBKDF2(password, salt)
-  // kind "recovery": wrapped with PBKDF2(recoveryCode, salt)
+  // kind "recovery": wrapped with PBKDF2(recovery code, salt)
+  // kind "notification": dedicated push-copy key, wrapped with the vault master
+  //   key. Unwrapped on-device (and mirrored to IndexedDB for the service
+  //   worker) so reminder pushes can carry the task name without the server
+  //   ever seeing it.
   vaultKeys: defineTable({
     userId: v.string(),
-    kind: v.union(v.literal("password"), v.literal("recovery")),
+    kind: v.union(v.literal("password"), v.literal("recovery"), v.literal("notification")),
     ciphertext: v.string(),
     iv: v.string(),
   }).index("by_user_kind", ["userId", "kind"]),
@@ -62,13 +66,21 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_endpoint", ["endpoint"]),
 
-  // scheduled reminders, one row per (todoId, remindAt). Only the plaintext
-  // timestamp is stored — titles stay inside the todos ciphertext.
+  // scheduled reminders, one row per (todoId, remindAt). The plaintext
+  // timestamp plus an optional opaque push-copy blob (`nt`) — AES-GCM of
+  // {name, min} under the account's notification key. The server relays the
+  // blob inside the push payload without being able to decrypt it.
   reminders: defineTable({
     userId: v.string(),
     todoId: v.id("todos"),
     remindAt: v.number(),
     sent: v.boolean(),
+    nt: v.optional(
+      v.object({
+        iv: v.string(),
+        ct: v.string(),
+      })
+    ),
   })
     .index("by_user", ["userId"])
     // sent first so dispatchDue pages straight through the unsent prefix —

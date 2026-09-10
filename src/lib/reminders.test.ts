@@ -1,6 +1,6 @@
 // @ts-nocheck — runs under `bun test` (bun:test types not installed)
 import { test, expect } from "bun:test";
-import { DEFAULT_OFFSETS_MIN, remindTimesFor, withReminderDefault } from "./reminders";
+import { DEFAULT_OFFSETS_MIN, remindItemsFor, remindTimesFor, withReminderDefault } from "./reminders";
 import { parseDueInput } from "./due";
 
 test("withReminderDefault enables remind for a due date", () => {
@@ -37,4 +37,16 @@ test("remindTimesFor without a time keeps the midnight (evening-before) semantic
   const dueAt = parseDueInput("2026-09-15");
   const meta = { dueAt, reminder: { enabled: true, offsetsMin: [15] } };
   expect(remindTimesFor(meta, false, 0)).toEqual([dueAt - 15 * 60_000]);
+});
+
+test("remindItemsFor pairs each instant with its offset", () => {
+  const dueAt = parseDueInput("2026-09-15");
+  const at = dueAt + 9 * 60 * 60_000;
+  const meta = { dueAt, dueTimeMin: 9 * 60, reminder: { enabled: true, offsetsMin: [15, 5, 0] } };
+  expect(remindItemsFor(meta, false, 0)).toEqual([
+    { t: at - 15 * 60_000, min: 15 },
+    { t: at - 5 * 60_000, min: 5 },
+    { t: at, min: 0 },
+  ]);
+  expect(remindTimesFor(meta, false, 0)).toEqual(remindItemsFor(meta, false, 0).map((x) => x.t));
 });

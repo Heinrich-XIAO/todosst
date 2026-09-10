@@ -56,8 +56,8 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           <p className="mt-0.5">
             tasks with a due date or recurrence get &quot;remind me&quot; (15m/5m before) on by default — toggle it
             off in a task&apos;s details. push notifications are always on — allow them once in your browser (the
-            request rides your first click); the server only learns when, never what. on iOS, add todosst to the home
-            screen first.
+            request rides your first click); the server only learns when, never what — task names arrive end-to-end
+            encrypted. on iOS, add todosst to the home screen first.
           </p>
         </div>
         <div className="px-3 py-2 text-[10px] opacity-40">esc to close</div>

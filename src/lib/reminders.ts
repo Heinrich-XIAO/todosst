@@ -39,18 +39,28 @@ export function withReminderDefault(meta: PlainNode["metadata"]): PlainNode["met
   return { ...meta, reminder: { enabled: true, offsetsMin: DEFAULT_OFFSETS_MIN } };
 }
 
+/** Future reminder instants + their offset (minutes before due) for a node —
+ * [] if disabled/completed/no dueAt. The offset rides into the push copy. */
+export function remindItemsFor(
+  meta: PlainNode["metadata"],
+  isCompleted: boolean,
+  now: number
+): { t: number; min: number }[] {
+  if (isCompleted || !meta.dueAt) return [];
+  const at = dueInstant(meta.dueAt, meta.dueTimeMin);
+  return reminderOffsets(meta)
+    .map((o) => ({ t: at - o * 60_000, min: o }))
+    .filter((x) => Number.isFinite(x.t) && x.t > now - 5 * 60_000) // keep just-fired ones so the sync doesn't delete them mid-dispatch
+    .sort((a, b) => a.t - b.t);
+}
+
 /** Future remindAt timestamps (ms) for a node — [] if disabled/completed/no dueAt. */
 export function remindTimesFor(
   meta: PlainNode["metadata"],
   isCompleted: boolean,
   now: number
 ): number[] {
-  if (isCompleted || !meta.dueAt) return [];
-  const at = dueInstant(meta.dueAt, meta.dueTimeMin);
-  return reminderOffsets(meta)
-    .map((o) => at - o * 60_000)
-    .filter((t) => Number.isFinite(t) && t > now - 5 * 60_000) // keep just-fired ones so the sync doesn't delete them mid-dispatch
-    .sort((a, b) => a - b);
+  return remindItemsFor(meta, isCompleted, now).map((x) => x.t);
 }
 
 // ---- locally-shown tracking (per device, localStorage) ----

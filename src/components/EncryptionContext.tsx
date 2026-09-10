@@ -11,6 +11,7 @@ import {
   unwrapKeyB64,
   wrapKeyB64,
 } from "@/lib/crypto";
+import { clearNotifKey, generateNotifKeyB64, storeNotifKey } from "@/lib/notifKey";
 import { useConvex, useQuery, type ConvexReactClient } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useOnline } from "@/lib/useOnline";
@@ -20,6 +21,8 @@ type EncryptedState = {
   salt: string | null;
   isLocked: boolean;
   isReady: boolean; // has salt fetch finished
+  /** Raw notification key (b64) for push copy blobs — null until ensured. */
+  notifKeyB64: string | null;
   /** Set the vault key directly from raw key material (b64). */
   setKeyFromRaw: (keyB64: string, saltB64: string) => Promise<void>;
   /** Resolve the vault master key with the sign-in password (post-auth). */
@@ -125,6 +128,7 @@ function setCachedSalt(username: string, salt: string) {
 
 export function EncryptionProvider({ children }: { children: React.ReactNode }) {
   const [key, setKey] = useState<CryptoKey | null>(null);
+  const [notifKeyB64, setNotifKeyB64] = useState<string | null>(null);
   const online = useOnline();
   // Set when the user locks manually — suppresses auto-unlock from the
   // remembered key until they explicitly unlock again (password/recovery).
@@ -243,6 +247,8 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     setManualLock(false); // sign-out / fresh state — allow auto-unlock again on next sign-in
     setKey(null);
     setSalt(null);
+    setNotifKeyB64(null);
+    void clearNotifKey(); // the service worker's key must not outlive the account
   }, []);
 
   const clearStoredKey = useCallback(() => {
@@ -300,12 +306,63 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
     };
   }, [key, mySalt, manualLock, online]);
 
+  // Notification key lifecycle (see src/lib/notifKey.ts): ensure a key wrapped
+  // under the vault master key exists server-side, unwrap it for in-app blob
+  // encryption, and mirror the raw key into IndexedDB so the service worker can
+  // decrypt reminder copy while the app is closed. Runs on every unlock and
+  // retries on reconnect (an offline unlock can't reach the server yet).
+  // lock() only clears the in-memory copy — the IDB mirror keeps push copy
+  // decryptable while the vault is locked, and clearKey (sign-out) removes it.
+  const ensureNotifKey = useCallback(async () => {
+    if (!key) return;
+    try {
+      type Wrapped = { iv: string; ciphertext: string } | null;
+      const rec = (await convex.query(api.vault.getKeyRecord, { kind: "notification" })) as Wrapped;
+      let rawB64: string | null = null;
+      if (rec) {
+        try {
+          rawB64 = await exportKeyB64(await unwrapKeyB64(key, rec.iv, rec.ciphertext));
+        } catch {
+          // unreadable wrapper (corrupt / rotated under a different master) — rotate below
+          rawB64 = null;
+        }
+      }
+      if (!rawB64) {
+        rawB64 = generateNotifKeyB64();
+        const wrapped = await wrapKeyB64(key, rawB64);
+        await convex.mutation(api.vault.putKeyRecord, { kind: "notification", ...wrapped });
+        // concurrent first unlocks on two devices: the server's row wins, so
+        // re-read and adopt it (falls back to our copy if the row vanished)
+        const rec2 = (await convex.query(api.vault.getKeyRecord, { kind: "notification" })) as Wrapped;
+        if (rec2) {
+          try {
+            rawB64 = await exportKeyB64(await unwrapKeyB64(key, rec2.iv, rec2.ciphertext));
+          } catch {}
+        }
+      }
+      setNotifKeyB64(rawB64);
+      const userId = await convex.query(api.encryption.getMyId);
+      if (userId) await storeNotifKey(userId, rawB64);
+    } catch {
+      // offline or the server write failed — pushes stay generic until retry
+    }
+  }, [key, convex]);
+
+  useEffect(() => {
+    if (!key) {
+      setNotifKeyB64(null);
+      return;
+    }
+    void ensureNotifKey();
+  }, [key, online, ensureNotifKey]);
+
   const value = useMemo<EncryptedState>(
     () => ({
       key,
       salt,
       isLocked: !key,
       isReady,
+      notifKeyB64,
       setKeyFromRaw,
       resolveVaultPassword,
       resolveVaultRecovery,
@@ -313,7 +370,7 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
       clearKey,
       clearStoredKey,
     }),
-    [key, salt, isReady, setKeyFromRaw, resolveVaultPassword, resolveVaultRecovery, lock, clearKey, clearStoredKey]
+    [key, salt, isReady, notifKeyB64, setKeyFromRaw, resolveVaultPassword, resolveVaultRecovery, lock, clearKey, clearStoredKey]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

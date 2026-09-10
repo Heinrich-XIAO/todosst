@@ -8,9 +8,10 @@ import { getAuthUserId, modifyAccountCredentials, retrieveAccount } from "@conve
 // todo/history payloads. M is stored here only in wrapped form:
 //   kind "password" — wrapped with PBKDF2(sign-in password, user salt)
 //   kind "recovery" — wrapped with PBKDF2(recovery code, user salt)
+//   kind "notification" — a dedicated push-copy key, wrapped with M itself
 // The server can never unwrap these.
 
-const KIND = v.union(v.literal("password"), v.literal("recovery"));
+const KIND = v.union(v.literal("password"), v.literal("recovery"), v.literal("notification"));
 
 // wrapped AES-GCM-256 key + iv, base64 — well under a kilobyte
 const MAX_WRAPPED_KEY = 4096;

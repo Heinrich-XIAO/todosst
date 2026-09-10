@@ -4,10 +4,10 @@ import { internal } from "./_generated/api";
 import { encryptPushPayload } from "../src/lib/pushCrypto";
 
 // Web Push sender for the V8 runtime — no Node dependency. VAPID is an ES256
-// JWT signed with WebCrypto; the notification is fully generic. Reminder pushes
-// carry no payload at all; nudge pushes carry a tiny encrypted body (RFC 8291
-// aes128gcm) that only distinguishes the notification copy. No titles, no
-// counts, nothing about the vault ever leaves the client.
+// JWT signed with WebCrypto. Reminder pushes carry client-encrypted copy blobs
+// ({name, min} under the account's notification key) relayed unread; nudge
+// pushes carry a tiny encrypted body ({t:"nudge"}). No plaintext titles, no
+// counts of vault content, nothing readable ever leaves the client.
 
 async function deliverToSubs(
   ctx: ActionCtx,
@@ -70,7 +70,35 @@ export const sendPush = internalAction({
       return;
     }
 
-    const { delivered, retryable } = await deliverToSubs(ctx, publicKey, privateKey, subs, async () => null);
+    // Build the reminder payload from the client-encrypted blobs. aes128gcm is
+    // single-record (4KB) so trim items until the outer JSON fits; anything
+    // trimmed shows up as a "more" count in the service worker.
+    const rows = await ctx.runQuery(internal.push.remindersFor, { ids: args.reminderIds });
+    const blobs = rows
+      .filter((r) => r.nt)
+      .map((r) => ({ todoId: r.todoId, iv: r.nt!.iv, ct: r.nt!.ct }));
+    let reminderPayload: string | null = null;
+    if (blobs.length > 0) {
+      const MAX_ITEMS = 10;
+      const MAX_JSON = 3500; // encryptPushPayload caps plaintext at 4079 bytes
+      let items = blobs.slice(0, MAX_ITEMS);
+      let json = JSON.stringify({ t: "reminder", u: args.userId, items, more: Math.max(0, blobs.length - items.length) });
+      while (json.length > MAX_JSON && items.length > 1) {
+        items = items.slice(0, -1);
+        json = JSON.stringify({ t: "reminder", u: args.userId, items, more: blobs.length - items.length });
+      }
+      if (json.length <= MAX_JSON) reminderPayload = json;
+    }
+
+    const { delivered, retryable } = await deliverToSubs(ctx, publicKey, privateKey, subs, async (s) => {
+      if (!reminderPayload) return null;
+      try {
+        return await encryptPushPayload({ p256dh: s.p256dh, auth: s.auth }, reminderPayload);
+      } catch {
+        // per-subscription encryption failure — this device gets the generic copy
+        return null;
+      }
+    });
 
     // mark delivered only when at least one subscription accepted, or when
     // nothing is retryable (all endpoints gone) — a total failure leaves the
