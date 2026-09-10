@@ -194,12 +194,14 @@ function TodayRow({
           className="min-w-0 flex-1 text-left"
           title={node.title}
         >
-          <span className="truncate">{node.title}</span>
-          {meta.recur ? (
-            <span className="ml-1 text-[10px] opacity-50" title={String(meta.recur)}>
-              ↻ {rs?.summary || "recurring"}
-            </span>
-          ) : null}
+          <span className="flex min-w-0 items-baseline gap-1">
+            <span className="min-w-0 truncate">{node.title}</span>
+            {meta.recur ? (
+              <span className="shrink-0 text-[10px] opacity-50" title={String(meta.recur)}>
+                ↻ {rs?.summary || "recurring"}
+              </span>
+            ) : null}
+          </span>
         </button>
         {ancestors.length > 0 && (
           <button

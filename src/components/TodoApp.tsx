@@ -345,7 +345,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
                 startEdit(node);
               }
             }}
-            className={`flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
+            className={`min-w-0 flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
             title={node.title}
           >
             <span className="mr-1 opacity-40">{node.children.length ? `[${node.children.length}]` : ""}</span>
