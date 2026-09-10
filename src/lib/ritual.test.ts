@@ -6,6 +6,7 @@ import {
   loadRitual,
   openRitual,
   missedDays,
+  taskMissedDays,
   recordClearDay,
   dismissHabitOffer,
   missCopy,
@@ -64,6 +65,23 @@ test("missedDays anchors on firstDay until the first clear", () => {
   expect(missedDays(d6, { firstDay: d6 - 2, lastClearDay: null })).toBe(2);
   // first clear wins over the firstDay anchor
   expect(missedDays(d6, { firstDay: d6 - 30, lastClearDay: d6 - 1 })).toBe(0);
+});
+
+test("taskMissedDays counts each task's own gap since its last clear", () => {
+  const d6 = day(2026, 8, 6);
+  // cleared today -> no misses
+  expect(taskMissedDays(d6, d6, null)).toBe(0);
+  // cleared yesterday -> miss streak not started
+  expect(taskMissedDays(d6, d6 - 1, null)).toBe(0);
+  // cleared three days ago -> two missed days (pair, escalate)
+  expect(taskMissedDays(d6, d6 - 3, null)).toBe(2);
+  // future clear (clock rolled back) -> clamp
+  expect(taskMissedDays(d6, d6 + 2, null)).toBe(0);
+  // never cleared -> anchored on the task's creation day
+  expect(taskMissedDays(d6, null, d6 - 5)).toBe(4);
+  expect(taskMissedDays(d6, null, d6)).toBe(0);
+  // no history and unknown creation -> nothing to claim
+  expect(taskMissedDays(d6, null, null)).toBe(0);
 });
 
 test("openRitual anchors firstDay exactly once", () => {

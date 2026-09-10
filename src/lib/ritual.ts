@@ -91,11 +91,20 @@ export function dismissHabitOffer(): void {
   saveRitual(s);
 }
 
-/** Escalation note once two consecutive days were missed; null = rows render
- * normal. Shown grey on the right of each open task row. */
+/** Escalation note once a task's own miss count reaches two; null = the row
+ * renders normal. Shown grey on the right of its recurring task row. */
 export function missCopy(misses: number): string | null {
   if (misses < 2) return null;
   return misses === 2
     ? "missed twice — today is the one that matters"
     : `missed ${misses} days — today is the one that matters`;
+}
+
+/** Per-task missed days entering `today`: days between today and the last day
+ * the task reached its threshold, anchored on the task's creation day when it
+ * never cleared. A task cleared today (or "in the future") has none. */
+export function taskMissedDays(today: number, lastClearedDay: number | null, createdDay: number | null): number {
+  const anchor = lastClearedDay ?? createdDay;
+  if (anchor === null || anchor >= today) return 0;
+  return today - anchor - 1;
 }

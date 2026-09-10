@@ -43,7 +43,7 @@ import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
 import { SlipControl } from "./SlipControl";
 import { buildTodayItems, openCountOf, TodayView, type PastYearSlide } from "./TodayView";
-import { dismissHabitOffer, missedDays, openRitual, recordClearDay } from "@/lib/ritual";
+import { dismissHabitOffer, taskMissedDays, openRitual, recordClearDay } from "@/lib/ritual";
 import {
   buildTree,
   childrenOf,
@@ -1124,6 +1124,33 @@ function TodoTask() {
     return per;
   }, [nodes, history, recurStates]);
 
+  // ---- per-task miss streaks (today rows): days since that task last hit
+  // its threshold — history records authoritative, metadata counts and recur
+  // state top them up; never-cleared tasks anchor on their creation day
+  const taskMisses = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!nodes) return m;
+    const today = dayIndexLocal(nowTs);
+    for (const n of nodes) {
+      const id = n._id as string;
+      const rs = recurStates?.get(id);
+      if (!rs?.isRecurring) continue;
+      const meta = n.metadata as PlainNode["metadata"];
+      const threshold = thresholdOf(meta);
+      let last: number | null = null;
+      const bump = (day: number, c: unknown) => {
+        if (typeof c !== "number" || c < threshold) return;
+        if (last === null || day > last) last = day;
+      };
+      for (const [day, c] of Object.entries(meta.counts ?? {})) bump(Number(day), c);
+      for (const [day, c] of history?.byTodo.get(id) ?? []) bump(day, c);
+      bump(rs.windowDay, rs.count);
+      const missed = taskMissedDays(today, last, dayIndexLocal(n._creationTime));
+      if (missed > 0) m.set(id, missed);
+    }
+    return m;
+  }, [nodes, history, recurStates, nowTs]);
+
   // ---- negative tasks (holds section) ----
   // merged counts per node (history is authoritative, current-window metadata
   // and recur state top it up while writes/loads are in flight)
@@ -1180,14 +1207,12 @@ function TodoTask() {
   // Reaching all clear is the ritual's completion: it records the day locally
   // (never-miss-twice nudge) and auto-checks the habit task, feeding its
   // heatmap as a side effect. All bookkeeping stays on the device.
-  const [ritualMisses, setRitualMisses] = useState(0);
   // null = unknown until the local store is read (avoids offer flash for
   // devices that already declined)
   const [habitOfferGone, setHabitOfferGone] = useState<boolean | null>(null);
   const todayIdx = dayIndexLocal(nowTs);
   useEffect(() => {
     const s = openRitual(todayIdx);
-    setRitualMisses(missedDays(todayIdx, s));
     setHabitOfferGone(s.habitOfferDismissed);
   }, [todayIdx]);
 
@@ -1789,7 +1814,6 @@ function TodoTask() {
     if (habitAutoSigRef.current === sig) return;
     habitAutoSigRef.current = sig;
     recordClearDay(todayIdx);
-    setRitualMisses(0);
     const tn = habitId ? tree.map.get(habitId) : null;
     if (!tn || !habitRs?.isRecurring || habitRs.expired) return;
     const th = thresholdOf(tn.metadata as PlainNode["metadata"]);
@@ -2381,7 +2405,7 @@ function TodoTask() {
           nowTs={nowTs}
           map={tree.map}
           slides={pastYearSlides}
-          misses={ritualMisses}
+          missesByTask={taskMisses}
           showHabitOffer={showHabitOffer}
           isTouch={isTouch}
           onCreateHabit={() => void handleCreateHabit()}
