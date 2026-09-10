@@ -146,7 +146,7 @@ function TodayRow({
 }: {
   item: TodayItem;
   map: Map<string, TreeNode>;
-  /** missed-days escalation, grey on the right — open rows only */
+  /** missed-days escalation, grey on the right — open recurring rows only */
   missNote?: string | null;
   onToggle: (node: TreeNode) => Promise<void>;
   onCountUp: (node: TreeNode, delta?: number) => Promise<void>;
@@ -545,7 +545,7 @@ export function TodayView({
                     key={i.node._id}
                     item={i}
                     map={map}
-                    missNote={escalate && rowIsOpen(i) ? escalate : null}
+                    missNote={escalate && rowIsOpen(i) && i.rs?.isRecurring ? escalate : null}
                     onToggle={onToggle}
                     onCountUp={onCountUp}
                     onCountDown={onCountDown}
