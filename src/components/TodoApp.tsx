@@ -738,7 +738,9 @@ function TodoTask() {
     });
   }, [nodes, recurStates, key, syncReminders]);
 
-  const [remindToast, setRemindToast] = useState<{ title: string; lines: string[] } | null>(null);
+  const [remindToast, setRemindToast] = useState<{ title: string; lines: string[]; onUndo?: () => void } | null>(
+    null
+  );
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
   const recurStatesRef = useRef(recurStates);
@@ -1201,6 +1203,25 @@ function TodoTask() {
           ? `${node.title} — ${day} held ✓ (${slips === 0 ? "0 slips" : `${slipWord}, within tolerance of ${tol}`})`
           : `${node.title} — ${day} sealed ✗ (${slipWord}, over tolerance of ${tol})`,
       ],
+      // undo reopens the window: strip the hold from the task's live metadata
+      // (read through the nodes ref — this render's snapshot may predate the
+      // confirm write landing in the subscription)
+      onUndo: () => {
+        void (async () => {
+          const cur = nodesRef.current?.find((n) => n._id === node._id);
+          if (!cur) return;
+          const meta = cur.metadata as PlainNode["metadata"];
+          if (holdOf(meta, windowDay) === undefined) return;
+          const holds = { ...(meta.holds ?? {}) };
+          delete holds[String(windowDay)];
+          try {
+            const { ciphertext, iv } = await cryptoEncNode(toPlainNode(cur, { metadata: { ...meta, holds } }));
+            await updateTodo({ id: node._id, ciphertext, iv });
+          } catch {
+            setNotice("undo failed — the window record is still saved");
+          }
+        })();
+      },
     });
   }
 
@@ -1279,7 +1300,7 @@ function TodoTask() {
   // lags the mutation ack), so dedup must consult it too.
   async function createForOutcome(
     outcome: InputOutcome,
-    opts?: { parentId?: Id<"todos"> | null; recentTitles?: Set<string> }
+    opts?: { parentId?: Id<"todos"> | null; recentTitles?: Set<string>; createdIds?: string[] }
   ): Promise<Id<"todos"> | null> {
     if (outcome.type === "create-slash") {
       if (!nodes) return null;
@@ -1327,6 +1348,7 @@ function TodoTask() {
           _raw: { ciphertext, iv },
         } as DecryptedNode);
         chainIds.push(newId as string);
+        opts?.createdIds?.push(newId as string);
         parentId = newId as string;
         createdCount++;
       }
@@ -1371,6 +1393,7 @@ function TodoTask() {
       });
       const { ciphertext, iv } = await cryptoEncNode(node);
       const newId = await createTodo({ ciphertext, iv });
+      opts?.createdIds?.push(newId as string);
       opts?.recentTitles?.add(dedupKey);
       return newId as Id<"todos">;
     }
@@ -1378,18 +1401,29 @@ function TodoTask() {
   }
 
   // Park a raw capture in the local outbox (vault-encrypted) and confirm via
-  // toast. parts = the working-directory titles the capture was made under.
+  // toast; undo drops the entry before it ever syncs. parts = the
+  // working-directory titles the capture was made under.
   async function parkCapture(raw: string, parts: string[]) {
     if (!key) return;
-    let saved = false;
+    let savedId: string | null = null;
     try {
-      saved = await outboxAddCapture(key, { input: raw, parts });
+      savedId = await outboxAddCapture(key, { input: raw, parts });
     } catch {}
-    setRemindToast(
-      saved
-        ? { title: "captured offline", lines: [captureToastLine(raw)] }
-        : { title: "capture not saved", lines: ["local storage is unavailable — try again once you're back online"] }
-    );
+    if (savedId !== null) {
+      setRemindToast({
+        title: "captured offline",
+        lines: [captureToastLine(raw)],
+        onUndo: () => {
+          outboxDelete(savedId as string).catch(() => {});
+          refreshPendingCaptures();
+        },
+      });
+    } else {
+      setRemindToast({
+        title: "capture not saved",
+        lines: ["local storage is unavailable — try again once you're back online"],
+      });
+    }
     refreshPendingCaptures();
   }
 
@@ -1409,9 +1443,14 @@ function TodoTask() {
   }
 
   // Replay one outbox entry through the grammar. Returns the decrypted input
-  // (for the sync toast) or null when the entry is a no-op; throws on failure
-  // (network, wrong key, corrupt row) so the caller can attempt-cap it.
-  async function replayCapture(entry: OutboxEntry, recentTitles?: Set<string>): Promise<string | null> {
+  // (for the sync toast) plus the ids created by the replay — createdIds[0]
+  // roots the subtree undo removes — or null when the entry was a no-op;
+  // throws on failure (network, wrong key, corrupt row) so the caller can
+  // attempt-cap it.
+  async function replayCapture(
+    entry: OutboxEntry,
+    recentTitles?: Set<string>
+  ): Promise<{ text: string; createdIds: string[] } | null> {
     if (!key || !nodes) throw new Error("vault not ready");
     const cap = await openCapture(key, entry.payload);
     const outcome = runInput(cap.input, {
@@ -1419,6 +1458,7 @@ function TodoTask() {
       pushPath: () => {},
       showHelp: () => {},
     });
+    const createdIds: string[] = [];
     if (outcome.type === "create-task") {
       // re-resolve the capture-time working directory against the current tree
       let parentId: string | null = null;
@@ -1432,21 +1472,24 @@ function TodoTask() {
         parentId = found._id as string;
       }
       if (resolved) {
-        await createForOutcome(outcome, { parentId: parentId as Id<"todos"> | null, recentTitles });
+        await createForOutcome(outcome, { parentId: parentId as Id<"todos"> | null, recentTitles, createdIds });
       } else {
         // the directory vanished since capture — recreate the chain, task last
-        await createForOutcome({
-          type: "create-slash",
-          parts: [...cap.parts, outcome.title],
-          recur: outcome.recur,
-          neg: outcome.neg,
-        });
+        await createForOutcome(
+          {
+            type: "create-slash",
+            parts: [...cap.parts, outcome.title],
+            recur: outcome.recur,
+            neg: outcome.neg,
+          },
+          { createdIds }
+        );
       }
-      return cap.input;
+      return createdIds.length > 0 ? { text: cap.input, createdIds } : null;
     }
     if (outcome.type === "create-slash") {
-      await createForOutcome(outcome);
-      return cap.input;
+      await createForOutcome(outcome, { createdIds });
+      return createdIds.length > 0 ? { text: cap.input, createdIds } : null;
     }
     // commands/unknown/ignored were never enqueued; drop defensively
     return null;
@@ -1968,6 +2011,45 @@ function TodoTask() {
     return () => window.clearInterval(interval);
   }, [undoSnap]);
 
+  // Undo for the "offline captures synced" toast: remove the subtrees the
+  // replay just created. Computed against the live nodes ref — the drain
+  // effect's snapshot is stale by undo time. The created ids are fresh, so
+  // nothing outside this undo window can depend on them; anything the user
+  // added under a synced capture in those seconds goes with its subtree.
+  async function undoSyncedCaptures(rootIds: string[]) {
+    const cur = nodesRef.current;
+    if (!cur || cur.length === 0) return;
+    const existing = new Set(cur.map((n) => n._id as string));
+    const byParent = new Map<string | null, string[]>();
+    for (const n of cur) {
+      const pid = (n.parentId ?? null) as string | null;
+      const arr = byParent.get(pid);
+      if (arr) arr.push(n._id as string);
+      else byParent.set(pid, [n._id as string]);
+    }
+    const doomed = new Set<string>();
+    const walk = (id: string) => {
+      if (doomed.has(id)) return;
+      doomed.add(id);
+      for (const c of byParent.get(id) ?? []) walk(c);
+    };
+    for (const r of rootIds) if (existing.has(r)) walk(r);
+    const ids = [...doomed];
+    if (ids.length === 0) return;
+    try {
+      // removeMany tolerates missing ids, so concurrent deletes don't abort
+      await removeMany({ ids: ids as Id<"todos">[] });
+      const store = historyRef.current;
+      for (const id of ids) {
+        const hid = store?.idByTodo.get(id);
+        if (hid) await historyRemove({ id: hid }).catch(() => {});
+      }
+      if (selectedId && ids.includes(selectedId as string)) setSelectedId(null);
+    } catch {
+      setNotice("couldn't undo the synced captures — they're still in your list");
+    }
+  }
+
   // key changed (locked/unlocked/re-derived) — plaintext snapshot may no longer
   // round-trip with the new key, drop it; re-arm the history orphan sweep
   useEffect(() => {
@@ -2122,12 +2204,17 @@ function TodoTask() {
         await new Promise((resolve) => setTimeout(resolve, 1500));
         const recentTitles = new Set<string>();
         const synced: string[] = [];
+        const syncedRoots: string[] = [];
         for (const entry of entries) {
           if (entry.attempts >= OUTBOX_MAX_ATTEMPTS) continue;
           try {
-            const text = await replayCapture(entry, recentTitles);
+            const replayed = await replayCapture(entry, recentTitles);
             await outboxDelete(entry.id);
-            if (text !== null) synced.push(text);
+            if (replayed !== null) {
+              synced.push(replayed.text);
+              const root = replayed.createdIds[0];
+              if (root) syncedRoots.push(root);
+            }
           } catch {
             // server likely still unreachable — keep the entry, retry on the
             // next trigger (reconnect, unlock, re-focus, data change)
@@ -2140,6 +2227,14 @@ function TodoTask() {
           setRemindToast({
             title: `offline capture${synced.length !== 1 ? "s" : ""} synced`,
             lines: synced.map(clippedLine),
+            // undo removes everything this drain's replays created
+            ...(syncedRoots.length > 0
+              ? {
+                  onUndo: () => {
+                    void undoSyncedCaptures(syncedRoots);
+                  },
+                }
+              : {}),
           });
         }
         const dead = entries.filter((e) => e.attempts >= OUTBOX_MAX_ATTEMPTS);
@@ -2496,7 +2591,14 @@ function TodoTask() {
         />
       )}
 
-      {remindToast && <ReminderToast title={remindToast.title} lines={remindToast.lines} onClose={() => setRemindToast(null)} />}
+      {remindToast && (
+        <ReminderToast
+          title={remindToast.title}
+          lines={remindToast.lines}
+          onUndo={remindToast.onUndo}
+          onClose={() => setRemindToast(null)}
+        />
+      )}
 
       {selectedNode && (
         <MetadataPanel

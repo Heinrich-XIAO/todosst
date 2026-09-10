@@ -4,13 +4,17 @@ import { useEffect, useRef } from "react";
 
 // In-app reminder banner: due-soon reminders and overdue tasks when the app is
 // (re)focused. Push handles the closed-tab case; this covers open/backgrounded.
+// Toasts that announce a state change (hold confirm, offline capture, replay
+// sync) pass onUndo and get an undo button alongside close.
 export function ReminderToast({
   title,
   lines,
+  onUndo,
   onClose,
 }: {
   title: string;
   lines: string[];
+  onUndo?: () => void;
   onClose: () => void;
 }) {
   // read onClose through a ref: callers pass an inline closure recreated on
@@ -30,9 +34,22 @@ export function ReminderToast({
     <div className="fixed bottom-4 left-1/2 z-50 w-[min(560px,92vw)] -translate-x-1/2 border border-foreground bg-background px-3 py-2 text-xs shadow-lg">
       <div className="flex items-center justify-between">
         <span className="font-medium">{title}</span>
-        <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="dismiss">
-          close
-        </button>
+        <span className="flex items-center gap-3">
+          {onUndo ? (
+            <button
+              onClick={() => {
+                onUndo();
+                onClose();
+              }}
+              className="border border-foreground px-2 py-0.5 hover:bg-foreground hover:text-background"
+            >
+              undo
+            </button>
+          ) : null}
+          <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="dismiss">
+            close
+          </button>
+        </span>
       </div>
       <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto">
         {lines.slice(0, 12).map((line, i) => (

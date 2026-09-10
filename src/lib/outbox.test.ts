@@ -40,10 +40,14 @@ function payload(text: string) {
 
 test("add + list FIFO by creation order", async () => {
   expect(await outboxList()).toEqual([]);
-  expect(await outboxAdd(payload("a"))).toBe(true);
-  expect(await outboxAdd(payload("b"))).toBe(true);
+  const idA = await outboxAdd(payload("a"));
+  const idB = await outboxAdd(payload("b"));
+  expect(typeof idA).toBe("string");
+  expect(typeof idB).toBe("string");
   const list = await outboxList();
   expect(list.map((e) => e.payload.ciphertext)).toEqual(["ct-a", "ct-b"]);
+  // returned ids are the stored entries — undo deletes exactly what was parked
+  expect(list.map((e) => e.id)).toEqual([idA, idB]);
   expect(list[0].attempts).toBe(0);
   expect(list[0].id.length).toBeGreaterThan(0);
 });
@@ -68,10 +72,10 @@ test("markAttempt counts failures and survives reload of storage", async () => {
 });
 
 test("rejects malformed payloads", async () => {
-  expect(await outboxAdd(null)).toBe(false);
-  expect(await outboxAdd({} as never)).toBe(false);
-  expect(await outboxAdd({ iv: "", ciphertext: "x" })).toBe(false);
-  expect(await outboxAdd({ iv: "i", ciphertext: "x".repeat(64_000) })).toBe(false);
+  expect(await outboxAdd(null)).toBeNull();
+  expect(await outboxAdd({} as never)).toBeNull();
+  expect(await outboxAdd({ iv: "", ciphertext: "x" })).toBeNull();
+  expect(await outboxAdd({ iv: "i", ciphertext: "x".repeat(64_000) })).toBeNull();
   expect(await outboxList()).toEqual([]);
 });
 
@@ -91,7 +95,7 @@ test("capture round-trip through the vault key", async () => {
   const salt = generateSaltB64();
   const key = await deriveKey("subway-thoughts", salt);
   const capture = { input: "/ideas/write it down", parts: ["host hackathon"] };
-  expect(await outboxAddCapture(key, capture)).toBe(true);
+  expect(typeof (await outboxAddCapture(key, capture))).toBe("string");
   const [entry] = await outboxList();
   // stored encrypted — the raw input is not readable at rest
   expect(entry.payload.ciphertext).not.toContain("write it down");

@@ -125,8 +125,9 @@ export function newEntryId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Park an encrypted capture. Returns false when no storage was available. */
-export async function outboxAdd(payload: OutboxPayload): Promise<boolean> {
+/** Park an encrypted capture. Returns the new entry id (so the caller can
+ * offer undo while the entry waits), or null when no storage was available. */
+export async function outboxAdd(payload: OutboxPayload): Promise<string | null> {
   if (
     !payload ||
     typeof payload.iv !== "string" ||
@@ -135,7 +136,7 @@ export async function outboxAdd(payload: OutboxPayload): Promise<boolean> {
     payload.ciphertext.length === 0 ||
     payload.ciphertext.length > MAX_PAYLOAD_CHARS
   ) {
-    return false;
+    return null;
   }
   const entry: OutboxEntry = { id: newEntryId(), createdAt: Date.now(), attempts: 0, payload };
   if (idbAvailable()) {
@@ -149,16 +150,16 @@ export async function outboxAdd(payload: OutboxPayload): Promise<boolean> {
           tx.onerror = () => reject(tx.error ?? new Error("outbox add failed"));
           tx.onabort = () => reject(tx.error ?? new Error("outbox add aborted"));
         });
-        return true;
+        return entry.id;
       } finally {
         db.close();
       }
     } catch {}
   }
-  if (!lsAvailable()) return false;
+  if (!lsAvailable()) return null;
   const entries = lsRead();
   entries.push(entry);
-  return lsWrite(entries);
+  return lsWrite(entries) ? entry.id : null;
 }
 
 /** FIFO entries, oldest first. Empty array when storage is unavailable. */
@@ -238,8 +239,9 @@ export async function outboxMarkAttempt(id: string): Promise<void> {
 
 // ---------- capture payload codec (vault-encrypted) ----------
 
-/** Encrypt a capture under the vault key and park it. */
-export async function outboxAddCapture(key: CryptoKey, capture: CapturePayload): Promise<boolean> {
+/** Encrypt a capture under the vault key and park it. Returns the entry id
+ * or null when storage was unavailable. */
+export async function outboxAddCapture(key: CryptoKey, capture: CapturePayload): Promise<string | null> {
   const payload = await encryptString(key, JSON.stringify(capture));
   return await outboxAdd(payload);
 }
