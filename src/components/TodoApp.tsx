@@ -230,6 +230,12 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     <li
       draggable={!isEditing}
       onDragStart={(e) => {
+        // child rows are nested inside their parent's <li> in the DOM, so
+        // dragstart bubbles up to the ancestor's handler which would
+        // overwrite dragId with the PARENT's id — dragging a child out of a
+        // plan would move the whole plan instead. only the innermost row
+        // (the actual drag source) may claim the drag.
+        e.stopPropagation();
         setDragId(node._id);
         // a previous drag can die without dragend (a drop that reparents the
         // node unmounts its row, so dragend fires on a detached element React
