@@ -228,6 +228,46 @@ function showGeneric() {
   });
 }
 
+// Duolingo-flavored nudge copy — 10 phrases across three families (risk /
+// missed / comeback), rotated by UTC day so the same day never repeats.
+// Values come from the client-encrypted blob; missing numbers render as 0.
+const NUDGE_COPY = {
+  risk: [
+    "your streak is still alive — clear {open} task{s} to keep it",
+    "don't lose the streak — {open} task{s} left today",
+    "the day isn't over — {open} task{s} to stay in the groove",
+    "{streak} days and counting — {open} task{s} to clear",
+  ],
+  missed: [
+    "1 day missed — get back today before it becomes 2",
+    "the streak already broke — start a new one today ({open} task{s})",
+    "{missed} day{s} gone — show up today to stop the slide",
+  ],
+  comeback: [
+    "fresh start: clear {open} task{s} today and day 1 begins",
+    "todosst misses you — {open} task{s} waiting",
+    "a new streak starts with today — {open} task{s} to clear",
+  ],
+};
+
+function nudgeBody(s) {
+  try {
+    const list = NUDGE_COPY[s.k];
+    if (!Array.isArray(list) || list.length === 0) throw new Error("no copy");
+    const open = typeof s.open === "number" && s.open >= 0 ? s.open : 0;
+    const streak = typeof s.streak === "number" ? s.streak : 0;
+    const missed = typeof s.missed === "number" ? s.missed : 0;
+    const day = Math.floor(Date.now() / 86400000);
+    return list[day % list.length]
+      .replaceAll("{s}", open === 1 ? "" : "s")
+      .replaceAll("{open}", String(open))
+      .replaceAll("{streak}", String(streak))
+      .replaceAll("{missed}", String(missed));
+  } catch {
+    return null;
+  }
+}
+
 self.addEventListener("push", (event) => {
   event.waitUntil(
     (async () => {
@@ -236,8 +276,24 @@ self.addEventListener("push", (event) => {
         if (event.data) d = event.data.json();
       } catch {}
       if (d && d.t === "nudge") {
+        let body = "today's windows are open — clear them";
+        if (typeof d.u === "string" && d.nb) {
+          const rawB64 = await loadNotifKeyB64(d.u);
+          if (rawB64) {
+            try {
+              const key = await crypto.subtle.importKey("raw", b64ToBytes(rawB64), { name: "AES-GCM" }, false, ["decrypt"]);
+              const pt = await crypto.subtle.decrypt(
+                { name: "AES-GCM", iv: b64ToBytes(d.nb.iv) },
+                key,
+                b64ToBytes(d.nb.ct)
+              );
+              const s = JSON.parse(new TextDecoder().decode(pt));
+              body = nudgeBody(s) ?? body;
+            } catch {}
+          }
+        }
         await self.registration.showNotification("todosst", {
-          body: "today's windows are open — clear them",
+          body,
           tag: "todosst-nudge",
           renotify: true,
           data: { url: self.registration.scope },

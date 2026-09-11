@@ -84,6 +84,25 @@ export function recordClearDay(today: number): void {
   saveRitual(s);
 }
 
+/** Current show-up streak: consecutive active days (count > 0) ending today
+ * when today already counts, else ending yesterday. Reads the habit task's
+ * decrypted per-day counts (day index -> count, same codec as the heatmap);
+ * 0 when there is no history yet. */
+export function streakOf(today: number, counts: Map<number, number> | null | undefined): number {
+  if (!counts) return 0;
+  let s = 0;
+  for (let d = today; d >= today - 400; d--) {
+    const c = counts.get(d) ?? 0;
+    if (c > 0) {
+      s++;
+      continue;
+    }
+    if (d === today) continue; // today still pending — keep counting from yesterday
+    break;
+  }
+  return s;
+}
+
 export function dismissHabitOffer(): void {
   const s = loadRitual();
   if (s.habitOfferDismissed) return;

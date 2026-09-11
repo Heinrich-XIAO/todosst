@@ -36,21 +36,20 @@ function importRawKey(rawKeyB64: string, usages: KeyUsage[]): Promise<CryptoKey>
   return crypto.subtle.importKey("raw", base64ToBuf(rawKeyB64) as unknown as BufferSource, { name: "AES-GCM" }, false, usages);
 }
 
-/** Encrypt the push copy for one reminder: {name, min} as an opaque blob. */
-export async function encryptNotifBlob(rawKeyB64: string, name: string, min: number): Promise<NotifBlob> {
+/** Encrypt push copy for one payload — any JSON-able value ({name, min} for
+ * reminders, {k, streak, missed, open} for the daily nudge). */
+export async function encryptNotifBlob(rawKeyB64: string, value: unknown): Promise<NotifBlob> {
   const key = await importRawKey(rawKeyB64, ["encrypt"]);
   const iv = new Uint8Array(12);
   crypto.getRandomValues(iv);
-  const pt = new TextEncoder().encode(JSON.stringify({ name, min }));
+  const pt = new TextEncoder().encode(JSON.stringify(value));
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv as unknown as BufferSource }, key, pt as unknown as BufferSource);
   return { iv: bufToBase64(iv), ct: bufToBase64(new Uint8Array(ct)) };
 }
 
-/** Inverse of encryptNotifBlob — null when the blob/key is bad or tampered. */
-export async function decryptNotifBlob(
-  rawKeyB64: string,
-  blob: NotifBlob
-): Promise<{ name: string; min: number } | null> {
+/** Inverse of encryptNotifBlob — null when the blob/key is bad or tampered.
+ * Callers validate the decoded shape (JSON.parse returns `unknown`-ish data). */
+export async function decryptNotifBlob<T = unknown>(rawKeyB64: string, blob: NotifBlob): Promise<T | null> {
   try {
     const key = await importRawKey(rawKeyB64, ["decrypt"]);
     const pt = await crypto.subtle.decrypt(
@@ -58,11 +57,7 @@ export async function decryptNotifBlob(
       key,
       base64ToBuf(blob.ct) as unknown as BufferSource
     );
-    const d = JSON.parse(new TextDecoder().decode(pt)) as unknown;
-    if (!d || typeof d !== "object") return null;
-    const { name, min } = d as { name?: unknown; min?: unknown };
-    if (typeof name !== "string" || typeof min !== "number") return null;
-    return { name, min };
+    return JSON.parse(new TextDecoder().decode(pt)) as T;
   } catch {
     return null;
   }

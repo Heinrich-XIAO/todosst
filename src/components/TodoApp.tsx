@@ -747,7 +747,7 @@ function TodoTask() {
             plain.map(async (p) => ({
               todoId: p.todoId,
               remindAt: p.remindAt,
-              nt: await encryptNotifBlob(notifKeyB64, p.name, p.min),
+              nt: await encryptNotifBlob(notifKeyB64, { name: p.name, min: p.min }),
             }))
           );
         } catch {
@@ -2660,6 +2660,8 @@ function TodoTask() {
           })
         }
       />
+
+      <DailyNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} notifKeyB64={notifKeyB64} nowTs={nowTs} />
       </div>
   );
 }
@@ -2742,7 +2744,6 @@ export function TodoApp() {
       <Authenticated>
         <TodoTask />
         <PushAutoEnable />
-        <DailyNudgeSync />
       </Authenticated>
     </>
   );

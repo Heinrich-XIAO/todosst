@@ -109,10 +109,10 @@ export const sendPush = internalAction({
   },
 });
 
-// Daily-nudge push: a tiny encrypted body {t:"nudge"} — the service worker
-// renders "today's windows are open" instead of the due-soon copy. Fire and
-// forget (the cron dedupes per day before scheduling); an encryption failure
-// on a broken subscription falls back to the empty-body generic push.
+// Daily-nudge push: fire and forget (the cron dedupes per day before
+// scheduling). Carries the client-encrypted copy blob when one is stored —
+// the service worker decrypts it on-device; a missing blob (or an encryption
+// failure on a broken subscription) falls back to the generic nudge copy.
 export const sendNudge = internalAction({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
@@ -121,9 +121,13 @@ export const sendNudge = internalAction({
     if (!publicKey || !privateKey) return;
     const subs = await ctx.runQuery(internal.push.subscriptionsFor, { userId: args.userId });
     if (subs.length === 0) return;
+    const { nb } = await ctx.runQuery(internal.nudge.forSend, { userId: args.userId });
+    const payload = nb
+      ? JSON.stringify({ t: "nudge", u: args.userId, nb })
+      : JSON.stringify({ t: "nudge" });
     await deliverToSubs(ctx, publicKey, privateKey, subs, async (s) => {
       try {
-        return await encryptPushPayload({ p256dh: s.p256dh, auth: s.auth }, JSON.stringify({ t: "nudge" }));
+        return await encryptPushPayload({ p256dh: s.p256dh, auth: s.auth }, payload);
       } catch {
         return null;
       }
