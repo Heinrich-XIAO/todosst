@@ -160,6 +160,10 @@ type RowCtx = {
   toggleExpanded: (id: string) => void;
   setDragId: Dispatch<SetStateAction<string | null>>;
   setDropHint: Dispatch<SetStateAction<{ id: string; pos: DropPos } | null>>;
+  // while dragging over a collapsed folder, open it after a beat so its
+  // children become drop targets; cancelled on leave/end/drop
+  requestExpand: (id: string) => void;
+  cancelExpand: () => void;
   navigateToPwd: (parts: string[]) => void;
   // touch devices route "+child" through the composer sheet instead of the
   // inline input (less keyboard)
@@ -202,6 +206,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     toggleExpanded,
     setDragId,
     setDropHint,
+    requestExpand,
+    cancelExpand,
     navigateToPwd,
     isTouch,
     openChildComposer,
@@ -232,22 +238,33 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       onDragEnd={() => {
         setDragId(null);
         setDropHint(null);
+        cancelExpand();
       }}
       onDragOver={(e) => {
         if (!dragId || !isValidDropTarget(node, dragId, tree.map)) return;
         e.preventDefault();
+        // hover over a nested row bubbles through the ancestor <li>s; without
+        // this the outermost handler overwrites dropHint and the indicator
+        // (and drop) appear to target the top-level row instead of the child
+        e.stopPropagation();
         e.dataTransfer.dropEffect = "move";
         const pos = dropPosFor(e);
         setDropHint((prev) => (prev?.id === node._id && prev.pos === pos ? prev : { id: node._id as string, pos }));
+        // hovering a collapsed folder opens it after a beat so its children
+        // become reachable drop targets; any other row cancels the pending one
+        if (hasChildren && collapsed.has(node._id)) requestExpand(node._id);
+        else cancelExpand();
       }}
       onDragLeave={(e) => {
         const next = e.relatedTarget as Node | null;
         if (!next || !(e.currentTarget as HTMLElement).contains(next)) {
           setDropHint((prev) => (prev?.id === node._id ? null : prev));
+          cancelExpand();
         }
       }}
       onDrop={(e) => {
         e.preventDefault();
+        cancelExpand();
         // the drop-area container also handles onDrop (move-to-current-dir);
         // without stopPropagation it fires with the same stale dragId and
         // re-moves the node to the directory root after this handler moved it
@@ -278,7 +295,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         className={`flex items-center gap-2 py-2 pr-3 text-sm ${
           dropHint?.id === node._id
             ? dropHint.pos === "child"
-              ? "bg-foreground/10"
+              ? // nest-as-child needs a louder cue than a line: fill + inset outline
+                "bg-foreground/10 outline outline-1 -outline-offset-2 outline-foreground/50"
               : dropHint.pos === "before"
                 ? "border-t-2 border-t-foreground"
                 : "border-b-2 border-b-foreground"
@@ -2163,6 +2181,32 @@ function TodoTask() {
     });
   }
 
+  // drag-hover auto-expand: hovering a collapsed folder during a drag opens it
+  // after a beat, making its children droppable without a manual expand first
+  const expandTimerRef = useRef<{ id: string; timer: number } | null>(null);
+  const cancelExpand = useCallback(() => {
+    if (expandTimerRef.current) {
+      window.clearTimeout(expandTimerRef.current.timer);
+      expandTimerRef.current = null;
+    }
+  }, []);
+  const requestExpand = useCallback((id: string) => {
+    if (expandTimerRef.current?.id === id) return;
+    if (expandTimerRef.current) window.clearTimeout(expandTimerRef.current.timer);
+    expandTimerRef.current = {
+      id,
+      timer: window.setTimeout(() => {
+        expandTimerRef.current = null;
+        setCollapsed((prev) => {
+          if (!prev.has(id)) return prev;
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
+      }, 600),
+    };
+  }, []);
+
   // Auto-dismiss delete confirmation after 5s, with visible countdown
   const [confirmCountdown, setConfirmCountdown] = useState(5);
   useEffect(() => {
@@ -2325,6 +2369,8 @@ function TodoTask() {
     toggleExpanded,
     setDragId,
     setDropHint,
+    requestExpand,
+    cancelExpand,
     navigateToPwd,
     isTouch,
     openChildComposer: (parentId, parentTitle) =>

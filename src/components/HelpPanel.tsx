@@ -52,6 +52,14 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           </div>
         ))}
         <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
+          <p className="uppercase opacity-60">drag &amp; drop</p>
+          <p className="mt-0.5">
+            drag a task onto another row to reorder above/below it; hold alt (option) while dropping
+            to nest it as that task&apos;s child — hovering a collapsed folder opens it so you can drop
+            into its children. drop on empty space to move a task into the current folder.
+          </p>
+        </div>
+        <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
           <p className="uppercase opacity-60">reminders</p>
           <p className="mt-0.5">
             tasks with a due date or recurrence get &quot;remind me&quot; (15m/5m before) on by default — toggle it
