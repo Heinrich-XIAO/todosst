@@ -28,12 +28,13 @@ jobs:
         run: bun test
 
   deploy-convex:
-    # backend functions/schema ride every master push. The deploy step skips
-    # itself until the repo has a CONVEX_DEPLOY_KEY secret — secrets aren't
-    # readable in a job-level if, so the gate lives at step level and CI
-    # stays green until it is configured.
+    # backend functions/schema ride every master push. secrets aren't readable
+    # in job/step if expressions, so the gate is computed in job env and the
+    # deploy step skips itself until the CONVEX_DEPLOY_KEY secret is set.
     needs: check
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    env:
+      HAS_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY != '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -46,7 +47,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Deploy Convex backend
-        if: ${{ secrets.CONVEX_DEPLOY_KEY != '' }}
+        if: ${{ env.HAS_DEPLOY_KEY == 'true' }}
         run: bunx convex deploy
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
