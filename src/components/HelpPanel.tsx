@@ -54,9 +54,10 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
         <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
           <p className="uppercase opacity-60">drag &amp; drop</p>
           <p className="mt-0.5">
-            drag a task onto another row to reorder above/below it; hold alt (option) while dropping
-            to nest it as that task&apos;s child — hovering a collapsed folder opens it so you can drop
-            into its children. drop on empty space to move a task into the current folder.
+            drop a task onto the body of another task to nest it inside (it becomes that task&apos;s
+            child); drop near a row&apos;s top or bottom edge to place it above/below instead. hovering
+            a collapsed folder opens it so you can drop into its children; drop on empty space to
+            move into the current folder. alt (option) forces nesting on any part of a row.
           </p>
         </div>
         <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">

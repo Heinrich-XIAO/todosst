@@ -18,7 +18,11 @@ export type TreeNode = DecryptedNode & { children: TreeNode[]; depth: number };
 
 export type DropPos = "before" | "after" | "child";
 
-/** Upper half of the row inserts above, lower half below; Alt means "drop as child". */
+/**
+ * Where a drag over this row will land: the middle band of the row nests the
+ * task inside it (the folder metaphor — drop ON a plan to put it in the plan);
+ * the upper/lower bands insert beside it. Alt forces "child" everywhere.
+ */
 export function dropPosFor(e: DragEvent): DropPos {
   if (e.altKey) return "child";
   // measure the visible row (direct child marked data-drop-row), not the whole
@@ -27,7 +31,14 @@ export function dropPosFor(e: DragEvent): DropPos {
   const li = e.currentTarget as HTMLElement;
   const row = li.querySelector<HTMLElement>(":scope > [data-drop-row]") ?? li;
   const rect = row.getBoundingClientRect();
-  return e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+  return bandPos(e.clientY, rect.top, rect.height);
+}
+
+/** 30/40/30 vertical bands: above / nest-inside / below. */
+export function bandPos(clientY: number, top: number, height: number): DropPos {
+  if (clientY < top + height * 0.3) return "before";
+  if (clientY > top + height * 0.7) return "after";
+  return "child";
 }
 
 export function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {

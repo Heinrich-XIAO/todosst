@@ -501,7 +501,8 @@ function TodoTask() {
   const [addChildParent, setAddChildParent] = useState<Id<"todos"> | null>(null);
   const [addChildTitle, setAddChildTitle] = useState("");
   const [dragId, setDragId] = useState<string | null>(null);
-  // where the dragged row would land: sibling above/below, or nested (Alt-held drop)
+  // where the dragged row would land: the row's middle band nests inside it,
+  // top/bottom bands insert beside it (Alt forces nest anywhere)
   const [dropHint, setDropHint] = useState<{ id: string; pos: DropPos } | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<Id<"todos"> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

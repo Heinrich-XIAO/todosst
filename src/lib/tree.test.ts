@@ -1,6 +1,6 @@
 // @ts-nocheck — runs under `bun test` (bun:test types not installed)
 import { test, expect } from "bun:test";
-import { buildTree, childrenOf, collectDescendants, findChildByTitle, getAncestors, isValidDropTarget } from "./tree";
+import { buildTree, childrenOf, collectDescendants, dropPosFor, findChildByTitle, getAncestors, isValidDropTarget } from "./tree";
 
 let seq = 0;
 function node(overrides = {}) {
@@ -122,4 +122,40 @@ test("isValidDropTarget rejects the dragged row and its own subtree", () => {
   expect(isValidDropTarget(c, b._id, map)).toBe(false);
   // unrelated row is fine
   expect(isValidDropTarget(other, a._id, map)).toBe(true);
+});
+
+// ---- drop position bands ----
+
+// dropPosFor only needs currentTarget.querySelector (null → falls back to the
+// element itself) and getBoundingClientRect; a stub passes for both
+function fakeDrag(clientY: number, rect: { top: number; height: number }, altKey = false) {
+  return {
+    altKey,
+    clientY,
+    currentTarget: {
+      querySelector: () => null,
+      getBoundingClientRect: () => rect,
+    },
+  } as unknown as DragEvent;
+}
+
+test("dropPosFor: middle band nests, edge bands insert beside", () => {
+  const rect = { top: 100, height: 40 };
+  // top band (< 30%): before
+  expect(dropPosFor(fakeDrag(100, rect))).toBe("before");
+  expect(dropPosFor(fakeDrag(111, rect))).toBe("before");
+  // middle band (30–70%): child
+  expect(dropPosFor(fakeDrag(112, rect))).toBe("child");
+  expect(dropPosFor(fakeDrag(120, rect))).toBe("child");
+  expect(dropPosFor(fakeDrag(127, rect))).toBe("child");
+  // bottom band (> 70%): after — boundary is exclusive (clientY > top + 0.7*h)
+  expect(dropPosFor(fakeDrag(129, rect))).toBe("after");
+  expect(dropPosFor(fakeDrag(139, rect))).toBe("after");
+});
+
+test("dropPosFor: alt forces child on any band", () => {
+  const rect = { top: 100, height: 40 };
+  expect(dropPosFor(fakeDrag(100, rect, true))).toBe("child");
+  expect(dropPosFor(fakeDrag(139, rect))).toBe("after");
+  expect(dropPosFor(fakeDrag(139, rect, true))).toBe("child");
 });
