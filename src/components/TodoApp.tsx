@@ -231,9 +231,17 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       draggable={!isEditing}
       onDragStart={(e) => {
         setDragId(node._id);
+        // a previous drag can die without dragend (a drop that reparents the
+        // node unmounts its row, so dragend fires on a detached element React
+        // no longer sees) — start clean so no stale highlight/dim carries over
+        setDropHint(null);
+        cancelExpand();
         e.dataTransfer.effectAllowed = "move";
         // Firefox aborts the drag entirely when no transfer data is set
         e.dataTransfer.setData("text/plain", node.title);
+        // ghost just this row, not the whole expanded subtree below it
+        const row = e.currentTarget.querySelector(":scope > [data-drop-row]");
+        if (row) e.dataTransfer.setDragImage(row, 24, 16);
       }}
       onDragEnd={() => {
         setDragId(null);
@@ -241,7 +249,15 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         cancelExpand();
       }}
       onDragOver={(e) => {
-        if (!dragId || !isValidDropTarget(node, dragId, tree.map)) return;
+        if (!dragId) return;
+        // the dragged row itself or its own subtree: nothing may drop here —
+        // stop propagation so an ancestor doesn't light up as the target
+        // instead, and clear whatever the previously hovered row lit up
+        if (!isValidDropTarget(node, dragId, tree.map)) {
+          e.stopPropagation();
+          setDropHint((prev) => (prev?.id === node._id ? null : prev));
+          return;
+        }
         e.preventDefault();
         // hover over a nested row bubbles through the ancestor <li>s; without
         // this the outermost handler overwrites dropHint and the indicator
@@ -250,9 +266,10 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         e.dataTransfer.dropEffect = "move";
         const pos = dropPosFor(e);
         setDropHint((prev) => (prev?.id === node._id && prev.pos === pos ? prev : { id: node._id as string, pos }));
-        // hovering a collapsed folder opens it after a beat so its children
-        // become reachable drop targets; any other row cancels the pending one
-        if (hasChildren && collapsed.has(node._id)) requestExpand(node._id);
+        // hovering the body of a collapsed folder opens it after a beat so its
+        // children become reachable; hovering the edges (insert beside) or any
+        // other row must not
+        if (hasChildren && collapsed.has(node._id) && pos === "child") requestExpand(node._id);
         else cancelExpand();
       }}
       onDragLeave={(e) => {
@@ -298,8 +315,11 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
               ? // nest-as-child needs a louder cue than a line: fill + inset outline
                 "bg-foreground/10 outline outline-1 -outline-offset-2 outline-foreground/50"
               : dropHint.pos === "before"
-                ? "border-t-2 border-t-foreground"
-                : "border-b-2 border-b-foreground"
+                ? // inset shadows instead of borders — a real border shifts the
+                  // row 2px, moving the band boundary under the cursor and
+                  // oscillating the hint between before/after
+                  "shadow-[inset_0_2px_0_0_var(--foreground)]"
+                : "shadow-[inset_0_-2px_0_0_var(--foreground)]"
             : ""
         }`}
       >
@@ -2208,6 +2228,26 @@ function TodoTask() {
     };
   }, []);
 
+  // drag-state safety net: dragend can be lost when a drop reparents the
+  // dragged node — the row unmounts, the browser dispatches dragend on the
+  // detached element and React's delegated listener never sees it, leaving
+  // dragId/dropHint stale (dimmed row, stuck indicator, ghost next drag).
+  // drop events that bubble here are all non-row drops; row drops stop
+  // propagation and clean up themselves.
+  useEffect(() => {
+    const clearDragState = () => {
+      setDragId(null);
+      setDropHint(null);
+      cancelExpand();
+    };
+    window.addEventListener("dragend", clearDragState);
+    window.addEventListener("drop", clearDragState);
+    return () => {
+      window.removeEventListener("dragend", clearDragState);
+      window.removeEventListener("drop", clearDragState);
+    };
+  }, [cancelExpand]);
+
   // Auto-dismiss delete confirmation after 5s, with visible countdown
   const [confirmCountdown, setConfirmCountdown] = useState(5);
   useEffect(() => {
@@ -2597,6 +2637,10 @@ function TodoTask() {
         }}
         onDrop={(e) => {
           e.preventDefault();
+          cancelExpand();
+          // clear the row highlight even when the drop is a no-op (same
+          // parent) or rejected — otherwise the last hint sticks around
+          setDropHint(null);
           if (!dragId) return;
           // drop on empty area — move to current directory (root or pwd)
           if (!currentDirInfo.exists) {

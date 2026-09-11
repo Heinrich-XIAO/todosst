@@ -56,8 +56,8 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
           <p className="mt-0.5">
             drop a task onto the body of another task to nest it inside (it becomes that task&apos;s
             child); drop near a row&apos;s top or bottom edge to place it above/below instead. hovering
-            a collapsed folder opens it so you can drop into its children; drop on empty space to
-            move into the current folder. alt (option) forces nesting on any part of a row.
+            the body of a collapsed folder opens it so you can drop into its children; drop on empty
+            space to move into the current folder. alt (option) forces nesting on any part of a row.
           </p>
         </div>
         <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
