@@ -42,7 +42,8 @@ import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
 import { ReminderToast } from "./ReminderToast";
 import { CountControl } from "./CountControl";
 import { SlipControl } from "./SlipControl";
-import { buildTodayItems, openCountOf, TodayView, type PastYearSlide } from "./TodayView";
+import { buildTodayItems, openCountOf, rowIsOpen, TodayView, type PastYearSlide } from "./TodayView";
+import { confettiBurst, confettiCelebrate } from "@/lib/confetti";
 import { dismissHabitOffer, taskMissedDays, openRitual, recordClearDay } from "@/lib/ritual";
 import {
   buildTree,
@@ -1880,20 +1881,41 @@ function TodoTask() {
     const mode = modeOf(meta0);
     if (isRecurring || mode !== "check") {
       // windowed count path — checkbox toggles threshold, tally increments
-      await applyCountWrite(node, rs, nextCountOnClick(mode, currentCount(node, rs), thresholdOf(meta0)));
+      const th = thresholdOf(meta0);
+      const before = currentCount(node, rs);
+      const next = nextCountOnClick(mode, before, th);
+      const completing = before < th && next >= th;
+      const lastOpen = completing && isSoleOpenToday(node);
+      if (lastOpen) clearedByCompletionRef.current = true;
+      try {
+        await applyCountWrite(node, rs, next);
+      } catch (e) {
+        if (lastOpen) clearedByCompletionRef.current = false;
+        throw e;
+      }
+      if (completing && !lastOpen) confettiBurst();
       return;
     }
     // plain checkbox task — same behavior as before, plus counts kept in sync
     // for lossless check<->tally mode switching later
     const targetDay = rs?.windowDay ?? dayIndexLocal(node._creationTime);
     const nextCount = node.isCompleted ? 0 : thresholdOf(meta0);
+    const completing = !node.isCompleted;
+    const lastOpen = completing && isSoleOpenToday(node);
+    if (lastOpen) clearedByCompletionRef.current = true;
     const updated = toPlainNode(node, {
       isCompleted: !node.isCompleted,
       metadata: { ...meta0, counts: { [String(targetDay)]: nextCount } },
     });
     const { ciphertext, iv } = await cryptoEncNode(updated);
-    await updateTodo({ id: node._id, ciphertext, iv });
-    await pushHistory(node._id as string, targetDay, nextCount);
+    try {
+      await updateTodo({ id: node._id, ciphertext, iv });
+      await pushHistory(node._id as string, targetDay, nextCount);
+    } catch (e) {
+      if (lastOpen) clearedByCompletionRef.current = false;
+      throw e;
+    }
+    if (completing && !lastOpen) confettiBurst();
   }
 
   // targetDay credits a specific (past) window — the slipped? stepper on a
@@ -1904,7 +1926,20 @@ function TodoTask() {
       targetDay !== undefined && targetDay !== rs?.windowDay
         ? (negCounts.get(node._id as string)?.get(targetDay) ?? 0)
         : currentCount(node, rs);
-    await applyCountWrite(node, rs, Math.min(base + delta, COUNT_MAX), { targetDay });
+    // confetti only for crossing into completed on the current window —
+    // past-window credits (slip) and decrements never change open state
+    const th = thresholdOf(node.metadata as PlainNode["metadata"]);
+    const currentWindow = targetDay === undefined || targetDay === rs?.windowDay;
+    const completing = delta > 0 && currentWindow && base < th && Math.min(base + delta, COUNT_MAX) >= th;
+    const lastOpen = completing && isSoleOpenToday(node);
+    if (lastOpen) clearedByCompletionRef.current = true;
+    try {
+      await applyCountWrite(node, rs, Math.min(base + delta, COUNT_MAX), { targetDay });
+    } catch (e) {
+      if (lastOpen) clearedByCompletionRef.current = false;
+      throw e;
+    }
+    if (completing && !lastOpen) confettiBurst();
   }
 
   async function handleCountDown(node: TreeNode, delta = 1, targetDay?: number) {
@@ -1936,6 +1971,32 @@ function TodoTask() {
       habitAutoSigRef.current = null;
     });
   }, [openToday, todayIdx, habitId, habitRs, tree.map]);
+
+  // all-clear confetti: celebrate once when openToday transitions >0 -> 0 and
+  // the write that emptied the day was a completion (clearedByCompletionRef) —
+  // deletes and reschedules off today reduce the count too but stay silent.
+  // prevOpenRef null-guards the first observation after load/unlock, so a day
+  // that already starts clear never fires. The completing write sets the flag
+  // optimistically and clears it on failure; the transition consumes it. The
+  // last task's own burst is skipped in handleToggle/handleCountUp when the
+  // flag is armed, so the celebration replaces the small burst, never doubles.
+  const prevOpenRef = useRef<number | null>(null);
+  const clearedByCompletionRef = useRef(false);
+  useEffect(() => {
+    if (openToday === null) return;
+    const prev = prevOpenRef.current;
+    prevOpenRef.current = openToday;
+    if (prev === null || prev === 0 || openToday !== 0) return;
+    if (!clearedByCompletionRef.current) return;
+    clearedByCompletionRef.current = false;
+    confettiCelebrate();
+  }, [openToday]);
+
+  function isSoleOpenToday(node: TreeNode): boolean {
+    if (!todayItems || openCountOf(todayItems) !== 1) return false;
+    const item = todayItems.find((i) => i.node._id === node._id);
+    return !!item && rowIsOpen(item);
+  }
 
   function startEdit(node: TreeNode) {
     setEditingId(node._id);
