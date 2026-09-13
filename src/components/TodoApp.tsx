@@ -3,7 +3,11 @@
    state sync in effects is inherent to the encrypted vault lifecycle here;
    same tradeoff as EncryptionContext.tsx */
 
-import { useState, useEffect, useMemo, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
+
+// layout effect that is safe during SSR ("use client" components still
+// server-render, and useLayoutEffect warns there)
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -146,6 +150,8 @@ type RowCtx = {
   confirmDeleteId: Id<"todos"> | null;
   currentDirDepth: number;
   currentCount: (node: TreeNode, rs: RecurState | undefined) => number;
+  /** pending optimistic counts, `${todoId}:${windowDay}` -> count (applyCountWrite) */
+  countOverrides: Map<string, number>;
   handleToggle: (node: TreeNode) => Promise<void>;
   handleCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   handleCountDown: (node: TreeNode, delta?: number) => Promise<void>;
@@ -192,6 +198,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     confirmDeleteId,
     currentDirDepth,
     currentCount,
+    countOverrides,
     handleToggle,
     handleCountUp,
     handleCountDown,
@@ -225,7 +232,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
   const meta = node.metadata as PlainNode["metadata"];
   const mode = modeOf(meta);
   const threshold = thresholdOf(meta);
-  const count = currentCount(node, rs);
+  const count =
+    countOverrides.get(`${node._id}:${rs?.windowDay ?? dayIndexLocal(node._creationTime)}`) ?? currentCount(node, rs);
   const checked = rs?.isRecurring ? count >= threshold : node.isCompleted;
   return (
     <li
@@ -309,7 +317,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         setDragId(null);
         setDropHint(null);
       }}
-      className={`border-b border-foreground/10 last:border-b-0 transition-opacity ${isFading ? "duration-[3000ms] ease-out" : "duration-1000"} ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${
+      className={`border-b border-foreground/10 last:border-b-0 transition-opacity ${isFading ? "duration-[3000ms] ease-out" : "duration-1000"} ${isFading && fadeToZero ? "fade-away" : ""} ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${
         isFading ? (fadeToZero ? "opacity-0" : "opacity-20") : node.isCompleted ? "opacity-20" : "opacity-100"
       }`}
       style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
@@ -517,9 +525,11 @@ function TodoTask() {
   );
 
   const pathname = usePathname() ?? "/";
+  // the view lives in the URL: a "/tree" prefix shows the tree view, anything
+  // else is today. Deep links like /tree/host%20hackathon just work.
+  const view = pathname === "/tree" || pathname.startsWith("/tree/") ? "tree" : "today";
   const [newRootTitle, setNewRootTitle] = useState("");
   const [filter, setFilter] = useState<Filter>("active");
-  const [view, setView] = useState<"today" | "tree">("today");
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<Id<"todos"> | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -570,6 +580,7 @@ function TodoTask() {
       setNodes(null);
       setDecryptError(null);
       setIsDecrypting(false);
+      setCountOverrides(new Map()); // optimistic counts are session-scoped like the decrypt cache
       return;
     }
     if (decryptKeyRef.current !== key) {
@@ -928,7 +939,33 @@ function TodoTask() {
     });
   }
 
-  useEffect(() => {
+  function armFadeTimer(id: string) {
+    const t = fadeTimersRef.current.get(id);
+    if (t !== undefined) window.clearTimeout(t);
+    fadeTimersRef.current.set(id, window.setTimeout(() => endFade(id), FADE_MS));
+  }
+
+  // Seed a fade synchronously at completion time (the click path). isFading is
+  // then already true in the first render that shows the row completed, so the
+  // row never unmounts and its opacity transition plays; the unmount timer is
+  // armed by the sync effect below when the completion actually lands.
+  function startFade(id: string) {
+    setFadingIds((prev) => {
+      if (prev.has(id)) return prev;
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+  }
+
+  // layout effect (not useEffect): the first completed render happens before
+  // fadingIds catches up, and show would drop the row that paint — an instant
+  // vanish followed by a remount at opacity-0 whose 3s transition never plays
+  // (fresh elements have no previous value to transition from). Running before
+  // paint keeps the unmount/remount invisible and in the same frame as the
+  // completion; the .fade-away animation covers the fresh-mount case so the
+  // 3s fade still plays.
+  useIsoLayoutEffect(() => {
     if (!nodes) {
       // locked/reset — drop any half-finished fades
       seenCompletedRef.current = null;
@@ -945,19 +982,22 @@ function TodoTask() {
       seenCompletedRef.current = completed;
       return;
     }
-    const start: string[] = [];
+    // begin: newly completed rows. Covers both server-initiated completions
+    // and rows the click path seeded already-fading (those get their unmount
+    // timer here, aligned with the moment the fade becomes visible).
+    const begin: string[] = [];
     for (const id of Array.from(completed)) {
-      if (!seen.has(id) && !fadingRef.current.has(id)) start.push(id);
+      if (!seen.has(id)) begin.push(id);
     }
     const stop: string[] = [];
     for (const id of Array.from(fadingRef.current)) {
       if (!completed.has(id)) stop.push(id);
     }
-    if (start.length > 0 || stop.length > 0) {
+    if (begin.length > 0 || stop.length > 0) {
       setFadingIds((prev) => {
         const next = new Set(prev);
         let changed = false;
-        for (const id of start) {
+        for (const id of begin) {
           if (!next.has(id)) {
             next.add(id);
             changed = true;
@@ -971,9 +1011,7 @@ function TodoTask() {
         }
         return changed ? next : prev;
       });
-      for (const id of start) {
-        fadeTimersRef.current.set(id, window.setTimeout(() => endFade(id), FADE_MS));
-      }
+      for (const id of begin) armFadeTimer(id);
       // un-completed mid-fade: cancel the end timer
       for (const id of stop) {
         const t = fadeTimersRef.current.get(id);
@@ -1056,12 +1094,15 @@ function TodoTask() {
   }
 
   const decodedPath = useMemo(() => {
+    // strip the /tree view prefix (see `view`) so pwd resolution only ever
+    // sees the directory part of the URL
+    const p = view === "tree" ? pathname.slice("/tree".length) || "/" : pathname;
     try {
-      return decodeURIComponent(pathname);
+      return decodeURIComponent(p);
     } catch {
-      return pathname;
+      return p;
     }
-  }, [pathname]);
+  }, [pathname, view]);
 
   const currentDirInfo = useMemo(() => {
     if (!nodes) return { id: null as Id<"todos"> | null, exists: false, parts: [] as string[] };
@@ -1108,43 +1149,44 @@ function TodoTask() {
     return opts;
   }, [tree]);
 
-  // Change the URL without a reload (breadcrumbs, "!cd"). The popstate dance
-  // ensures Next's usePathname syncs (pushState is patched but popstate helps in some builds).
+  // Change the URL without a reload (breadcrumbs, "!cd", view switches). The
+  // popstate dance ensures Next's usePathname syncs (pushState is patched but
+  // popstate helps in some builds).
   const pushPath = useCallback((decodedPath: string) => {
     window.history.pushState(null, "", encodePathForUrl(decodedPath));
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, []);
 
+  // tree-view navigation is always URL-prefixed with /tree
   const navigateToPwd = useCallback(
     (parts: string[]) => {
-      pushPath(partsToDecodedPath(parts));
+      pushPath(partsToDecodedPath(["tree", ...parts]));
+    },
+    [pushPath]
+  );
+
+  // tab switches push the same URL shape: directories only ever exist under
+  // /tree; today is always plain "/" (no dir part, so nothing to carry over)
+  const goToView = useCallback(
+    (v: "today" | "tree") => {
+      pushPath(v === "tree" ? partsToDecodedPath(["tree"]) : "/");
     },
     [pushPath]
   );
 
   // context handed to bang commands (!cd, !help) via the grammar registry.
-  // Navigating while on the today view switches to the tree — you asked to be
-  // somewhere, so show the tree.
+  // !cd targets a directory, so it always lands in the tree view.
   const commandCtx = useMemo<CommandContext>(
     () => ({
       currentPath: decodedPath,
-      pushPath: (path: string) => {
-        pushPath(path);
-        setView("tree");
-      },
+      pushPath: (path: string) => navigateToPwd(decodePathToParts(path)),
       showHelp: () => setHelpOpen(true),
     }),
-    [decodedPath, pushPath]
+    [decodedPath, navigateToPwd]
   );
 
   // jump from a today row to the task's directory in the tree view
-  const jumpToDir = useCallback(
-    (parts: string[]) => {
-      navigateToPwd(parts);
-      setView("tree");
-    },
-    [navigateToPwd]
-  );
+  const jumpToDir = navigateToPwd;
 
   const todayItems = useMemo(
     () => buildTodayItems(nodes, tree, recurStates, nowTs),
@@ -1228,6 +1270,38 @@ function TodoTask() {
   // ---- negative tasks (holds section) ----
   // merged counts per node (history is authoritative, current-window metadata
   // and recur state top it up while writes/loads are in flight)
+  //
+  // ---- optimistic count overrides ----
+  // A count write takes two server round-trips (todo + history) plus a query
+  // push before any derived state (recurStates, negCounts) shows the new
+  // value — without a local override a slip click renders nothing until all
+  // of that lands. Keyed `${todoId}:${windowDay}` -> count; set synchronously
+  // in applyCountWrite, dropped once server-derived counts catch up or the
+  // write fails.
+  const [countOverrides, setCountOverrides] = useState<Map<string, number>>(new Map());
+  const countOverridesRef = useRef(countOverrides);
+  countOverridesRef.current = countOverrides;
+
+  function setCountOverride(id: string, day: number, value: number) {
+    const k = `${id}:${day}`;
+    setCountOverrides((prev) => {
+      if (prev.get(k) === value) return prev;
+      const next = new Map(prev);
+      next.set(k, value);
+      return next;
+    });
+  }
+
+  function clearCountOverride(id: string, day: number) {
+    const k = `${id}:${day}`;
+    setCountOverrides((prev) => {
+      if (!prev.has(k)) return prev;
+      const next = new Map(prev);
+      next.delete(k);
+      return next;
+    });
+  }
+
   const negCounts = useMemo(() => {
     const m = new Map<string, Map<number, number>>();
     for (const n of nodes ?? []) {
@@ -1241,8 +1315,35 @@ function TodoTask() {
       if (rs?.isRecurring && rs.count > (map.get(rs.windowDay) ?? 0)) map.set(rs.windowDay, rs.count);
       m.set(id, map);
     }
+    // overrides replace the merged value — the user just wrote it and the
+    // server may be stale in either direction until the push arrives
+    for (const [key, value] of countOverrides) {
+      const sep = key.lastIndexOf(":");
+      const map = m.get(key.slice(0, sep));
+      if (map) map.set(Number(key.slice(sep + 1)), value);
+    }
     return m;
-  }, [nodes, history, recurStates]);
+  }, [nodes, history, recurStates, countOverrides]);
+
+  // reconcile: once the query push reflects a write, the override is
+  // redundant — drop it so later server state (e.g. another device) shows
+  // through. Equality is exact because applyCountWrite wrote that same value.
+  useEffect(() => {
+    const pending = countOverridesRef.current;
+    if (pending.size === 0) return;
+    const drop: string[] = [];
+    for (const [key, value] of pending) {
+      const sep = key.lastIndexOf(":");
+      if ((negCounts.get(key.slice(0, sep))?.get(Number(key.slice(sep + 1))) ?? 0) === value) drop.push(key);
+    }
+    if (drop.length === 0) return;
+    setCountOverrides((prev) => {
+      const next = new Map(prev);
+      let changed = false;
+      for (const k of drop) if (next.delete(k)) changed = true;
+      return changed ? next : prev;
+    });
+  }, [negCounts]);
 
   const holdItems = useMemo<HoldItem[] | null>(
     () => buildHoldItems({ nodes, tree, recurStates, priorWindows, counts: negCounts, nowTs }),
@@ -1862,15 +1963,38 @@ function TodoTask() {
       isCompleted: isRecurring ? false : clamped >= thresholdOf(meta),
       metadata: { ...meta, counts },
     });
-    const { ciphertext, iv } = await cryptoEncNode(updated);
-    await updateTodo({ id: node._id, ciphertext, iv });
-    await pushHistory(node._id as string, targetDay, clamped);
+    // optimistic — show the new count before the writes and query push land.
+    // A past-window credit lives in the history record alone, so it can only
+    // be shown optimistically when the history store is actually loaded.
+    if (targetDay === windowDay || historyRef.current) {
+      setCountOverride(node._id as string, targetDay, clamped);
+    }
+    try {
+      const { ciphertext, iv } = await cryptoEncNode(updated);
+      await Promise.all([updateTodo({ id: node._id, ciphertext, iv }), pushHistory(node._id as string, targetDay, clamped)]);
+    } catch (e) {
+      clearCountOverride(node._id as string, targetDay);
+      throw e;
+    }
   }
 
   function currentCount(node: TreeNode, rs: RecurState | undefined): number {
     if (rs) return rs.count;
     const c = (node.metadata as PlainNode["metadata"]).counts?.[String(dayIndexLocal(node._creationTime))];
     return typeof c === "number" && Number.isFinite(c) && c > 0 ? Math.floor(c) : 0;
+  }
+
+  // base for the next delta write — a pending optimistic override wins over
+  // possibly-stale server state, else a rapid second click computes from the
+  // same pre-write snapshot and the first increment is lost
+  function baseCountFor(node: TreeNode, targetDay: number | undefined, rs: RecurState | undefined): number {
+    const id = node._id as string;
+    const day = targetDay ?? rs?.windowDay ?? dayIndexLocal(node._creationTime);
+    const pending = countOverridesRef.current.get(`${id}:${day}`);
+    if (pending !== undefined) return pending;
+    return targetDay !== undefined && targetDay !== rs?.windowDay
+      ? (negCounts.get(id)?.get(targetDay) ?? 0)
+      : currentCount(node, rs);
   }
 
   async function handleToggle(node: TreeNode) {
@@ -1886,6 +2010,7 @@ function TodoTask() {
       const next = nextCountOnClick(mode, before, th);
       const completing = before < th && next >= th;
       const lastOpen = completing && isSoleOpenToday(node);
+      if (completing) startFade(node._id as string);
       if (lastOpen) clearedByCompletionRef.current = true;
       try {
         await applyCountWrite(node, rs, next);
@@ -1902,6 +2027,7 @@ function TodoTask() {
     const nextCount = node.isCompleted ? 0 : thresholdOf(meta0);
     const completing = !node.isCompleted;
     const lastOpen = completing && isSoleOpenToday(node);
+    if (completing) startFade(node._id as string);
     if (lastOpen) clearedByCompletionRef.current = true;
     const updated = toPlainNode(node, {
       isCompleted: !node.isCompleted,
@@ -1922,16 +2048,14 @@ function TodoTask() {
   // confirm row logs into the window that just ended, base count from history
   async function handleCountUp(node: TreeNode, delta = 1, targetDay?: number) {
     const rs = recurStates?.get(node._id as string);
-    const base =
-      targetDay !== undefined && targetDay !== rs?.windowDay
-        ? (negCounts.get(node._id as string)?.get(targetDay) ?? 0)
-        : currentCount(node, rs);
+    const base = baseCountFor(node, targetDay, rs);
     // confetti only for crossing into completed on the current window —
     // past-window credits (slip) and decrements never change open state
     const th = thresholdOf(node.metadata as PlainNode["metadata"]);
     const currentWindow = targetDay === undefined || targetDay === rs?.windowDay;
     const completing = delta > 0 && currentWindow && base < th && Math.min(base + delta, COUNT_MAX) >= th;
     const lastOpen = completing && isSoleOpenToday(node);
+    if (completing) startFade(node._id as string);
     if (lastOpen) clearedByCompletionRef.current = true;
     try {
       await applyCountWrite(node, rs, Math.min(base + delta, COUNT_MAX), { targetDay });
@@ -1944,10 +2068,7 @@ function TodoTask() {
 
   async function handleCountDown(node: TreeNode, delta = 1, targetDay?: number) {
     const rs = recurStates?.get(node._id as string);
-    const base =
-      targetDay !== undefined && targetDay !== rs?.windowDay
-        ? (negCounts.get(node._id as string)?.get(targetDay) ?? 0)
-        : currentCount(node, rs);
+    const base = baseCountFor(node, targetDay, rs);
     await applyCountWrite(node, rs, Math.max(base - delta, 0), { targetDay });
   }
 
@@ -1967,6 +2088,7 @@ function TodoTask() {
     if (!tn || !habitRs?.isRecurring || habitRs.expired) return;
     const th = thresholdOf(tn.metadata as PlainNode["metadata"]);
     if (habitRs.count >= th) return;
+    startFade(tn._id as string);
     applyCountWriteRef.current(tn, habitRs, th).catch(() => {
       habitAutoSigRef.current = null;
     });
@@ -2462,6 +2584,7 @@ function TodoTask() {
     confirmDeleteId,
     currentDirDepth,
     currentCount,
+    countOverrides,
     handleToggle,
     handleCountUp,
     handleCountDown,
@@ -2499,13 +2622,13 @@ function TodoTask() {
         </span>
         <span className="hidden items-center gap-3 md:flex">
           <button
-            onClick={() => setView("today")}
+            onClick={() => goToView("today")}
             className={view === "today" ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}
           >
             today
           </button>
           <button
-            onClick={() => setView("tree")}
+            onClick={() => goToView("tree")}
             className={view === "tree" ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}
           >
             tree
@@ -2807,7 +2930,7 @@ function TodoTask() {
 
       <BottomNav
         view={view}
-        setView={setView}
+        goToView={goToView}
         onAdd={() =>
           setComposer({
             kind: "create",
@@ -2826,11 +2949,11 @@ function TodoTask() {
 
 function BottomNav({
   view,
-  setView,
+  goToView,
   onAdd,
 }: {
   view: "today" | "tree";
-  setView: (v: "today" | "tree") => void;
+  goToView: (v: "today" | "tree") => void;
   onAdd: () => void;
 }) {
   const tabs = [
@@ -2842,7 +2965,7 @@ function BottomNav({
       {tabs.slice(0, 1).map((t) => (
         <button
           key={t.id}
-          onClick={() => setView(t.id)}
+          onClick={() => goToView(t.id)}
           className={`flex-1 py-3 text-xs ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
         >
           {t.label}
@@ -2858,7 +2981,7 @@ function BottomNav({
       {tabs.slice(1).map((t) => (
         <button
           key={t.id}
-          onClick={() => setView(t.id)}
+          onClick={() => goToView(t.id)}
           className={`flex-1 py-3 text-xs ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
         >
           {t.label}

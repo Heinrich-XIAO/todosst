@@ -94,3 +94,21 @@ body {
     animation: none;
   }
 }
+
+/* completed-row fade-away — in the active tree view a freshly completed row is
+   unmounted by the filter and remounted once fadingIds catches up (same paint,
+   see TodoApp.tsx). A fresh element has no previous opacity to transition
+   from, so the row's transition-opacity never plays; this keyframe fades it
+   on mount instead. Duration mirrors FADE_MS in TodoApp.tsx. Opacity-only, so
+   it stays on for prefers-reduced-motion like the row transition it mirrors. */
+@keyframes fade-away {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+.fade-away {
+  animation: fade-away 3s ease-out forwards;
+}
