@@ -206,6 +206,10 @@ export type PlainNode = {
     neg?: boolean;
     // slips tolerated per window (default 0) — held iff slips <= tol
     tol?: number;
+    // epoch ms of the most recent transition into completed (plain tasks and
+    // non-recurring tally/time thresholds); null = open. Unset on legacy rows
+    // and never stamped for past-window credits (those are historical).
+    completedAt?: number | null;
     // windowDay -> confirmation timestamp of manual "held" confirmations
     holds?: Record<string, number>;
   };

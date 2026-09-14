@@ -85,6 +85,12 @@ export type TodayItem = {
 
 const GROUP_LABELS = ["overdue", "today", "still open"] as const;
 
+/** One 10px section band — shared by habits / tasks / battles headers and the
+ * overdue / still-open sub-labels, so every section reads the same. */
+function SectionHead({ children }: { children: string }) {
+  return <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">{children}</div>;
+}
+
 /** A row still wants action today: a recurring count below threshold, or an
  * uncompleted plain task. Completed overdue rows are settled history — they
  * no longer block all clear (the ritual must be reachable). */
@@ -138,6 +144,7 @@ function TodayRow({
   item,
   map,
   missNote,
+  streakNote,
   onToggle,
   onCountUp,
   onCountDown,
@@ -148,6 +155,9 @@ function TodayRow({
   map: Map<string, TreeNode>;
   /** missed-days escalation, grey on the right — open recurring rows only */
   missNote?: string | null;
+  /** show-up streak note, grey on the right — recurring rows only
+   * (see taskStreaks in TodoApp) */
+  streakNote?: string | null;
   onToggle: (node: TreeNode) => Promise<void>;
   onCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
@@ -211,6 +221,11 @@ function TodayRow({
           >
             {ancestors.map((a) => a.title).join("/")}
           </button>
+        )}
+        {streakNote && (
+          <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={streakNote}>
+            {streakNote}
+          </span>
         )}
         {missNote && (
           <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={missNote}>
@@ -452,6 +467,7 @@ export function TodayView({
   map,
   slides = [],
   missesByTask,
+  streaksByTask,
   showHabitOffer = false,
   isTouch = false,
   onCreateHabit,
@@ -476,6 +492,9 @@ export function TodayView({
   /** per-task missed days (see buildTaskMisses in TodoApp) — recurring rows
    * whose own streak reaches two carry the escalation note */
   missesByTask?: Map<string, number>;
+  /** per-task show-up streaks (see taskStreaks in TodoApp) — recurring rows
+   * with a streak of two or more carry the streak note */
+  streaksByTask?: Map<string, number>;
   showHabitOffer?: boolean;
   /** touch-first device — gates the "hold to slip" hint to where holding logs */
   isTouch?: boolean;
@@ -496,11 +515,55 @@ export function TodayView({
     const n = missesByTask?.get(String(i.node._id));
     return n !== undefined && i.rs?.isRecurring && rowIsOpen(i) ? missCopy(n) : null;
   };
+  const streakNoteOf = (i: TodayItem) => {
+    const n = streaksByTask?.get(String(i.node._id));
+    return n !== undefined ? `${n} day streak` : null;
+  };
 
   if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
 
-  const groups: (0 | 1 | 2)[] = [0, 1, 2];
   const holdRows = holds ?? [];
+
+  // One labeled section — recurring rows render under "habits", plain due
+  // tasks under "tasks", the same pass the view always ran: today's own rows
+  // keep the fade, other groups hide settled rows so a header can never
+  // render as empty. Overdue rows are pulled out and render as the last
+  // section of the view, after battles — down there the header reads as
+  // naming everything between it and the end instead of floating mid-list.
+  const sectionRows = (label: string, rows: TodayItem[]) => {
+    const visible = rows.filter((i) => i.group !== 0 && (i.group === 1 || rowIsOpen(i)));
+    if (visible.length === 0) return null;
+    return (
+      <div>
+        <SectionHead>{label}</SectionHead>
+        {([1, 2] as const).map((g) => {
+          const groupRows = visible.filter((i) => i.group === g);
+          if (groupRows.length === 0) return null;
+          return (
+            <div key={g}>
+              {g !== 1 && <SectionHead>{GROUP_LABELS[g]}</SectionHead>}
+              <ul>
+                {groupRows.map((i) => (
+                  <TodayRow
+                    key={i.node._id}
+                    item={i}
+                    map={map}
+                    missNote={missNoteOf(i)}
+                    streakNote={streakNoteOf(i)}
+                    onToggle={onToggle}
+                    onCountUp={onCountUp}
+                    onCountDown={onCountDown}
+                    onSelect={onSelect}
+                    onJump={onJump}
+                  />
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-[180px] pb-2">
@@ -535,36 +598,14 @@ export function TodayView({
           />
         </>
       ) : (
-        groups.map((g) => {
-          // labeled groups (overdue / still open) hide settled rows so they can
-          // never render as an empty header; today's own rows keep the fade
-          const rows = items.filter((i) => i.group === g && (g === 1 || rowIsOpen(i)));
-          if (rows.length === 0) return null;
-          return (
-            <div key={g}>
-              {g !== 1 && <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">{GROUP_LABELS[g]}</div>}
-              <ul>
-                {rows.map((i) => (
-                  <TodayRow
-                    key={i.node._id}
-                    item={i}
-                    map={map}
-                    missNote={missNoteOf(i)}
-                    onToggle={onToggle}
-                    onCountUp={onCountUp}
-                    onCountDown={onCountDown}
-                    onSelect={onSelect}
-                    onJump={onJump}
-                  />
-                ))}
-              </ul>
-            </div>
-          );
-        })
+        <>
+          {sectionRows("habits", items.filter((i) => i.rs?.isRecurring))}
+          {sectionRows("tasks", items.filter((i) => !i.rs?.isRecurring))}
+        </>
       )}
       {holdRows.length > 0 && (
         <div>
-          <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">battles</div>
+          <SectionHead>battles</SectionHead>
           <ul>
             {holdRows.map((h) => (
               <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} isTouch={isTouch} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
@@ -572,6 +613,31 @@ export function TodayView({
           </ul>
         </div>
       )}
+      {(() => {
+        const overdue = items.filter((i) => i.group === 0 && rowIsOpen(i));
+        if (overdue.length === 0) return null;
+        return (
+          <div>
+            <SectionHead>{GROUP_LABELS[0]}</SectionHead>
+            <ul>
+              {overdue.map((i) => (
+                <TodayRow
+                  key={i.node._id}
+                  item={i}
+                  map={map}
+                  missNote={missNoteOf(i)}
+                  streakNote={streakNoteOf(i)}
+                  onToggle={onToggle}
+                  onCountUp={onCountUp}
+                  onCountDown={onCountDown}
+                  onSelect={onSelect}
+                  onJump={onJump}
+                />
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
     </div>
   );
 }

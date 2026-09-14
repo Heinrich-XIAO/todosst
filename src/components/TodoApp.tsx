@@ -48,7 +48,7 @@ import { CountControl } from "./CountControl";
 import { SlipControl } from "./SlipControl";
 import { buildTodayItems, openCountOf, rowIsOpen, TodayView, type PastYearSlide } from "./TodayView";
 import { confettiBurst, confettiCelebrate } from "@/lib/confetti";
-import { dismissHabitOffer, taskMissedDays, openRitual, recordClearDay } from "@/lib/ritual";
+import { dismissHabitOffer, taskMissedDays, openRitual, recordClearDay, streakOf } from "@/lib/ritual";
 import {
   buildTree,
   childrenOf,
@@ -1267,6 +1267,32 @@ function TodoTask() {
     return m;
   }, [nodes, history, recurStates, nowTs]);
 
+  // ---- per-task show-up streaks (today rows): consecutive days with any
+  // activity ending today (or yesterday while today is still pending) — the
+  // same streakOf rule the nudge uses, over the same merged counts the
+  // carousel builds (history authoritative, metadata + recur state top up).
+  // Two or more renders as the row's streak note; a single day is noise.
+  const taskStreaks = useMemo(() => {
+    const m = new Map<string, number>();
+    if (!nodes) return m;
+    const today = dayIndexLocal(nowTs);
+    for (const n of nodes) {
+      const id = n._id as string;
+      const rs = recurStates?.get(id);
+      if (!rs?.isRecurring) continue;
+      const meta = n.metadata as PlainNode["metadata"];
+      if (isNegative(meta)) continue; // battles invert — a slip streak is not a win
+      const counts = new Map(history?.byTodo.get(id) ?? []);
+      for (const [day, c] of Object.entries(meta.counts ?? {})) {
+        if (typeof c === "number" && c > (counts.get(Number(day)) ?? 0)) counts.set(Number(day), c);
+      }
+      if (rs.count > (counts.get(rs.windowDay) ?? 0)) counts.set(rs.windowDay, rs.count);
+      const s = streakOf(today, counts);
+      if (s >= 2) m.set(id, s);
+    }
+    return m;
+  }, [nodes, history, recurStates, nowTs]);
+
   // ---- negative tasks (holds section) ----
   // merged counts per node (history is authoritative, current-window metadata
   // and recur state top it up while writes/loads are in flight)
@@ -1959,9 +1985,20 @@ function TodoTask() {
     // node metadata only carries the current window's count — a past-window
     // credit lives in the history record alone
     const counts = targetDay === windowDay ? { [String(targetDay)]: clamped } : { ...(meta.counts ?? {}) };
+    const nowCompleted = isRecurring ? false : clamped >= thresholdOf(meta);
+    // stamp/clear the completion time only on current-window writes — a
+    // past-window credit (slip) is historical and must not touch it
+    const completedAt =
+      targetDay !== windowDay
+        ? meta.completedAt
+        : nowCompleted
+          ? node.isCompleted
+            ? (meta.completedAt ?? Date.now())
+            : Date.now()
+          : null;
     const updated = toPlainNode(node, {
-      isCompleted: isRecurring ? false : clamped >= thresholdOf(meta),
-      metadata: { ...meta, counts },
+      isCompleted: nowCompleted,
+      metadata: { ...meta, completedAt, counts },
     });
     // optimistic — show the new count before the writes and query push land.
     // A past-window credit lives in the history record alone, so it can only
@@ -2031,7 +2068,11 @@ function TodoTask() {
     if (lastOpen) clearedByCompletionRef.current = true;
     const updated = toPlainNode(node, {
       isCompleted: !node.isCompleted,
-      metadata: { ...meta0, counts: { [String(targetDay)]: nextCount } },
+      metadata: {
+        ...meta0,
+        completedAt: completing ? Date.now() : null,
+        counts: { [String(targetDay)]: nextCount },
+      },
     });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     try {
@@ -2316,6 +2357,7 @@ function TodoTask() {
     if (!cur) return;
     let metadata: PlainNode["metadata"] = { ...cur.metadata, ...patch };
     let isCompleted = cur.isCompleted;
+    let completedAt = cur.metadata.completedAt ?? null;
     // plain task switching mode/threshold: keep rendered state stable.
     // storage is always counts — checkbox rendering just compares count >= threshold.
     if (!metadata.recur && ("mode" in patch || "threshold" in patch)) {
@@ -2327,10 +2369,12 @@ function TodoTask() {
         // (time mode seeds the goal as minutes; count mode without a goal seeds 1)
         metadata = { ...metadata, counts: { ...metadata.counts, [String(windowDay)]: Number.isFinite(th) ? th : 1 } };
       } else if (metadata.counts) {
-        isCompleted = (metadata.counts[String(windowDay)] ?? 0) >= th;
+        const next = (metadata.counts[String(windowDay)] ?? 0) >= th;
+        if (next !== isCompleted) completedAt = next ? Date.now() : null;
+        isCompleted = next;
       }
     }
-    const updated = toPlainNode(cur, { isCompleted, metadata });
+    const updated = toPlainNode(cur, { isCompleted, metadata: { ...metadata, completedAt } });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id, ciphertext, iv });
     // push seeded counts into the history record too
@@ -2804,6 +2848,7 @@ function TodoTask() {
           map={tree.map}
           slides={pastYearSlides}
           missesByTask={taskMisses}
+          streaksByTask={taskStreaks}
           showHabitOffer={showHabitOffer}
           isTouch={isTouch}
           onCreateHabit={() => void handleCreateHabit()}
