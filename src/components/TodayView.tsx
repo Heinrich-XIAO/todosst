@@ -527,9 +527,9 @@ export function TodayView({
   // One labeled section — recurring rows render under "habits", plain due
   // tasks under "tasks", the same pass the view always ran: today's own rows
   // keep the fade, other groups hide settled rows so a header can never
-  // render as empty. Overdue rows are pulled out and render as the last
-  // section of the view, after battles — down there the header reads as
-  // naming everything between it and the end instead of floating mid-list.
+  // render as empty. Overdue rows are pulled out into one section that sits
+  // directly below the habits/tasks sections — the header names the rows
+  // between it and the next section instead of floating mid-list.
   const sectionRows = (label: string, rows: TodayItem[]) => {
     const visible = rows.filter((i) => i.group !== 0 && (i.group === 1 || rowIsOpen(i)));
     if (visible.length === 0) return null;
@@ -601,6 +601,31 @@ export function TodayView({
         <>
           {sectionRows("habits", items.filter((i) => i.rs?.isRecurring))}
           {sectionRows("tasks", items.filter((i) => !i.rs?.isRecurring))}
+          {(() => {
+            const overdue = items.filter((i) => i.group === 0 && rowIsOpen(i));
+            if (overdue.length === 0) return null;
+            return (
+              <div>
+                <SectionHead>{GROUP_LABELS[0]}</SectionHead>
+                <ul>
+                  {overdue.map((i) => (
+                    <TodayRow
+                      key={i.node._id}
+                      item={i}
+                      map={map}
+                      missNote={missNoteOf(i)}
+                      streakNote={streakNoteOf(i)}
+                      onToggle={onToggle}
+                      onCountUp={onCountUp}
+                      onCountDown={onCountDown}
+                      onSelect={onSelect}
+                      onJump={onJump}
+                    />
+                  ))}
+                </ul>
+              </div>
+            );
+          })()}
         </>
       )}
       {holdRows.length > 0 && (
@@ -613,31 +638,6 @@ export function TodayView({
           </ul>
         </div>
       )}
-      {(() => {
-        const overdue = items.filter((i) => i.group === 0 && rowIsOpen(i));
-        if (overdue.length === 0) return null;
-        return (
-          <div>
-            <SectionHead>{GROUP_LABELS[0]}</SectionHead>
-            <ul>
-              {overdue.map((i) => (
-                <TodayRow
-                  key={i.node._id}
-                  item={i}
-                  map={map}
-                  missNote={missNoteOf(i)}
-                  streakNote={streakNoteOf(i)}
-                  onToggle={onToggle}
-                  onCountUp={onCountUp}
-                  onCountDown={onCountDown}
-                  onSelect={onSelect}
-                  onJump={onJump}
-                />
-              ))}
-            </ul>
-          </div>
-        );
-      })()}
     </div>
   );
 }
