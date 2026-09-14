@@ -599,7 +599,6 @@ export function TodayView({
         </>
       ) : (
         <>
-          {sectionRows("habits", items.filter((i) => i.rs?.isRecurring))}
           {sectionRows("tasks", items.filter((i) => !i.rs?.isRecurring))}
           {(() => {
             const overdue = items.filter((i) => i.group === 0 && rowIsOpen(i));
@@ -628,6 +627,7 @@ export function TodayView({
           })()}
         </>
       )}
+      {sectionRows("habits", items.filter((i) => i.rs?.isRecurring))}
       {holdRows.length > 0 && (
         <div>
           <SectionHead>battles</SectionHead>
