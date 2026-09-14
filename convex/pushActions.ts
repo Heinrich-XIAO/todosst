@@ -102,7 +102,7 @@ export const sendPush = internalAction({
 
     // mark delivered only when at least one subscription accepted, or when
     // nothing is retryable (all endpoints gone) — a total failure leaves the
-    // rows unsent so the next cron tick retries
+    // rows pending so the next cron tick retries
     if (delivered > 0 || retryable === 0) {
       await ctx.runMutation(internal.push.markRemindersSent, { ids: args.reminderIds });
     }

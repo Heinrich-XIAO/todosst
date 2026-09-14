@@ -74,7 +74,12 @@ export default defineSchema({
     userId: v.string(),
     todoId: v.id("todos"),
     remindAt: v.number(),
-    sent: v.boolean(),
+    // delivery timestamp — absent = still pending dispatch (retries live here).
+    // Legacy rows carry the old `sent` boolean instead; that field is only
+    // kept so pre-migration rows still validate and can be removed once they
+    // age out of cleanupOld (7 days).
+    sentAt: v.optional(v.number()),
+    sent: v.optional(v.boolean()),
     nt: v.optional(
       v.object({
         iv: v.string(),
@@ -83,10 +88,10 @@ export default defineSchema({
     ),
   })
     .index("by_user", ["userId"])
-    // sent first so dispatchDue pages straight through the unsent prefix —
+    // pending first so dispatchDue pages straight through the unsent prefix —
     // delivered rows (deleted only by cleanupOld a week later) must never
     // crowd pending ones out of a bounded take()
-    .index("by_pending", ["sent", "remindAt"])
+    .index("by_pending", ["sentAt", "remindAt"])
     .index("by_due", ["remindAt"])
     .index("by_todo", ["todoId"]),
 
