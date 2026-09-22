@@ -114,9 +114,7 @@ export function dismissHabitOffer(): void {
  * renders normal. Shown grey on the right of its recurring task row. */
 export function missCopy(misses: number): string | null {
   if (misses < 2) return null;
-  return misses === 2
-    ? "missed twice — today is the one that matters"
-    : `missed ${misses} days — today is the one that matters`;
+  return `missed ${misses} days`;
 }
 
 /** Per-task missed days entering `today`: days between today and the last day

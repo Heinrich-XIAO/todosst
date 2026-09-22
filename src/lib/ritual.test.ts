@@ -37,9 +37,9 @@ const day = (y, m, d) => dayIndexLocal(new Date(y, m, d, 12).getTime());
 test("missCopy escalates from the second consecutive miss", () => {
   expect(missCopy(0)).toBeNull();
   expect(missCopy(1)).toBeNull();
-  expect(missCopy(2)).toBe("missed twice — today is the one that matters");
-  expect(missCopy(3)).toBe("missed 3 days — today is the one that matters");
-  expect(missCopy(10)).toBe("missed 10 days — today is the one that matters");
+  expect(missCopy(2)).toBe("missed 2 days");
+  expect(missCopy(3)).toBe("missed 3 days");
+  expect(missCopy(10)).toBe("missed 10 days");
 });
 
 test("missedDays counts full days after the last clear, clamped at zero", () => {
