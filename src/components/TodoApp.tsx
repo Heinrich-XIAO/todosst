@@ -410,14 +410,6 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
                 {new Date(normalizeDueAt(node.metadata.dueAt)).toLocaleDateString()}
               </span>
             ) : null}
-            {meta.recur ? (
-              <span className="ml-1 text-[10px] opacity-50" title={meta.recur}>
-                ↻ {rs?.summary || "recurring"}
-                {rs?.isRecurring && rs.nextTs && dayIndexLocal(rs.nextTs) !== rs.windowDay
-                  ? ` · next ${new Date(rs.nextTs).toLocaleDateString()}`
-                  : ""}
-              </span>
-            ) : null}
           </button>
         )}
 
@@ -2850,7 +2842,6 @@ function TodoTask() {
           missesByTask={taskMisses}
           streaksByTask={taskStreaks}
           showHabitOffer={showHabitOffer}
-          isTouch={isTouch}
           onCreateHabit={() => void handleCreateHabit()}
           onDismissHabitOffer={handleDismissHabitOffer}
           onToggle={handleToggle}

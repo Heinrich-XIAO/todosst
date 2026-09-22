@@ -145,7 +145,6 @@ function TodayRow({
   map,
   missNote,
   streakNote,
-  isTouch,
   onToggle,
   onCountUp,
   onCountDown,
@@ -159,8 +158,6 @@ function TodayRow({
   /** show-up streak note, grey on the right — recurring rows only
    * (see taskStreaks in TodoApp) */
   streakNote?: string | null;
-  /** touch-first device — gates the "hold to log" hint to where holding logs */
-  isTouch: boolean;
   onToggle: (node: TreeNode) => Promise<void>;
   onCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
@@ -209,11 +206,6 @@ function TodayRow({
         >
           <span className="flex min-w-0 items-baseline gap-1">
             <span className="min-w-0 truncate">{node.title}</span>
-            {meta.recur ? (
-              <span className="shrink-0 text-[10px] opacity-50" title={String(meta.recur)}>
-                ↻ {rs?.summary || "recurring"}
-              </span>
-            ) : null}
           </span>
         </button>
         {ancestors.length > 0 && (
@@ -235,7 +227,6 @@ function TodayRow({
             {missNote}
           </span>
         )}
-        {isTouch && rs?.isRecurring && !checked && <span className="shrink-0 text-[10px] opacity-40">hold to log</span>}
       </div>
     </li>
   );
@@ -267,15 +258,12 @@ function holdDayLabel(windowDay: number): string {
 // and undoing a failure back within tolerance flips them back to confirm.
 function HoldRow({
   item,
-  isTouch,
   onSlip,
   onUndoSlip,
   onConfirmHold,
   onSelect,
 }: {
   item: HoldItem;
-  /** touch-first device — the hold hint only makes sense where holding logs */
-  isTouch: boolean;
   onSlip: (node: TreeNode, targetDay?: number) => void;
   onUndoSlip: (node: TreeNode, targetDay?: number) => void;
   onConfirmHold: (node: TreeNode, windowDay: number) => void;
@@ -321,7 +309,6 @@ function HoldRow({
           <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
             {node.title}
           </button>
-          {isTouch && slips === 0 && <span className="shrink-0 text-[10px] opacity-40">hold to slip</span>}
         </div>
       </li>
     );
@@ -473,7 +460,6 @@ export function TodayView({
   missesByTask,
   streaksByTask,
   showHabitOffer = false,
-  isTouch = false,
   onCreateHabit,
   onDismissHabitOffer,
   onToggle,
@@ -500,8 +486,6 @@ export function TodayView({
    * with a streak of two or more carry the streak note */
   streaksByTask?: Map<string, number>;
   showHabitOffer?: boolean;
-  /** touch-first device — gates the "hold to slip" hint to where holding logs */
-  isTouch?: boolean;
   onCreateHabit: () => void;
   onDismissHabitOffer: () => void;
   onToggle: (node: TreeNode) => Promise<void>;
@@ -554,7 +538,6 @@ export function TodayView({
                     map={map}
                     missNote={missNoteOf(i)}
                     streakNote={streakNoteOf(i)}
-                    isTouch={isTouch}
                     onToggle={onToggle}
                     onCountUp={onCountUp}
                     onCountDown={onCountDown}
@@ -619,7 +602,6 @@ export function TodayView({
                       map={map}
                       missNote={missNoteOf(i)}
                       streakNote={streakNoteOf(i)}
-                      isTouch={isTouch}
                       onToggle={onToggle}
                       onCountUp={onCountUp}
                       onCountDown={onCountDown}
@@ -639,7 +621,7 @@ export function TodayView({
           <SectionHead>battles</SectionHead>
           <ul>
             {holdRows.map((h) => (
-              <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} isTouch={isTouch} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
+              <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
             ))}
           </ul>
         </div>
