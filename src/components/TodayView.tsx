@@ -145,6 +145,7 @@ function TodayRow({
   map,
   missNote,
   streakNote,
+  isTouch,
   onToggle,
   onCountUp,
   onCountDown,
@@ -158,6 +159,8 @@ function TodayRow({
   /** show-up streak note, grey on the right — recurring rows only
    * (see taskStreaks in TodoApp) */
   streakNote?: string | null;
+  /** touch-first device — gates the "hold to log" hint to where holding logs */
+  isTouch: boolean;
   onToggle: (node: TreeNode) => Promise<void>;
   onCountUp: (node: TreeNode, delta?: number) => Promise<void>;
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
@@ -232,6 +235,7 @@ function TodayRow({
             {missNote}
           </span>
         )}
+        {isTouch && rs?.isRecurring && !checked && <span className="shrink-0 text-[10px] opacity-40">hold to log</span>}
       </div>
     </li>
   );
@@ -550,6 +554,7 @@ export function TodayView({
                     map={map}
                     missNote={missNoteOf(i)}
                     streakNote={streakNoteOf(i)}
+                    isTouch={isTouch}
                     onToggle={onToggle}
                     onCountUp={onCountUp}
                     onCountDown={onCountDown}
@@ -614,6 +619,7 @@ export function TodayView({
                       map={map}
                       missNote={missNoteOf(i)}
                       streakNote={streakNoteOf(i)}
+                      isTouch={isTouch}
                       onToggle={onToggle}
                       onCountUp={onCountUp}
                       onCountDown={onCountDown}
