@@ -62,7 +62,7 @@ body {
 /* slip hold popup — a loupe-style pill floating above the finger: the control
    itself is hidden under the thumb while holding, so progress fills the pill
    instead. Width animates over the long-press window; duration mirrors
-   HOLD_MS in SlipControl.tsx. */
+   HOLD_MS in useHoldConfirm.tsx. */
 @keyframes slip-pop-in {
   from {
     opacity: 0;
