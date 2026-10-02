@@ -376,6 +376,45 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
   // scroll-snap, but a desktop mouse has no swipe — holding and dragging
   // must scroll the track the same way.
   const dragRef = useRef<{ startX: number; startLeft: number } | null>(null);
+  const settleTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (settleTimerRef.current !== null) clearTimeout(settleTimerRef.current);
+    };
+  }, []);
+
+  // release: glide to the nearest slide, then hand snapping back. Snapping
+  // must stay off until the glide lands or the mandatory snap would teleport
+  // the track mid-animation; the timeout covers browsers without scrollend.
+  const endDrag = () => {
+    dragRef.current = null;
+    const el = trackRef.current;
+    if (!el) return;
+    const i = Math.max(0, Math.min(slides.length - 1, Math.round(el.scrollLeft / el.clientWidth)));
+    el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+    if (settleTimerRef.current !== null) clearTimeout(settleTimerRef.current);
+    const rearm = () => {
+      // a new drag may have taken over since this glide started — it owns
+      // the snap state until it settles, so stay out of its way
+      if (dragRef.current) return;
+      el.style.scrollSnapType = "";
+      settleTimerRef.current = null;
+    };
+    if ("onscrollend" in el) {
+      const onEnd = () => {
+        el.removeEventListener("scrollend", onEnd);
+        rearm();
+      };
+      el.addEventListener("scrollend", onEnd);
+      settleTimerRef.current = window.setTimeout(() => {
+        el.removeEventListener("scrollend", onEnd);
+        rearm();
+      }, 700);
+    } else {
+      settleTimerRef.current = window.setTimeout(rearm, 350);
+    }
+  };
 
   useEffect(() => {
     const el = trackRef.current;
@@ -439,7 +478,15 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
           if (e.pointerType !== "mouse" || e.button !== 0) return;
           const el = trackRef.current;
           if (!el) return;
+          if (settleTimerRef.current !== null) {
+            clearTimeout(settleTimerRef.current);
+            settleTimerRef.current = null;
+          }
           dragRef.current = { startX: e.clientX, startLeft: el.scrollLeft };
+          // with `snap-mandatory` live, every scrollLeft write below is
+          // instantly re-snapped to the nearest slide — the track would never
+          // follow the mouse. Snap goes off for the drag, back on at settle.
+          el.style.scrollSnapType = "none";
           el.setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
@@ -449,16 +496,16 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
           el.scrollLeft = drag.startLeft - (e.clientX - drag.startX);
         }}
         onPointerUp={(e) => {
-          if (e.pointerType !== "mouse") return;
-          dragRef.current = null;
+          if (e.pointerType !== "mouse" || !dragRef.current) return;
+          endDrag();
         }}
         onPointerCancel={(e) => {
-          if (e.pointerType !== "mouse") return;
-          dragRef.current = null;
+          if (e.pointerType !== "mouse" || !dragRef.current) return;
+          endDrag();
         }}
         onLostPointerCapture={(e) => {
-          if (e.pointerType !== "mouse") return;
-          dragRef.current = null;
+          if (e.pointerType !== "mouse" || !dragRef.current) return;
+          endDrag();
         }}
       >
         {slides.map((s) => (
