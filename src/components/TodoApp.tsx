@@ -2039,7 +2039,8 @@ function TodoTask() {
       const th = thresholdOf(meta0);
       const before = currentCount(node, rs);
       const next = nextCountOnClick(mode, before, th);
-      const completing = before < th && next >= th;
+      // battles never complete — a slip count only ever grows past tolerance
+      const completing = !isNegative(meta0) && before < th && next >= th;
       const lastOpen = completing && isSoleOpenToday(node);
       if (completing) startFade(node._id as string);
       if (lastOpen) clearedByCompletionRef.current = true;
@@ -2085,10 +2086,17 @@ function TodoTask() {
     const rs = recurStates?.get(node._id as string);
     const base = baseCountFor(node, targetDay, rs);
     // confetti only for crossing into completed on the current window —
-    // past-window credits (slip) and decrements never change open state
+    // past-window credits (slip) and decrements never change open state, and
+    // battles never complete at all: crossing tolerance is a failure, so no
+    // fade, no all-clear arming, no burst
     const th = thresholdOf(node.metadata as PlainNode["metadata"]);
     const currentWindow = targetDay === undefined || targetDay === rs?.windowDay;
-    const completing = delta > 0 && currentWindow && base < th && Math.min(base + delta, COUNT_MAX) >= th;
+    const completing =
+      !isNegative(node.metadata as PlainNode["metadata"]) &&
+      delta > 0 &&
+      currentWindow &&
+      base < th &&
+      Math.min(base + delta, COUNT_MAX) >= th;
     const lastOpen = completing && isSoleOpenToday(node);
     if (completing) startFade(node._id as string);
     if (lastOpen) clearedByCompletionRef.current = true;
