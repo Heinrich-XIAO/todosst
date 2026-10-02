@@ -728,18 +728,26 @@ function TodoTask() {
         }
         return;
       }
+      // parallel: the sequential await-per-node version blocked todayItems
+      // (and therefore checkbox state) on the slowest rule parse.
+      const states = await Promise.all(
+        nodes.map(async (n) => ({
+          n,
+          rs: await recurState(n.metadata as PlainNode["metadata"], n._creationTime, nowTs),
+        }))
+      );
       const m = new Map<string, RecurState>();
+      for (const { n, rs } of states) m.set(n._id as string, rs);
+      const priorEntries = await Promise.all(
+        states
+          .filter(({ n, rs }) => isNegative(n.metadata as PlainNode["metadata"]) && rs.isRecurring)
+          .map(async ({ n, rs }) => ({
+            id: n._id as string,
+            prev: await prevWindowDay(String((n.metadata as PlainNode["metadata"]).recur), n._creationTime, rs.windowDay),
+          }))
+      );
       const prior = new Map<string, number | null>();
-      for (const n of nodes) {
-        const rs = await recurState(n.metadata as PlainNode["metadata"], n._creationTime, nowTs);
-        m.set(n._id as string, rs);
-        if (isNegative(n.metadata as PlainNode["metadata"]) && rs.isRecurring) {
-          prior.set(
-            n._id as string,
-            await prevWindowDay(String((n.metadata as PlainNode["metadata"]).recur), n._creationTime, rs.windowDay)
-          );
-        }
-      }
+      for (const { id, prev } of priorEntries) prior.set(id, prev);
       if (!cancelled) {
         setRecurStates(m);
         setPriorWindows(prior);
@@ -1996,17 +2004,43 @@ function TodoTask() {
       isCompleted: nowCompleted,
       metadata: { ...meta, completedAt, counts },
     });
-    // optimistic — show the new count before the writes and query push land.
+    // optimistic — flip local state synchronously so the checkbox responds
+    // instantly; the encrypted writes + subscription reconcile afterwards.
+    // Without this the UI waits for encrypt + 2 mutations + query push +
+    // decrypt before anything visibly changes.
+    const prevNode = nodes.find((n) => n._id === node._id) ?? null;
+    const optimisticNode = {
+      ...updated,
+      _id: node._id,
+      _creationTime: node._creationTime,
+      _raw: (node as DecryptedNode)._raw,
+    } as DecryptedNode;
+    setNodes((prev) => (prev ? prev.map((n) => (n._id === node._id ? optimisticNode : n)) : prev));
     // A past-window credit lives in the history record alone, so it can only
     // be shown optimistically when the history store is actually loaded.
     if (targetDay === windowDay || historyRef.current) {
       setCountOverride(node._id as string, targetDay, clamped);
+    }
+    // Today rows read rs.count (not countOverrides), so patch the derived
+    // state too — the nodes-triggered recompute confirms it moments later.
+    if (targetDay === windowDay) {
+      setRecurStates((prev) => {
+        if (!prev) return prev;
+        const cur = prev.get(node._id as string);
+        if (!cur || cur.count === clamped) return prev;
+        const nextMap = new Map(prev);
+        nextMap.set(node._id as string, { ...cur, count: clamped });
+        return nextMap;
+      });
     }
     try {
       const { ciphertext, iv } = await cryptoEncNode(updated);
       await Promise.all([updateTodo({ id: node._id, ciphertext, iv }), pushHistory(node._id as string, targetDay, clamped)]);
     } catch (e) {
       clearCountOverride(node._id as string, targetDay);
+      if (prevNode) {
+        setNodes((prev) => (prev ? prev.map((n) => (n._id === node._id ? prevNode : n)) : prev));
+      }
       throw e;
     }
   }
@@ -2039,7 +2073,9 @@ function TodoTask() {
     if (isRecurring || mode !== "check") {
       // windowed count path — checkbox toggles threshold, tally increments
       const th = thresholdOf(meta0);
-      const before = currentCount(node, rs);
+      // override-aware: a rapid second click must compute from the pending
+      // optimistic count, not the stale subscription snapshot.
+      const before = baseCountFor(node, undefined, rs);
       const next = nextCountOnClick(mode, before, th);
       // battles never complete — a slip count only ever grows past tolerance
       const completing = !isNegative(meta0) && before < th && next >= th;
@@ -2071,11 +2107,26 @@ function TodoTask() {
         counts: { [String(targetDay)]: nextCount },
       },
     });
-    const { ciphertext, iv } = await cryptoEncNode(updated);
+    // optimistic — the plain path previously awaited encrypt + 2 sequential
+    // mutations + query push + decrypt before the checkbox flipped.
+    const prevPlain = nodes?.find((n) => n._id === node._id) ?? null;
+    const optimisticPlain = {
+      ...updated,
+      _id: node._id,
+      _creationTime: node._creationTime,
+      _raw: (node as DecryptedNode)._raw,
+    } as DecryptedNode;
+    setNodes((prev) => (prev ? prev.map((n) => (n._id === node._id ? optimisticPlain : n)) : prev));
     try {
-      await updateTodo({ id: node._id, ciphertext, iv });
-      await pushHistory(node._id as string, targetDay, nextCount);
+      const { ciphertext, iv } = await cryptoEncNode(updated);
+      await Promise.all([
+        updateTodo({ id: node._id, ciphertext, iv }),
+        pushHistory(node._id as string, targetDay, nextCount),
+      ]);
     } catch (e) {
+      if (prevPlain) {
+        setNodes((prev) => (prev ? prev.map((n) => (n._id === node._id ? prevPlain : n)) : prev));
+      }
       if (lastOpen) clearedByCompletionRef.current = false;
       throw e;
     }
