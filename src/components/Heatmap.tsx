@@ -173,8 +173,9 @@ export function Heatmap({
                       aria-label={text ?? undefined}
                       onPointerEnter={(e) => {
                         // touch fires a pointerenter before the tap's pointerdown;
-                        // guard so the dismiss above doesn't kill the tooltip
-                        if (e.pointerType !== "touch") {
+                        // guard so the dismiss above doesn't kill the tooltip.
+                        // a held mouse button means a carousel drag, not a hover.
+                        if (e.pointerType !== "touch" && e.buttons === 0) {
                           setTip(text ? { c, r, text, below: r < 2 } : null);
                         }
                       }}

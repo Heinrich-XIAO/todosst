@@ -359,7 +359,8 @@ function HoldRow({
 }
 
 // Horizontal past-year carousel. Native scroll-snap does the paging (trackpad
-// + touch for free); the dots mirror and drive the active slide. Squares, not
+// + touch for free, mouse via drag-to-scroll on the track); the dots mirror
+// and drive the active slide. Squares, not
 // circles — everything else on this surface is square. Autoscroll rotates the
 // slides but stands down while the user is engaged (hover, touch, or a recent
 // manual scroll); under prefers-reduced-motion it still rotates, just without
@@ -371,6 +372,10 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
   const [active, setActive] = useState(0);
   const hoverRef = useRef(false);
   const interactRef = useRef(0);
+  // mouse drag-to-scroll: touch + trackpad already page via native
+  // scroll-snap, but a desktop mouse has no swipe — holding and dragging
+  // must scroll the track the same way.
+  const dragRef = useRef<{ startX: number; startLeft: number } | null>(null);
 
   useEffect(() => {
     const el = trackRef.current;
@@ -426,8 +431,35 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
       </div>
       <div
         ref={trackRef}
-        className="flex snap-x snap-mandatory overflow-x-auto [&::-webkit-scrollbar]:hidden"
+        className="flex cursor-grab snap-x snap-mandatory overflow-x-auto select-none active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
         style={{ scrollbarWidth: "none" }}
+        onPointerDown={(e) => {
+          markInteract();
+          // touch keeps its native swipe — only the mouse needs a manual drag
+          if (e.pointerType !== "mouse" || e.button !== 0) return;
+          const el = trackRef.current;
+          if (!el) return;
+          dragRef.current = { startX: e.clientX, startLeft: el.scrollLeft };
+          el.setPointerCapture(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const drag = dragRef.current;
+          const el = trackRef.current;
+          if (!drag || !el || e.pointerType !== "mouse") return;
+          el.scrollLeft = drag.startLeft - (e.clientX - drag.startX);
+        }}
+        onPointerUp={(e) => {
+          if (e.pointerType !== "mouse") return;
+          dragRef.current = null;
+        }}
+        onPointerCancel={(e) => {
+          if (e.pointerType !== "mouse") return;
+          dragRef.current = null;
+        }}
+        onLostPointerCapture={(e) => {
+          if (e.pointerType !== "mouse") return;
+          dragRef.current = null;
+        }}
       >
         {slides.map((s) => (
           <div key={s.id} className="w-full shrink-0 snap-center">
