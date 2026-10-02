@@ -105,7 +105,6 @@ export function MetadataPanel({
             }}
             className="min-w-0 flex-1 border-b border-transparent bg-transparent py-1 text-base font-medium focus:border-foreground/40 focus:outline-none"
           />
-          <span className="shrink-0 text-xs font-medium opacity-50">— details</span>
         </label>
         <button onClick={onClose} className="shrink-0 opacity-60 hover:opacity-100">
           close
