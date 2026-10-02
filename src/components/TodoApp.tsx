@@ -2176,19 +2176,23 @@ function TodoTask() {
       setEditingId(null);
       return;
     }
+    if (await handleRename(id, v)) setEditingId(null);
+  }
+
+  async function handleRename(id: Id<"todos">, raw: string): Promise<boolean> {
+    const v = raw.trim();
+    if (!v || v.length > 200 || !key) return false;
     const cur = nodes?.find((n) => n._id === id);
-    if (!cur) {
-      setEditingId(null);
-      return;
-    }
-    if (v !== cur.title && nodes?.some((n) => n._id !== id && (n.parentId ?? null) === (cur.parentId ?? null) && n.title === v)) {
+    if (!cur) return false;
+    if (v === cur.title) return true;
+    if (nodes?.some((n) => n._id !== id && (n.parentId ?? null) === (cur.parentId ?? null) && n.title === v)) {
       setNotice(DUPLICATE_MSG);
-      return;
+      return false;
     }
     const updated = toPlainNode(cur, { title: v });
     const { ciphertext, iv } = await cryptoEncNode(updated);
     await updateTodo({ id, ciphertext, iv });
-    setEditingId(null);
+    return true;
   }
 
   async function handleDelete(node: TreeNode) {
@@ -2959,6 +2963,7 @@ function TodoTask() {
           key={selectedNode._id}
           node={selectedNode}
           onUpdateMetadata={handleUpdateMetadata}
+          onRename={handleRename}
           onClose={() => setSelectedId(null)}
           nowTs={nowTs}
           historyCounts={history?.byTodo.get(selectedNode._id as string) ?? null}
