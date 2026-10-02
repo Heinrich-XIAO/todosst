@@ -5,7 +5,9 @@
 // timezone. (Parsing a bare "YYYY-MM-DD" with the Date constructor yields UTC
 // midnight, which renders as the previous day west of UTC.)
 
-import { DAY_MS } from "./recur";
+import { DAY_MS, dayIndexLocal } from "./recur";
+
+const HOUR_MS = 3_600_000;
 
 /** Parse a date-input value ("YYYY-MM-DD") as local midnight. Rejects
  * malformed or rolled-over dates (e.g. "2026-02-30"). */
@@ -55,13 +57,21 @@ export function formatTimeInput(min: number): string {
   return `${pad(Math.floor(min / 60) % 24)}:${pad(min % 60)}`;
 }
 
-/** Default due time for a fresh date pick: now rounded up to the next full
- * local hour, as minutes since local midnight (crossing midnight yields 0). */
+/** Default due time for a fresh date pick: 5 hours from now, as minutes since
+ * local midnight — a capture starts comfortably in the future instead of
+ * already past. But never past the 11 o'clock hour: if +5h would roll into
+ * tomorrow, fall back to +1h; if that would too, the last minute of today. */
 export function defaultDueTimeMin(now: number): number {
-  const d = new Date(now);
-  d.setMinutes(0, 0, 0);
-  d.setHours(d.getHours() + 1);
-  return d.getHours() * 60;
+  const today = dayIndexLocal(now);
+  const minOf = (ts: number) => {
+    const d = new Date(ts);
+    return d.getHours() * 60 + d.getMinutes();
+  };
+  const plus5 = now + 5 * HOUR_MS;
+  if (dayIndexLocal(plus5) === today) return minOf(plus5);
+  const plus1 = now + HOUR_MS;
+  if (dayIndexLocal(plus1) === today) return minOf(plus1);
+  return 23 * 60 + 59;
 }
 
 /** The due instant reminders count from: local midnight of the due day plus

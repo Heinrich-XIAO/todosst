@@ -68,12 +68,21 @@ test("formatTimeInput and parseTimeInput round trip", () => {
   for (const min of [0, 1, 545, 1439]) expect(parseTimeInput(formatTimeInput(min))).toBe(min);
 });
 
-test("defaultDueTimeMin rounds up to the next full local hour", () => {
-  expect(defaultDueTimeMin(new Date(2026, 8, 6, 14, 23).getTime())).toBe(15 * 60);
-  // exactly on the hour — the next hour is strictly after now
-  expect(defaultDueTimeMin(new Date(2026, 8, 6, 14, 0, 0, 0).getTime())).toBe(15 * 60);
-  // rounding across midnight lands on 00:00
-  expect(defaultDueTimeMin(new Date(2026, 8, 6, 23, 30).getTime())).toBe(0);
+test("defaultDueTimeMin defaults to 5 hours from now", () => {
+  expect(defaultDueTimeMin(new Date(2026, 8, 6, 14, 23).getTime())).toBe(19 * 60 + 23);
+  expect(defaultDueTimeMin(new Date(2026, 8, 6, 14, 0, 0, 0).getTime())).toBe(19 * 60);
+});
+
+test("defaultDueTimeMin falls back to +1h when +5h crosses midnight", () => {
+  expect(defaultDueTimeMin(new Date(2026, 8, 6, 19, 30).getTime())).toBe(20 * 60 + 30);
+});
+
+test("defaultDueTimeMin lands on 23:59 when even +1h crosses midnight", () => {
+  expect(defaultDueTimeMin(new Date(2026, 8, 6, 23, 30).getTime())).toBe(23 * 60 + 59);
+  // +1h lands exactly on midnight — still past the 11 o'clock hour
+  expect(defaultDueTimeMin(new Date(2026, 8, 6, 23, 0).getTime())).toBe(23 * 60 + 59);
+  // boundary: 11:59 PM is not past the 11 o'clock hour, so +5h can land there
+  expect(defaultDueTimeMin(new Date(2026, 8, 6, 18, 59).getTime())).toBe(23 * 60 + 59);
 });
 
 test("dueInstant adds the time of day to the due day, midnight when unset", () => {

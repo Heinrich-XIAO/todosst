@@ -872,11 +872,13 @@ function TodoTask() {
       const meta = n.metadata as PlainNode["metadata"];
       const dueAt = meta.dueAt ? normalizeDueAt(meta.dueAt) : null;
       // negative tasks skip the "was due" nag — failure state lives in the holds section
-      if (!dueAt || dueAt > now || isDone(n) || isNegative(meta)) continue;
+      // compare the due instant (date + time of day), not the raw date — a task
+      // due later today is not overdue yet
+      if (!dueAt || dueInstant(dueAt, meta.dueTimeMin) > now || isDone(n) || isNegative(meta)) continue;
       const id = n._id as string;
       if (seen.has(id)) continue;
       ids.push(id);
-      lines.push(`${n.title} — was due ${new Date(dueAt).toLocaleString()}`);
+      lines.push(`${n.title} — was due ${new Date(dueInstant(dueAt, meta.dueTimeMin)).toLocaleString()}`);
     }
     if (ids.length > 0) {
       markOverdueShown(day, ids);
