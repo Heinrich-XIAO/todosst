@@ -1193,10 +1193,12 @@ function TodoTask() {
   const pastYearSlides = useMemo(() => {
     type Slide = PastYearSlide & { latest: number };
     const per: Slide[] = [];
-    // good and bad never mix: "all tasks" sums completions, "all battles"
-    // sums slips — a blended average would read as progress either way
-    const good = new Map<number, number>();
+    // "all tasks" is net: completions count up, battle slips count back
+    // down — a day that lands at or below zero renders blank, as if nothing
+    // happened (levelFor clamps count <= 0 to the empty cell). "all battles"
+    // still sums slips on their own so bad days stay visible somewhere.
     const bad = new Map<number, number>();
+    const net = new Map<number, number>();
     let goodCount = 0;
     let badCount = 0;
     for (const n of nodes ?? []) {
@@ -1214,10 +1216,10 @@ function TodoTask() {
       if (rs.count > (m.get(rs.windowDay) ?? 0)) m.set(rs.windowDay, rs.count);
       if (m.size === 0) continue;
       let latest = 0;
-      const agg = negative ? bad : good;
       for (const [day, c] of m) {
         if (c <= 0) continue;
-        agg.set(day, (agg.get(day) ?? 0) + c);
+        if (negative) bad.set(day, (bad.get(day) ?? 0) + c);
+        net.set(day, (net.get(day) ?? 0) + (negative ? -c : c));
         if (day > latest) latest = day;
       }
       if (negative) badCount += 1;
@@ -1229,7 +1231,7 @@ function TodoTask() {
     // an aggregate earns a slide only when it merges more than one task —
     // otherwise it would just duplicate that task's own heatmap
     if (badCount > 1 && bad.size > 0) per.unshift({ id: "all-bad", title: "all battles", mode: "check", counts: bad, latest: 0, negative: true });
-    if (goodCount > 1 && good.size > 0) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: good, latest: 0 });
+    if (goodCount > 1 && net.size > 0) per.unshift({ id: "all", title: "all tasks", mode: "check", counts: net, latest: 0 });
     return per;
   }, [nodes, history, recurStates]);
 
