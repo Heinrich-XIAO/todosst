@@ -127,6 +127,42 @@ function setCachedSalt(username: string, salt: string) {
 // server (offline capture, unlock from the remembered key)
 
 export function EncryptionProvider({ children }: { children: React.ReactNode }) {
+  // Production-safe: ConvexClientProvider renders children without a client
+  // when NEXT_PUBLIC_CONVEX_URL is unset — detect that here and serve a static
+  // locked-vault context so pages like /design/* render instead of throwing.
+  let hasClient = true;
+  try {
+    useConvex();
+  } catch {
+    hasClient = false;
+  }
+  if (!hasClient) {
+    return <Ctx.Provider value={fallbackValue}>{children}</Ctx.Provider>;
+  }
+  return <EncryptionInnerProvider>{children}</EncryptionInnerProvider>;
+}
+
+const fallbackValue: EncryptedState = {
+  key: null,
+  salt: null,
+  isLocked: true,
+  isReady: true,
+  notifKeyB64: null,
+  setKeyFromRaw: async () => {
+    throw new Error("vault unavailable — backend not configured");
+  },
+  resolveVaultPassword: async () => {
+    throw new Error("vault unavailable — backend not configured");
+  },
+  resolveVaultRecovery: async () => {
+    throw new Error("vault unavailable — backend not configured");
+  },
+  lock: () => {},
+  clearKey: () => {},
+  clearStoredKey: () => {},
+};
+
+function EncryptionInnerProvider({ children }: { children: React.ReactNode }) {
   const [key, setKey] = useState<CryptoKey | null>(null);
   const [notifKeyB64, setNotifKeyB64] = useState<string | null>(null);
   const online = useOnline();
