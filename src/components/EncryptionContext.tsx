@@ -130,13 +130,13 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   // Production-safe: ConvexClientProvider renders children without a client
   // when NEXT_PUBLIC_CONVEX_URL is unset — detect that here and serve a static
   // locked-vault context so pages like /design/* render instead of throwing.
-  let hasClient = true;
+  let client: ConvexReactClient | null = null;
   try {
-    useConvex();
+    client = useConvex();
   } catch {
-    hasClient = false;
+    client = null;
   }
-  if (!hasClient) {
+  if (!client) {
     return <Ctx.Provider value={fallbackValue}>{children}</Ctx.Provider>;
   }
   return <EncryptionInnerProvider>{children}</EncryptionInnerProvider>;
