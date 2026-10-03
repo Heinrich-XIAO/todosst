@@ -132,6 +132,8 @@ export function EncryptionProvider({ children }: { children: React.ReactNode }) 
   // locked-vault context so pages like /design/* render instead of throwing.
   let client: ConvexReactClient | null = null;
   try {
+    // Unconditional call — the throw is caught below; safe despite the linter.
+    // eslint-disable-next-line react-hooks/rules-of-hooks
     client = useConvex();
   } catch {
     client = null;
