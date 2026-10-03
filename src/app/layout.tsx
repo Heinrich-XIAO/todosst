@@ -44,18 +44,9 @@ export const viewport: Viewport = {
 
 const themeInitScript = `(function(){try{var t=localStorage.getItem("todosst-theme"),d=document.documentElement;if(t==="light"||t==="dark"){d.classList.remove("light","dark");d.classList.add(t);}}catch(e){}})();`;
 
-// Production-safe: pages (e.g. /design/*) must render even when the Convex
-// backend isn't configured on the host (missing NEXT_PUBLIC_CONVEX_URL).
-const hasBackend = !!process.env.NEXT_PUBLIC_CONVEX_URL;
-
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const app = (
-    <ConvexClientProvider>
-      <EncryptionProvider>{children}</EncryptionProvider>
-    </ConvexClientProvider>
-  );
   return (
     <html
       lang="en"
@@ -66,11 +57,11 @@ export default function RootLayout({
         {/* theme init runs before first paint; as the first child of <body> it
             is valid HTML — React 19 rejects <script> as a child of <html> */}
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        {hasBackend ? (
-          <ConvexAuthNextjsServerProvider>{app}</ConvexAuthNextjsServerProvider>
-        ) : (
-          app
-        )}
+        <ConvexAuthNextjsServerProvider>
+          <ConvexClientProvider>
+            <EncryptionProvider>{children}</EncryptionProvider>
+          </ConvexClientProvider>
+        </ConvexAuthNextjsServerProvider>
       </body>
     </html>
   );
