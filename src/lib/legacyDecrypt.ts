@@ -39,7 +39,18 @@ export function migrationDone(): boolean {
 export function markMigrationDone(): void {
   try {
     localStorage.setItem(DONE_KEY, "1");
+    // NB: the cached key is deliberately kept. A device that migrated without
+    // typing a password never learned it can, so clearing it here would strand
+    // any rows a later pass still has to rewrite (cleared only once the server
+    // reports no legacy rows left — see clearLegacyKeyCache).
+  } catch {}
+}
+
+/** Drop the cached legacy key once no legacy rows remain anywhere. */
+export function clearLegacyKeyCache(): void {
+  try {
     localStorage.removeItem(CACHE_KEY);
+    localStorage.removeItem(OLD_REMEMBERED_KEY);
   } catch {}
 }
 

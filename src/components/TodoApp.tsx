@@ -15,6 +15,7 @@ import { PushAutoEnable } from "./PushAutoEnable";
 import { DailyNudgeSync } from "./DailyNudge";
 import { AutoNudgeSync } from "./AutoNudge";
 import { InstallHint } from "./InstallHint";
+import { LegacyHistoryMigration } from "./LegacyHistoryMigration";
 import { AuthForm } from "./AuthForm";
 import type { PlainNode } from "@/lib/crypto";
 import { encodeNode, parseNode, toPlainNode } from "@/lib/crypto";
@@ -2631,6 +2632,8 @@ function TodoTask() {
       </div>
 
       <InstallHint />
+
+      <LegacyHistoryMigration />
 
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
       {view === "tree" && (
