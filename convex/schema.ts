@@ -8,12 +8,6 @@ export default defineSchema({
     // Plaintext node payload: JSON of PlainNode ({v,title,isCompleted,parentId,
     // order,metadata}). The server reads and indexes this directly.
     node: v.optional(v.string()),
-    // legacy rows written before the move to plaintext storage: AES-GCM
-    // ciphertext + iv. Only read by the one-time client-side migration
-    // (src/lib/legacyDecrypt.ts), which rewrites `node` and clears these.
-    // Once every account has migrated, drop the columns and that module.
-    ciphertext: v.optional(v.string()),
-    iv: v.optional(v.string()),
     userId: v.string(),
   }).index("by_user", ["userId"]),
 
@@ -21,46 +15,11 @@ export default defineSchema({
   // HistoryData {todoId, counts}.
   todoHistory: defineTable({
     payload: v.optional(v.string()),
-    // legacy ciphertext rows — same one-time migration path as todos
-    ciphertext: v.optional(v.string()),
-    iv: v.optional(v.string()),
     userId: v.string(),
   }).index("by_user", ["userId"]),
 
-  // legacy per-user PBKDF2 salt. Retained ONLY so the one-time migration can
-  // re-derive the old vault key on the user's device. Safe to delete once all
-  // accounts have migrated.
-  userSalts: defineTable({
-    userId: v.string(),
-    // optional: rows created before the username migration have no username
-    // (it is backfilled from the account's password credentials)
-    username: v.optional(v.string()),
-    salt: v.string(), // base64 16 bytes
-  })
-    .index("by_userId", ["userId"])
-    .index("by_username", ["username"]),
-
-  // legacy wrapped-key records (kind "password" | "recovery" | "notification"),
-  // read only by the one-time migration to unwrap the old vault key. The
-  // "notification" kind is unused now that push copy is plaintext. Safe to
-  // delete once all accounts have migrated.
-  vaultKeys: defineTable({
-    userId: v.string(),
-    kind: v.union(v.literal("password"), v.literal("recovery"), v.literal("notification")),
-    ciphertext: v.string(),
-    iv: v.string(),
-  }).index("by_user_kind", ["userId", "kind"]),
-
-  // legacy account-level recovery verifier. Only the migration-era sign-in
-  // path reads it; safe to delete once all accounts have migrated.
-  recoveryKeys: defineTable({
-    userId: v.string(),
-    verifier: v.string(),
-    createdAt: v.number(),
-  }).index("by_user", ["userId"]),
-
-  // web push subscriptions (VAPID). Push bodies are generic ("n tasks due") —
-  // the server learns when, never what.
+  // web push subscriptions (VAPID). aes128gcm is transport encryption to the
+  // push service; the worker renders the copy the payload carries.
   pushSubscriptions: defineTable({
     userId: v.string(),
     endpoint: v.string(),
@@ -189,11 +148,4 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_pending", ["sentAt", "scheduledFor"])
     .index("by_todo", ["todoId"]),
-
-  // fixed-window brute-force throttle for credential providers
-  loginThrottle: defineTable({
-    key: v.string(), // e.g. "password:<username>"
-    windowStart: v.number(),
-    count: v.number(),
-  }).index("by_key", ["key"]),
 });

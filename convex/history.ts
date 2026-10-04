@@ -3,8 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { requireOwnHistory, requireUserId, stableUserId } from "./userScope";
 
 // Per-todo completion history for recurring tasks, stored as plaintext JSON of
-// HistoryData {todoId, counts}. Legacy rows keep their `ciphertext`/`iv` until
-// the one-time client migration rewrites them into `payload`.
+// HistoryData {todoId, counts}.
 
 const MAX_PAYLOAD = 700_000;
 
@@ -26,21 +25,6 @@ export const list = query({
   },
 });
 
-// Rows still holding only ciphertext — drives the one-time migration prompt.
-// Tracked separately from the todo count so a half-finished migration still
-// offers itself.
-export const legacyCount = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
-    const rows = await ctx.db
-      .query("todoHistory")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-    return rows.filter((r) => !r.payload && !!r.ciphertext).length;
-  },
-});
-
 // Upsert: pass the record id from `list` to update, omit to insert. Returns the id.
 export const put = mutation({
   args: { id: v.optional(v.id("todoHistory")), payload: v.string() },
@@ -49,25 +33,12 @@ export const put = mutation({
     const payload = validPayload(args.payload);
     if (args.id) {
       await requireOwnHistory(ctx, args.id);
-      await ctx.db.patch(args.id, { payload, ciphertext: undefined, iv: undefined });
+      await ctx.db.patch(args.id, { payload });
       return args.id;
     }
     return await ctx.db.insert("todoHistory", {
       payload,
       userId,
-    });
-  },
-});
-
-// One-time migration write for a legacy ciphertext record.
-export const migrate = mutation({
-  args: { id: v.id("todoHistory"), payload: v.string() },
-  handler: async (ctx, args) => {
-    await requireOwnHistory(ctx, args.id);
-    await ctx.db.patch(args.id, {
-      payload: validPayload(args.payload),
-      ciphertext: undefined,
-      iv: undefined,
     });
   },
 });

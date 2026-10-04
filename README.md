@@ -97,7 +97,7 @@ bunx tsc --noEmit
 ```
 convex/
   auth.config.ts   — { domain: process.env.CONVEX_SITE_URL } for Convex Auth
-  auth.ts          — convexAuth({ providers: [username+password, recovery] })
+  auth.ts          — convexAuth({ providers: [username+password] })
   http.ts          — auth.addHttpRoutes
   schema.ts        — authTables + todos + todoHistory + push/auto-nudge tables
   todos.ts         — list/create/update/remove/removeMany/migrate (per-user)
@@ -120,7 +120,7 @@ src/
     DeleteUndo.tsx, NoticeDialog.tsx, TypewriterPlaceholder.tsx
     Header.tsx, AuthForm.tsx, Logo.tsx
   lib/
-    crypto.ts      — node payload codec + legacy AES-GCM helpers (migration only)
+    crypto.ts      — node payload codec + AES-GCM for the backup file
     recur.ts       — windowed recurrence engine, input syntax, counts codec
     ritual.ts      — per-device daily-ritual state (miss streak, habit offer)
     tree.ts        — path/sibling/tree helpers

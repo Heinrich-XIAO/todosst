@@ -11,17 +11,14 @@
 import type * as auth from "../auth.js";
 import type * as autoNudge from "../autoNudge.js";
 import type * as crons from "../crons.js";
-import type * as encryption from "../encryption.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
 import type * as nudge from "../nudge.js";
 import type * as push from "../push.js";
 import type * as pushActions from "../pushActions.js";
-import type * as throttle from "../throttle.js";
 import type * as todos from "../todos.js";
 import type * as userScope from "../userScope.js";
 import type * as users from "../users.js";
-import type * as vault from "../vault.js";
 
 import type {
   ApiFromModules,
@@ -33,17 +30,14 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   autoNudge: typeof autoNudge;
   crons: typeof crons;
-  encryption: typeof encryption;
   history: typeof history;
   http: typeof http;
   nudge: typeof nudge;
   push: typeof push;
   pushActions: typeof pushActions;
-  throttle: typeof throttle;
   todos: typeof todos;
   userScope: typeof userScope;
   users: typeof users;
-  vault: typeof vault;
 }>;
 
 /**

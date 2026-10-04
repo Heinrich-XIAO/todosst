@@ -3,9 +3,7 @@ import { mutation, query } from "./_generated/server";
 import { requireOwnTodo, requireUserId, stableUserId } from "./userScope";
 import { purgeRemindersForTodo } from "./push";
 
-// Todo rows store the node as plaintext JSON. Legacy rows still carry
-// `ciphertext`/`iv` until the one-time client migration rewrites them into
-// `node` (see src/lib/legacyDecrypt.ts).
+// Todo rows store the node as plaintext JSON, read and indexed server-side.
 
 const MAX_NODE_CHARS = 32_000;
 
@@ -28,19 +26,6 @@ export const list = query({
   },
 });
 
-// Rows still holding only ciphertext — drives the one-time migration prompt.
-export const legacyCount = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await requireUserId(ctx);
-    const rows = await ctx.db
-      .query("todos")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-    return rows.filter((r) => !r.node && !!r.ciphertext).length;
-  },
-});
-
 export const create = mutation({
   args: { node: v.string() },
   handler: async (ctx, args) => {
@@ -56,22 +41,7 @@ export const update = mutation({
   args: { id: v.id("todos"), node: v.string() },
   handler: async (ctx, args) => {
     await requireOwnTodo(ctx, args.id);
-    const node = validNode(args.node);
-    // clearing the legacy ciphertext is what retires a migrated row
-    await ctx.db.patch(args.id, { node, ciphertext: undefined, iv: undefined });
-  },
-});
-
-// One-time migration write: plaintext node in, legacy ciphertext out.
-export const migrate = mutation({
-  args: { id: v.id("todos"), node: v.string() },
-  handler: async (ctx, args) => {
-    await requireOwnTodo(ctx, args.id);
-    await ctx.db.patch(args.id, {
-      node: validNode(args.node),
-      ciphertext: undefined,
-      iv: undefined,
-    });
+    await ctx.db.patch(args.id, { node: validNode(args.node) });
   },
 });
 
