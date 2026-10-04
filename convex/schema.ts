@@ -8,6 +8,10 @@ export default defineSchema({
     // Plaintext node payload: JSON of PlainNode ({v,title,isCompleted,parentId,
     // order,metadata}). The server reads and indexes this directly.
     node: v.optional(v.string()),
+    // UNUSED legacy ciphertext columns — every row now carries `node`. Left in
+    // place only because dropping columns needs deployment:data:view.
+    ciphertext: v.optional(v.string()),
+    iv: v.optional(v.string()),
     userId: v.string(),
   }).index("by_user", ["userId"]),
 
@@ -15,11 +19,45 @@ export default defineSchema({
   // HistoryData {todoId, counts}.
   todoHistory: defineTable({
     payload: v.optional(v.string()),
+    // UNUSED legacy ciphertext columns — every row now carries `payload`.
+    ciphertext: v.optional(v.string()),
+    iv: v.optional(v.string()),
     userId: v.string(),
   }).index("by_user", ["userId"]),
 
-  // web push subscriptions (VAPID). aes128gcm is transport encryption to the
-  // push service; the worker renders the copy the payload carries.
+  // UNUSED legacy salt table. Every account has migrated to plaintext rows and
+  // nothing reads this any more (convex/encryption.ts is deleted). Kept only
+  // because dropping a table needs a CONVEX_DEPLOY_KEY with
+  // deployment:data:view — delete it from the Convex dashboard, or grant that
+  // permission and drop it here.
+  userSalts: defineTable({
+    userId: v.string(),
+    // optional: rows created before the username migration have no username
+    // (it is backfilled from the account's password credentials)
+    username: v.optional(v.string()),
+    salt: v.string(), // base64 16 bytes
+  })
+    .index("by_userId", ["userId"])
+    .index("by_username", ["username"]),
+
+  // UNUSED legacy wrapped-key records (convex/vault.ts is deleted). Same
+  // story as userSalts: kept only until the deploy key can drop tables.
+  vaultKeys: defineTable({
+    userId: v.string(),
+    kind: v.union(v.literal("password"), v.literal("recovery"), v.literal("notification")),
+    ciphertext: v.string(),
+    iv: v.string(),
+  }).index("by_user_kind", ["userId", "kind"]),
+
+  // UNUSED legacy recovery verifier — the recovery provider is gone.
+  recoveryKeys: defineTable({
+    userId: v.string(),
+    verifier: v.string(),
+    createdAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  // web push subscriptions (VAPID). Push bodies are generic ("n tasks due") —
+  // the server learns when, never what.
   pushSubscriptions: defineTable({
     userId: v.string(),
     endpoint: v.string(),
@@ -148,4 +186,11 @@ export default defineSchema({
     .index("by_user", ["userId"])
     .index("by_pending", ["sentAt", "scheduledFor"])
     .index("by_todo", ["todoId"]),
+
+  // UNUSED legacy throttle table (convex/throttle.ts is deleted)
+  loginThrottle: defineTable({
+    key: v.string(), // e.g. "password:<username>"
+    windowStart: v.number(),
+    count: v.number(),
+  }).index("by_key", ["key"]),
 });
