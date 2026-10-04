@@ -300,6 +300,24 @@ self.addEventListener("push", (event) => {
         });
         return;
       }
+      if (d && d.t === "auto" && typeof d.u === "string" && Array.isArray(d.items) && d.items.length > 0) {
+        const rawB64 = await loadNotifKeyB64(d.u);
+        const named = rawB64 ? await decryptReminderItems(rawB64, d.items) : [];
+        if (named.length > 0) {
+          const n = named[0];
+          const url = typeof d.eid === "string" && d.eid
+            ? `${self.registration.scope}?auto=${encodeURIComponent(d.eid)}`
+            : self.registration.scope;
+          await self.registration.showNotification("todosst", {
+            body: `${n.name} — quick nudge`,
+            tag: n.todoId ? `todosst-auto-${n.todoId}` : "todosst-auto",
+            renotify: true,
+            data: { url },
+          });
+          return;
+        }
+        return showGeneric();
+      }
       if (d && d.t === "reminder" && typeof d.u === "string" && Array.isArray(d.items) && d.items.length > 0) {
         const rawB64 = await loadNotifKeyB64(d.u);
         const named = rawB64 ? await decryptReminderItems(rawB64, d.items) : [];

@@ -14,6 +14,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { AuthLoading, Unauthenticated, Authenticated } from "convex/react";
 import { PushAutoEnable } from "./PushAutoEnable";
 import { DailyNudgeSync } from "./DailyNudge";
+import { AutoNudgeSync } from "./AutoNudge";
 import { InstallHint } from "./InstallHint";
 import { AuthForm } from "./AuthForm";
 import { useEncryption, getRememberedKey } from "./EncryptionContext";
@@ -3047,6 +3048,7 @@ function TodoTask() {
       />
 
       <DailyNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} notifKeyB64={notifKeyB64} nowTs={nowTs} />
+      <AutoNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} notifKeyB64={notifKeyB64} vaultKey={key} nowTs={nowTs} />
       </div>
   );
 }

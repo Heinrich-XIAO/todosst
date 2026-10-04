@@ -9,6 +9,9 @@ crons.interval("dispatch-due-reminders", { minutes: 1 }, internal.push.dispatchD
 // scan daily-nudge rows every minute and dispatch their web pushes
 crons.interval("dispatch-daily-nudges", { minutes: 1 }, internal.nudge.dispatchDue);
 
+// scan dateless auto-nudge rows every minute and dispatch their web pushes
+crons.interval("dispatch-auto-nudges", { minutes: 1 }, internal.autoNudge.dispatchDue);
+
 // purge delivered reminders older than a week
 crons.daily("cleanup-old-reminders", { hourUTC: 3, minuteUTC: 7 }, internal.push.cleanupOld);
 

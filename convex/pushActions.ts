@@ -135,6 +135,46 @@ export const sendNudge = internalAction({
   },
 });
 
+// Dateless auto-nudge push (bandit exploration). Same blind-relay shape as
+// reminders: the client-encrypted {name, min} blob rides unread; the service
+// worker renders it as a gentle nudge. min = -1 marks auto (not due-soon).
+export const sendAuto = internalAction({
+  args: { userId: v.string(), eventIds: v.array(v.id("autoNudgeEvents")) },
+  handler: async (ctx, args) => {
+    const publicKey = process.env.VAPID_PUBLIC_KEY;
+    const privateKey = process.env.VAPID_PRIVATE_KEY;
+    if (!publicKey || !privateKey) {
+      await ctx.runMutation(internal.autoNudge.markSent, { ids: args.eventIds });
+      return;
+    }
+    const subs = await ctx.runQuery(internal.push.subscriptionsFor, { userId: args.userId });
+    if (subs.length === 0) {
+      await ctx.runMutation(internal.autoNudge.markSent, { ids: args.eventIds });
+      return;
+    }
+    const rows = await ctx.runQuery(internal.autoNudge.eventsFor, { ids: args.eventIds });
+    const blobs = rows
+      .filter((r) => r.nt)
+      .map((r) => ({ todoId: r.todoId, iv: r.nt!.iv, ct: r.nt!.ct }));
+    let payload: string | null = null;
+    if (blobs.length > 0) {
+      const first = blobs[0];
+      payload = JSON.stringify({ t: "auto", u: args.userId, items: [first], more: 0, eid: args.eventIds[0] });
+    }
+    const { delivered, retryable } = await deliverToSubs(ctx, publicKey, privateKey, subs, async (s) => {
+      if (!payload) return null;
+      try {
+        return await encryptPushPayload({ p256dh: s.p256dh, auth: s.auth }, payload);
+      } catch {
+        return null;
+      }
+    });
+    if (delivered > 0 || retryable === 0) {
+      await ctx.runMutation(internal.autoNudge.markSent, { ids: args.eventIds });
+    }
+  },
+});
+
 function endpointOrigin(endpoint: string): string {
   try {
     return new URL(endpoint).origin;

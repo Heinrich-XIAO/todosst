@@ -9,6 +9,7 @@
  */
 
 import type * as auth from "../auth.js";
+import type * as autoNudge from "../autoNudge.js";
 import type * as crons from "../crons.js";
 import type * as encryption from "../encryption.js";
 import type * as history from "../history.js";
@@ -30,6 +31,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   auth: typeof auth;
+  autoNudge: typeof autoNudge;
   crons: typeof crons;
   encryption: typeof encryption;
   history: typeof history;

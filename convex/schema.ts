@@ -120,6 +120,72 @@ export default defineSchema({
     skipDay: v.optional(v.number()),
   }).index("by_user", ["userId"]),
 
+  // dateless auto-nudge (bandit now, NN later). One state row per user plus
+  // one event row per delivery. Plaintext columns are anonymous numbers only
+  // (hour, sizes, counters) — never titles/tags/descriptions/embeddings (those
+  // would leak vault content and break the E2E promise). The full task dump
+  // rides as an opaque AES-GCM blob (`fb`, vault-key encrypted client-side)
+  // the server stores blind; future training decrypts it on-device (or via an
+  // explicit opt-in upload), never by the server reading plaintext today.
+  // Negatives/battles are excluded client-side and never get rows here.
+  autoNudgeState: defineTable({
+    userId: v.string(),
+    enabled: v.boolean(),
+    utcOffsetMin: v.number(),
+    lastFiredDay: v.number(), // local day index of last dispatch — daily dedupe
+  }).index("by_user", ["userId"]),
+
+  autoNudgeEvents: defineTable({
+    userId: v.string(),
+    todoId: v.id("todos"),
+    scheduledFor: v.number(), // epoch ms the client picked (random time of day)
+    sentAt: v.optional(v.number()), // dispatch timestamp — absent = pending
+    hourLocal: v.number(), // 0-23 local hour of scheduledFor
+    dowLocal: v.number(), // 0-6 local day of week of scheduledFor
+    taskAgeDays: v.number(), // days from todo creation to scheduling
+    openCount: v.number(), // how many tasks were open at schedule time
+    siblingCount: v.number(),
+    depth: v.number(),
+    hasChildren: v.boolean(),
+    mode: v.union(v.literal("check"), v.literal("count"), v.literal("time")),
+    isRecurring: v.boolean(),
+    recurKind: v.optional(v.string()), // coarse family (daily/weekly/…) — never the raw rule
+    // contextual-bandit arm group: "<mode>:<recurKind|once>" (e.g. "count:daily").
+    // Lets the policy learn per-task-kind timing (a tally habit wants mornings,
+    // a one-shot task wants evenings) from anonymous aggregates only.
+    ctxKey: v.string(),
+    threshold: v.number(),
+    countBefore: v.number(), // completions/counts already logged at schedule time
+    priorCompletions: v.number(), // lifetime completions (history + current window)
+    // opaque full dump (title, recur rule, metadata, counts, history,
+    // timestamps…) AES-GCM encrypted with the vault key — server-blind
+    fb: v.optional(
+      v.object({
+        iv: v.string(),
+        ct: v.string(),
+      })
+    ),
+    // push-copy blob ({name, min} under the notification key) for the SW
+    nt: v.optional(
+      v.object({
+        iv: v.string(),
+        ct: v.string(),
+      })
+    ),
+    clickedAt: v.optional(v.number()), // half reward (0.5) — app opened from the push
+    completedAt: v.optional(v.number()), // full reward (1.0) — task finished within the window
+    reward: v.number(), // 0 | 0.5 | 1
+    // kNN-vibe provenance (anonymous numbers only): top-neighbor similarity
+    // when the hour came from on-device embedding match instead of the bandit
+    vibeSim: v.optional(v.number()),
+    // the push-open produced an explicit "best time" label (device-local
+    // vector, never uploaded — this flag just marks the row as human-labeled)
+    labeled: v.optional(v.boolean()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_pending", ["sentAt", "scheduledFor"])
+    .index("by_todo", ["todoId"]),
+
   // single-use, 10-minute grant created during recovery sign-in, allowing one
   // password change without the current password.
   recoveryGrants: defineTable({
