@@ -26,6 +26,21 @@ export const list = query({
   },
 });
 
+// Rows still holding only ciphertext — drives the one-time migration prompt.
+// Tracked separately from the todo count so a half-finished migration still
+// offers itself.
+export const legacyCount = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx);
+    const rows = await ctx.db
+      .query("todoHistory")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    return rows.filter((r) => !r.payload && !!r.ciphertext).length;
+  },
+});
+
 // Upsert: pass the record id from `list` to update, omit to insert. Returns the id.
 export const put = mutation({
   args: { id: v.optional(v.id("todoHistory")), payload: v.string() },

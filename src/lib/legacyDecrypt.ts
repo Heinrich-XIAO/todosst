@@ -112,13 +112,19 @@ export async function resolveLegacyKey(args: {
 }
 
 /**
- * Rewrite every legacy row for this account as plaintext. Safe to call when
- * there is nothing to do — it reports what it did.
+ * Rewrite legacy ciphertext rows as plaintext. Safe to call when there is
+ * nothing to do — it reports what it did.
+ *
+ * `listsLoaded` guards the completion stamp: a caller that fires before its
+ * queries resolve would otherwise pass empty row lists, silently migrate
+ * nothing, and mark the account done — hiding the prompt with rows still
+ * stranded. Only mark done when both lists actually arrived and nothing failed.
  */
 export async function migrateAccount(args: {
   rawKeyB64: string;
   todos: TodoRow[];
   history: HistoryRow[];
+  listsLoaded: boolean;
   migrateTodo: (a: { id: never; node: string }) => Promise<unknown>;
   migrateHistory: (a: { id: never; payload: string }) => Promise<unknown>;
 }): Promise<{ todos: number; history: number; failed: number }> {
@@ -152,6 +158,6 @@ export async function migrateAccount(args: {
       failed++;
     }
   }
-  if (failed === 0) markMigrationDone();
+  if (failed === 0 && args.listsLoaded) markMigrationDone();
   return { todos, history, failed };
 }
