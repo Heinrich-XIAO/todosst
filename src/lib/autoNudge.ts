@@ -11,9 +11,8 @@
 // plaintext server-side), the recurrence descriptor, lifetime counts, history,
 // and timestamps.
 //
-// E2E rule: nothing content-bearing (title, tags, description, icon, color,
-// raw RRULE, embedding) ever leaves the client in plaintext. Anonymous
-// features go up as numbers; the full dump goes up as an opaque AES-GCM blob.
+// Task embeddings and timing labels never leave the device (see vibeStore.ts);
+// everything uploaded here is either an anonymous number or a training dump.
 
 import type { PlainNode } from "./crypto";
 import { dayIndexLocal } from "./recur";

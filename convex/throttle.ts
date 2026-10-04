@@ -1,11 +1,11 @@
 import { ConvexError, v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 
-// Fixed-window brute-force throttle for credential providers (recovery-code
-// sign-in). One row per key; attempts increment within the window and the row
-// is deleted on successful sign-in so the window resets. State lives in the
-// database (mutations are serializable, so check+increment is atomic) rather
-// than in memory — Convex isolates are ephemeral.
+// Fixed-window brute-force throttle for credential providers. One row per key;
+// attempts increment within the window and the row is deleted on successful
+// sign-in so the window resets. State lives in the database (mutations are
+// serializable, so check+increment is atomic) rather than in memory — Convex
+// isolates are ephemeral.
 
 const WINDOW_MS = 15 * 60_000;
 const DEFAULT_MAX_ATTEMPTS = 10;

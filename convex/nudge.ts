@@ -3,18 +3,28 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { internal } from "./_generated/api";
 import { requireUserId } from "./userScope";
 
-// Daily nudge — a fixed-time push each day. Same E2E-safe pattern as
-// reminders: the client registers a plaintext time-of-day, the minute cron
-// fires it blind. Personalization rides as an encrypted copy blob (`nb`) the
-// cron relays unread; `skipDay` suppresses the push on all-clear days so the
-// ping means something. No plaintext content ever reaches the server.
+// Daily nudge — a fixed-time push each day. The client registers a plaintext
+// time-of-day, the minute cron fires it. Personalization rides as plain copy
+// columns; `skipDay` suppresses the push on all-clear days so the ping means
+// something.
 
 export const get = query({
   args: {},
   handler: async (ctx) => {
     const userId = await requireUserId(ctx);
     const row = (await ctx.db.query("dailyNudges").withIndex("by_user", (q) => q.eq("userId", userId)).collect())[0];
-    return row ? { hour: row.hourLocal, minute: row.minuteLocal, enabled: row.enabled, utcOffsetMin: row.utcOffsetMin } : null;
+    return row
+      ? {
+          hour: row.hourLocal,
+          minute: row.minuteLocal,
+          enabled: row.enabled,
+          utcOffsetMin: row.utcOffsetMin,
+          k: row.k ?? null,
+          streak: row.streak ?? 0,
+          missed: row.missed ?? 0,
+          open: row.open ?? 0,
+        }
+      : null;
   },
 });
 
@@ -25,8 +35,11 @@ export const set = mutation({
     hour: v.number(),
     minute: v.number(),
     utcOffsetMin: v.number(),
-    // encrypted copy blob — absent means "keep whatever is stored"
-    nb: v.optional(v.object({ iv: v.string(), ct: v.string() })),
+    // copy fields — absent means "keep whatever is stored"
+    k: v.optional(v.string()),
+    streak: v.optional(v.number()),
+    missed: v.optional(v.number()),
+    open: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
@@ -36,22 +49,21 @@ export const set = mutation({
     if (!Number.isInteger(args.utcOffsetMin) || args.utcOffsetMin < -720 || args.utcOffsetMin > 840) {
       throw new Error("invalid utc offset");
     }
-    const validNb =
-      args.nb && args.nb.iv.length >= 10 && args.nb.iv.length <= 64 && args.nb.ct.length > 0 && args.nb.ct.length <= 2048
-        ? { iv: args.nb.iv, ct: args.nb.ct }
-        : undefined;
+    const num = (n: number | undefined, max: number): number | undefined =>
+      typeof n === "number" && Number.isFinite(n) ? Math.min(Math.max(0, Math.floor(n)), max) : undefined;
+    const k = args.k !== undefined && /^[a-z]{1,16}$/.test(args.k) ? args.k : undefined;
+    const copy = { k, streak: num(args.streak, 100000), missed: num(args.missed, 100000), open: num(args.open, 10000) };
     const rows = await ctx.db.query("dailyNudges").withIndex("by_user", (q) => q.eq("userId", userId)).collect();
     for (const dup of rows.slice(1)) await ctx.db.delete(dup._id);
     const existing = rows[0];
     if (existing) {
       // a time-only update (settings picker) must not wipe the stored copy
-      const nb = validNb ?? existing.nb;
       await ctx.db.patch(existing._id, {
         hourLocal: args.hour,
         minuteLocal: args.minute,
         utcOffsetMin: args.utcOffsetMin,
         enabled: true,
-        nb,
+        ...copy,
       });
     } else {
       await ctx.db.insert("dailyNudges", {
@@ -61,7 +73,7 @@ export const set = mutation({
         utcOffsetMin: args.utcOffsetMin,
         enabled: true,
         lastFiredDay: -1,
-        nb: validNb,
+        ...copy,
       });
     }
   },
@@ -90,12 +102,17 @@ export const setSkipDay = mutation({
   },
 });
 
-// Copy blob for the push action (opaque to the server).
+// Copy fields for the push action.
 export const forSend = internalQuery({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
     const row = (await ctx.db.query("dailyNudges").withIndex("by_user", (q) => q.eq("userId", args.userId)).collect())[0];
-    return { nb: row?.nb ?? null };
+    return {
+      k: row?.k ?? null,
+      streak: row?.streak ?? 0,
+      missed: row?.missed ?? 0,
+      open: row?.open ?? 0,
+    };
   },
 });
 

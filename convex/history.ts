@@ -1,12 +1,18 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireOwnHistory, requireUserId, stableUserId, validateEncryptedPayload } from "./userScope";
+import { requireOwnHistory, requireUserId, stableUserId } from "./userScope";
 
-// Per-todo completion history for recurring tasks. Everything (including the
-// todo id it belongs to) is opaque ciphertext — see schema.ts and src/lib/recur.ts.
+// Per-todo completion history for recurring tasks, stored as plaintext JSON of
+// HistoryData {todoId, counts}. Legacy rows keep their `ciphertext`/`iv` until
+// the one-time client migration rewrites them into `payload`.
 
-// ~512KB plaintext cap -> base64 inflates 4/3
-const MAX_CIPHERTEXT = 700_000;
+const MAX_PAYLOAD = 700_000;
+
+function validPayload(payload: string): string {
+  if (!payload) throw new Error("missing payload");
+  if (payload.length > MAX_PAYLOAD) throw new Error("payload too long");
+  return payload;
+}
 
 export const list = query({
   args: {},
@@ -22,19 +28,31 @@ export const list = query({
 
 // Upsert: pass the record id from `list` to update, omit to insert. Returns the id.
 export const put = mutation({
-  args: { id: v.optional(v.id("todoHistory")), ciphertext: v.string(), iv: v.string() },
+  args: { id: v.optional(v.id("todoHistory")), payload: v.string() },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
-    validateEncryptedPayload(args.ciphertext, args.iv, MAX_CIPHERTEXT);
+    const payload = validPayload(args.payload);
     if (args.id) {
       await requireOwnHistory(ctx, args.id);
-      await ctx.db.patch(args.id, { ciphertext: args.ciphertext, iv: args.iv });
+      await ctx.db.patch(args.id, { payload, ciphertext: undefined, iv: undefined });
       return args.id;
     }
     return await ctx.db.insert("todoHistory", {
-      ciphertext: args.ciphertext,
-      iv: args.iv,
+      payload,
       userId,
+    });
+  },
+});
+
+// One-time migration write for a legacy ciphertext record.
+export const migrate = mutation({
+  args: { id: v.id("todoHistory"), payload: v.string() },
+  handler: async (ctx, args) => {
+    await requireOwnHistory(ctx, args.id);
+    await ctx.db.patch(args.id, {
+      payload: validPayload(args.payload),
+      ciphertext: undefined,
+      iv: undefined,
     });
   },
 });

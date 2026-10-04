@@ -1,9 +1,8 @@
 // todosst service worker — web push reminders + offline shell cache.
-// Reminder pushes carry client-encrypted copy blobs ({name, min} under a
-// dedicated notification key mirrored into IndexedDB) so the worker renders
-// "[name] — [X]m reminder"; nudge pushes carry a tiny encrypted
-// ({t:"nudge"}) tag; anything else (or undecryptable) renders generic copy.
-// The server can't read any of it. Open/focused tabs also show in-app toasts.
+// Push bodies are small JSON payloads ({t:"reminder"|"nudge"|"auto"}) carrying
+// the copy to render: reminder/auto items are {name, min}, nudge carries the
+// variant key plus streak/missed/open numbers. Anything unrecognized renders
+// generic copy. Open/focused tabs also show in-app toasts.
 //
 // Offline: the catch-all route means one HTML document serves every path, so
 // that document is precached on install and refreshed opportunistically;
@@ -149,76 +148,6 @@ self.addEventListener("fetch", (event) => {
 
 // ---- push ----
 
-// Must match src/lib/notifKey.ts — the page mirrors the raw notification key
-// here on unlock so this worker can decrypt reminder copy.
-const NOTIF_DB = "todosst-sw";
-
-function b64ToBytes(b64) {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-// Raw notification key (base64) for the account a push came in for; null when
-// absent (fresh device, signed out) — the caller falls back to generic copy.
-function loadNotifKeyB64(userId) {
-  return new Promise((resolve) => {
-    if (!self.indexedDB) return resolve(null);
-    let open;
-    try {
-      open = self.indexedDB.open(NOTIF_DB, 1);
-    } catch {
-      return resolve(null);
-    }
-    open.onupgradeneeded = () => {
-      open.result.createObjectStore("notifKey", { keyPath: "userId" });
-    };
-    open.onerror = () => resolve(null);
-    open.onsuccess = () => {
-      const db = open.result;
-      let tx;
-      try {
-        tx = db.transaction("notifKey", "readonly");
-      } catch {
-        db.close();
-        return resolve(null);
-      }
-      const get = tx.objectStore("notifKey").get(userId);
-      get.onsuccess = () => {
-        db.close();
-        const row = get.result;
-        resolve(row && typeof row.rawB64 === "string" ? row.rawB64 : null);
-      };
-      get.onerror = () => {
-        db.close();
-        resolve(null);
-      };
-    };
-  });
-}
-
-async function decryptReminderItems(rawB64, items) {
-  const out = [];
-  try {
-    const key = await crypto.subtle.importKey("raw", b64ToBytes(rawB64), { name: "AES-GCM" }, false, ["decrypt"]);
-    for (const it of items) {
-      try {
-        const pt = await crypto.subtle.decrypt(
-          { name: "AES-GCM", iv: b64ToBytes(it.iv) },
-          key,
-          b64ToBytes(it.ct)
-        );
-        const d = JSON.parse(new TextDecoder().decode(pt));
-        if (d && typeof d.name === "string" && typeof d.min === "number") {
-          out.push({ name: d.name, min: d.min, todoId: typeof it.todoId === "string" ? it.todoId : "" });
-        }
-      } catch {}
-    }
-  } catch {}
-  return out;
-}
-
 function showGeneric() {
   return self.registration.showNotification("todosst", {
     body: "tasks due soon — open todosst to see them",
@@ -230,7 +159,7 @@ function showGeneric() {
 
 // Duolingo-flavored nudge copy — 10 phrases across three families (risk /
 // missed / comeback), rotated by UTC day so the same day never repeats.
-// Values come from the client-encrypted blob; missing numbers render as 0.
+// Values come from the push payload; missing numbers render as 0.
 const NUDGE_COPY = {
   risk: [
     "your streak is still alive — clear {open} task{s} to keep it",
@@ -276,22 +205,7 @@ self.addEventListener("push", (event) => {
         if (event.data) d = event.data.json();
       } catch {}
       if (d && d.t === "nudge") {
-        let body = "today's windows are open — clear them";
-        if (typeof d.u === "string" && d.nb) {
-          const rawB64 = await loadNotifKeyB64(d.u);
-          if (rawB64) {
-            try {
-              const key = await crypto.subtle.importKey("raw", b64ToBytes(rawB64), { name: "AES-GCM" }, false, ["decrypt"]);
-              const pt = await crypto.subtle.decrypt(
-                { name: "AES-GCM", iv: b64ToBytes(d.nb.iv) },
-                key,
-                b64ToBytes(d.nb.ct)
-              );
-              const s = JSON.parse(new TextDecoder().decode(pt));
-              body = nudgeBody(s) ?? body;
-            } catch {}
-          }
-        }
+        const body = nudgeBody(d) ?? "today's windows are open — clear them";
         await self.registration.showNotification("todosst", {
           body,
           tag: "todosst-nudge",
@@ -300,9 +214,8 @@ self.addEventListener("push", (event) => {
         });
         return;
       }
-      if (d && d.t === "auto" && typeof d.u === "string" && Array.isArray(d.items) && d.items.length > 0) {
-        const rawB64 = await loadNotifKeyB64(d.u);
-        const named = rawB64 ? await decryptReminderItems(rawB64, d.items) : [];
+      if (d && d.t === "auto" && Array.isArray(d.items) && d.items.length > 0) {
+        const named = d.items.filter((n) => n && typeof n.name === "string");
         if (named.length > 0) {
           const n = named[0];
           const url = typeof d.eid === "string" && d.eid
@@ -318,9 +231,8 @@ self.addEventListener("push", (event) => {
         }
         return showGeneric();
       }
-      if (d && d.t === "reminder" && typeof d.u === "string" && Array.isArray(d.items) && d.items.length > 0) {
-        const rawB64 = await loadNotifKeyB64(d.u);
-        const named = rawB64 ? await decryptReminderItems(rawB64, d.items) : [];
+      if (d && d.t === "reminder" && Array.isArray(d.items) && d.items.length > 0) {
+        const named = d.items.filter((n) => n && typeof n.name === "string" && typeof n.min === "number");
         for (const n of named) {
           await self.registration.showNotification("todosst", {
             body: n.min > 0 ? `${n.name} — ${n.min}m reminder` : `${n.name} — due now`,

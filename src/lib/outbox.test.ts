@@ -9,7 +9,6 @@ import {
   openCapture,
   OUTBOX_MAX_ATTEMPTS,
 } from "./outbox";
-import { deriveKey, generateSaltB64, encryptString, decryptString } from "./crypto";
 
 // bun has no indexedDB — exercises the localStorage fallback path; if a
 // runtime ever ships IDB the same behavioral assertions hold there too
@@ -35,7 +34,7 @@ beforeEach(() => {
 });
 
 function payload(text: string) {
-  return { iv: "iv-" + text, ciphertext: "ct-" + text };
+  return { input: text, parts: ["p-" + text] };
 }
 
 test("add + list FIFO by creation order", async () => {
@@ -45,7 +44,7 @@ test("add + list FIFO by creation order", async () => {
   expect(typeof idA).toBe("string");
   expect(typeof idB).toBe("string");
   const list = await outboxList();
-  expect(list.map((e) => e.payload.ciphertext)).toEqual(["ct-a", "ct-b"]);
+  expect(list.map((e) => e.payload.input)).toEqual(["a", "b"]);
   // returned ids are the stored entries — undo deletes exactly what was parked
   expect(list.map((e) => e.id)).toEqual([idA, idB]);
   expect(list[0].attempts).toBe(0);
@@ -74,8 +73,8 @@ test("markAttempt counts failures and survives reload of storage", async () => {
 test("rejects malformed payloads", async () => {
   expect(await outboxAdd(null)).toBeNull();
   expect(await outboxAdd({} as never)).toBeNull();
-  expect(await outboxAdd({ iv: "", ciphertext: "x" })).toBeNull();
-  expect(await outboxAdd({ iv: "i", ciphertext: "x".repeat(64_000) })).toBeNull();
+  expect(await outboxAdd({ input: "x", parts: null } as never)).toBeNull();
+  expect(await outboxAdd({ input: "x".repeat(64_000), parts: [] })).toBeNull();
   expect(await outboxList()).toEqual([]);
 });
 
@@ -88,38 +87,27 @@ test("corrupt rows in storage are filtered out, not fatal", async () => {
   localStorage.setItem("todosst:outbox", JSON.stringify(arr));
   const list = await outboxList();
   expect(list.length).toBe(1);
-  expect(list[0].payload.ciphertext).toBe("ct-good");
+  expect(list[0].payload.input).toBe("good");
 });
 
-test("capture round-trip through the vault key", async () => {
-  const salt = generateSaltB64();
-  const key = await deriveKey("subway-thoughts", salt);
+test("capture round-trip", async () => {
   const capture = { input: "/ideas/write it down", parts: ["host hackathon"] };
-  expect(typeof (await outboxAddCapture(key, capture))).toBe("string");
+  expect(typeof (await outboxAddCapture(capture))).toBe("string");
   const [entry] = await outboxList();
-  // stored encrypted — the raw input is not readable at rest
-  expect(entry.payload.ciphertext).not.toContain("write it down");
-  const opened = await openCapture(key, entry.payload);
+  const opened = openCapture(entry.payload);
   expect(opened).toEqual(capture);
 });
 
-test("openCapture throws on wrong key (vault rotated) and on corrupt rows", async () => {
-  const salt = generateSaltB64();
-  const key = await deriveKey("right-password", salt);
-  const other = await deriveKey("wrong-password", salt);
-  await outboxAddCapture(key, { input: "buy coffee beans", parts: [] });
-  const [entry] = await outboxList();
-  await expect(openCapture(other, entry.payload)).rejects.toThrow();
-  await expect(openCapture(key, { iv: "i", ciphertext: "garbage" })).rejects.toThrow();
+test("openCapture throws on corrupt rows", async () => {
+  await outboxAddCapture({ input: "buy coffee beans", parts: [] });
+  expect(() => openCapture({} as never)).toThrow();
+  expect(() => openCapture({ input: "x", parts: null } as never)).toThrow();
 });
 
-test("encrypted captures still decrypt with the original key", async () => {
-  const salt = generateSaltB64();
-  const key = await deriveKey("right-password", salt);
-  await outboxAddCapture(key, { input: "hello", parts: ["a", "b"] });
+test("queued captures keep their exact input", async () => {
+  await outboxAddCapture({ input: "hello", parts: ["a", "b"] });
   const [entry] = await outboxList();
-  const json = await decryptString(key, entry.payload.iv, entry.payload.ciphertext);
-  expect(JSON.parse(json)).toEqual({ input: "hello", parts: ["a", "b"] });
+  expect(entry.payload).toEqual({ input: "hello", parts: ["a", "b"] });
 });
 
 test("attempt cap constant is sane", () => {
@@ -127,9 +115,7 @@ test("attempt cap constant is sane", () => {
   expect(OUTBOX_MAX_ATTEMPTS).toBeLessThanOrEqual(10);
 });
 
-test("encryptString sanity for the round-trip helpers above", async () => {
-  const salt = generateSaltB64();
-  const key = await deriveKey("pw", salt);
-  const { iv, ciphertext } = await encryptString(key, "x");
-  expect(await decryptString(key, iv, ciphertext)).toBe("x");
+test("outboxAdd rejects malformed payloads", async () => {
+  expect(await outboxAdd({ input: "", parts: [] })).toBeNull();
+  expect(await outboxAdd({ input: "x", parts: null } as never)).toBeNull();
 });

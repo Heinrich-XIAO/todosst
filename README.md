@@ -1,17 +1,15 @@
-# todosst — an E2E-encrypted, hierarchical todo vault
+# todosst — a hierarchical todo app
 
-A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — where every task is end-to-end encrypted before it leaves your browser, folders are just tasks, and the URL is your working directory.
+A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — where folders are just tasks and the URL is your working directory.
 
-![Next.js](https://img.shields.io/badge/Next.js-16-black) ![Convex](https://img.shields.io/badge/Convex-1.45-orange) ![E2E](https://img.shields.io/badge/E2E-AES--GCM--256-green)
+![Next.js](https://img.shields.io/badge/Next.js-16-black) ![Convex](https://img.shields.io/badge/Convex-1.45-orange)
 
-- 🔐 **End-to-end encrypted** — titles, structure, metadata, and completion history are AES-GCM encrypted client-side (PBKDF2-SHA-256, 310k iterations, per-user salt). The server only ever sees ciphertext.
 - 🌲 **Tasks are directories** — any task can have sub-tasks. Navigate with the URL (`/host hackathon/outreach`), breadcrumbs, double-click, or `!cd`.
 - ⌨️ **Command-style input** — one input box creates paths, navigates, and attaches recurrence rules, with tab-completion (intellisense).
 - 🔁 **Recurrence as windows** — RRULE-driven occurrence windows with checkbox, tally-count, or time (minutes) modes, thresholds/goals, grace hours, and a GitHub-style past-year heatmap per task.
 - 📅 **Today view as the daily ritual** — all clear records the day (nudge escalates after two missed days) and auto-checks an optional `open todosst ~daily` habit whose heatmap becomes your streak — tracked locally per device.
-- 🗝️ **Password change + recovery key** — change the password without touching data; generate a one-time-shown recovery key that unlocks both account and vault.
-- 💾 **Encrypted export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from vault settings; import it into any account to restore or merge.
-- 📴 **Offline capture** — thoughts typed while offline (subway, plane) park in a vault-encrypted IndexedDB outbox on the device and replay through the normal create path on the next online open. The service worker caches the app shell so the installed PWA opens without network; captures made at a particular working directory land in that directory on replay.
+- 💾 **Export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from settings; import it into any account to restore or merge.
+- 📴 **Offline capture** — thoughts typed while offline (subway, plane) park in an IndexedDB outbox on the device and replay through the normal create path on the next online open. The service worker caches the app shell so the installed PWA opens without network; captures made at a particular working directory land in that directory on replay.
 - 🏁 **The all-clear moment** — closing the day's last window lands hard: a full-bleed inverted band types out "all clear — …" in the input's typewriter voice, holds with a blinking caret, and counts what you did today (reduced-motion aware).
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
 - 🌗 **Light / dark / auto theme** — follows the system by default; the header toggle overrides it and is remembered per device.
@@ -51,7 +49,7 @@ The **today** view is the daily surface: recurring tasks with an open window plu
 ## Stack
 
 - **Next.js 16** (App Router, `src/` dir, Turbopack)
-- **Convex** backend: `convex/schema.ts` (todos + todoHistory + userSalts + vault tables), `convex/todos.ts`, `convex/history.ts`, `convex/encryption.ts`, `convex/vault.ts`
+- **Convex** backend: `convex/schema.ts` (todos + todoHistory), `convex/todos.ts`, `convex/history.ts`
 - **Convex Auth** with `Password` provider (`@convex-dev/auth`, `@auth/core`)
 - **rrule** (RFC 5545) for occurrence windows; Tailwind v4 UI
 
@@ -64,7 +62,7 @@ bunx convex dev --once        # generates types, pushes schema (local at 127.0.0
 bun dev                       # http://localhost:3000
 ```
 
-Sign up with any username + password (8–128 chars). Your vault password **is** your encryption password — keep it safe.
+Sign up with any username + password (8–128 chars).
 
 ### Tests
 
@@ -89,12 +87,10 @@ bunx tsc --noEmit
 
 ## Security
 
-- **Encryption**: every task payload (`{v:2, title, isCompleted, parentId, order, metadata}`) and every history record is AES-GCM-256 encrypted in the browser (`src/lib/crypto.ts`). The key is derived from your password + a per-user 16-byte salt (PBKDF2-SHA-256, 310k iterations) and lives only in memory. "Store locally" persists the derived key in localStorage for auto-unlock on trusted devices; `lock` / `forget device` clears it.
-- **What the server can see**: ciphertext + IV + `userId` for each todo, salt, and auth tables. It cannot correlate history records to specific todos — the todoId lives inside the ciphertext.
 - **Auth**: username/password via `@convex-dev/auth` (scrypt hashing, HttpOnly SameSite=Lax cookies, CSRF-safe mutations, rate-limited failed sign-ins).
 - **Authorization**: every query/mutation checks `ctx.auth.getUserIdentity()` and scopes by stable `userId` (prevents IDOR).
 - **Validation**: username normalized to lowercase (3–64 chars), password 8–128 chars, titles 1–200 chars, all trimmed.
-- **Recovery**: the vault master key is wrapped once per unlock method. "Change password" re-keys only the wrapper (data untouched, other devices unaffected). A generated **recovery key** (Crockford base32, shown once) unwraps the master key and can sign you in via a `sha256` verifier — the raw recovery key never reaches the server, so the server still cannot unwrap the vault.
+- **Backups**: the export file is encrypted with a passphrase you choose (PBKDF2-SHA-256 → AES-GCM-256); the passphrase is never transmitted.
 
 ## Project structure
 
@@ -103,11 +99,9 @@ convex/
   auth.config.ts   — { domain: process.env.CONVEX_SITE_URL } for Convex Auth
   auth.ts          — convexAuth({ providers: [username+password, recovery] })
   http.ts          — auth.addHttpRoutes
-  schema.ts        — authTables + todos + todoHistory + userSalts + vault tables
-  todos.ts         — list/create/update/remove/removeMany (per-user, ciphertext payloads)
-  history.ts       — per-todo E2E-encrypted completion history (list/put/remove)
-  encryption.ts    — per-user salt get/ensure (salt is public, not secret)
-  vault.ts         — wrapped vault keys, recovery keys/grants, password change action
+  schema.ts        — authTables + todos + todoHistory + push/auto-nudge tables
+  todos.ts         — list/create/update/remove/removeMany/migrate (per-user)
+  history.ts       — per-todo completion history (list/put/remove/migrate)
   userScope.ts     — shared auth + ownership helpers (requireUserId, requireOwnTodo)
   users.ts         — viewer query
 src/
@@ -116,18 +110,17 @@ src/
     [[...slug]]/page.tsx — catch-all: URL path = current working directory; shows AuthForm when signed out
   components/
     ConvexClientProvider.tsx — ConvexAuthNextjsProvider
-    EncryptionContext.tsx    — vault key state, remember-me, lock/unlock
     TodoApp.tsx    — tree rendering, command input, filters, details panel
     TodayView.tsx  — the daily ritual surface (all clear, miss nudge, habit offer)
     MetadataPanel.tsx — task details (notes, recurrence editor, heatmap)
     RruleEditor.tsx — graphical + text RRULE editor
     Heatmap.tsx    — GitHub-style past-year heatmap
-    UnlockScreen.tsx — password unlock + recovery-key sign-in
-    VaultPanel.tsx — password change, recovery key, export/import, remember-me
+    SettingsPanel.tsx — daily nudge settings, export/import
+    LegacyMigration.tsx — one-time upgrade of pre-plaintext rows
     DeleteUndo.tsx, NoticeDialog.tsx, TypewriterPlaceholder.tsx
     Header.tsx, AuthForm.tsx, Logo.tsx
   lib/
-    crypto.ts      — PBKDF2 + AES-GCM primitives, payload schemas
+    crypto.ts      — node payload codec + legacy AES-GCM helpers (migration only)
     recur.ts       — windowed recurrence engine, input syntax, counts codec
     ritual.ts      — per-device daily-ritual state (miss streak, habit offer)
     tree.ts        — path/sibling/tree helpers
@@ -135,8 +128,8 @@ src/
     cdPath.ts      — `!cd` path resolution
     slashPath.ts   — `/path` creation parsing
     slashComplete.ts — tab-completion intellisense
-    vaultFile.ts   — passphrase-encrypted backup files (export/import)
-    outbox.ts      — offline capture outbox (IndexedDB + localStorage fallback, vault-encrypted payloads)
+    vaultFile.ts   — passphrase-protected backup files (export/import)
+    outbox.ts      — offline capture outbox (IndexedDB + localStorage fallback)
     useOnline.ts   — connectivity signal (navigator.onLine + events)
     months.ts      — shared MONTHS constant
   proxy.ts         — convexAuthNextjsMiddleware

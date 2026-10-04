@@ -276,7 +276,7 @@ export function mergeCounts(maps: Iterable<Map<number, number>>): Map<number, nu
   return out;
 }
 
-// ---------- per-todo history payload (stored E2E-encrypted in todoHistory) ----------
+// ---------- per-todo history payload (stored as JSON in todoHistory) ----------
 
 export type HistoryData = { todoId: string; counts: Map<number, number> };
 

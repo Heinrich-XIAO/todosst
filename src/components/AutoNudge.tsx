@@ -22,7 +22,6 @@ import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
 import { dayIndexLocal, modeOf, thresholdOf, type RecurState } from "@/lib/recur";
-import { encryptNotifBlob } from "@/lib/notifKey";
 import {
   appendLocalDump,
   buildAnonymousFeatures,
@@ -46,8 +45,6 @@ type Props = {
   tree: { roots: TreeNode[]; map: Map<string, TreeNode> };
   recurStates: Map<string, RecurState> | null;
   history: { byTodo: Map<string, Map<number, number>> } | null;
-  notifKeyB64: string | null;
-  vaultKey: CryptoKey | null;
   nowTs: number;
 };
 
@@ -94,7 +91,7 @@ function readPending(): Pending | null {
   }
 }
 
-export function AutoNudgeSync({ nodes, tree, recurStates, history, notifKeyB64, vaultKey, nowTs }: Props) {
+export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Props) {
   const schedule = useMutation(api.autoNudge.schedule);
   const reportOutcome = useMutation(api.autoNudge.reportOutcome);
   const myStats = useQuery(api.autoNudge.myStats);
@@ -188,7 +185,7 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, notifKeyB64, 
 
   // daily scheduling: one dateless task at the bandit-chosen hour
   useEffect(() => {
-    if (!nodes || !recurStates || !vaultKey) return;
+    if (!nodes || !recurStates) return;
     // stats still loading — retry on the next tick rather than scheduling blind
     if (myStats === undefined || globalStats === undefined) return;
     const today = dayIndexLocal(nowTs);
@@ -260,12 +257,6 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, notifKeyB64, 
           scheduledFor,
         });
         appendLocalDump(dump);
-        const { encryptString } = await import("@/lib/crypto");
-        const fbRaw = await encryptString(vaultKey, JSON.stringify(dump));
-        const fb = { iv: fbRaw.iv, ct: fbRaw.ciphertext };
-        const nt = notifKeyB64
-          ? await encryptNotifBlob(notifKeyB64, { name: picked.title, min: -1 }).catch(() => undefined)
-          : undefined;
         const eventId = await schedule({
           todoId: picked._id,
           scheduledFor,
@@ -273,8 +264,9 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, notifKeyB64, 
           ...feats,
           ctxKey,
           vibeSim,
-          fb,
-          nt,
+          fb: JSON.stringify(dump),
+          name: picked.title,
+          min: -1,
         });
         try {
           localStorage.setItem(DAY_KEY, String(today));
@@ -287,7 +279,7 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, notifKeyB64, 
         doneRef.current = null; // failed — retry on the next tick
       }
     })();
-  }, [nodes, recurStates, history, notifKeyB64, vaultKey, nowTs, tree, schedule, myStats, globalStats]);
+  }, [nodes, recurStates, history, nowTs, tree, schedule, myStats, globalStats]);
 
   const labelTitle = labelReq ? (nodes?.find((x) => (x._id as string) === labelReq.todoId)?.title ?? null) : null;
 

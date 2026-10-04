@@ -80,18 +80,19 @@ export const removeSubscription = mutation({
   },
 });
 
-// Full-state sync: the client computes the desired reminder rows for every
-// decrypted todo (remindAt timestamps + an encrypted push-copy blob — the
-// plaintext title never leaves the client) and sends them here. Rows outside
-// the desired set are deleted; existing rows keep their delivered timestamp
-// (or legacy sent flag) so a re-sync never re-fires a delivered reminder.
+// Full-state sync: the client computes the desired reminder rows for every todo
+// (remindAt timestamps + the push copy {name, min}) and sends them here. Rows
+// outside the desired set are deleted; existing rows keep their delivered
+// timestamp (or legacy sent flag) so a re-sync never re-fires a delivered
+// reminder.
 export const syncReminders = mutation({
   args: {
     items: v.array(
       v.object({
         todoId: v.id("todos"),
         remindAt: v.number(),
-        nt: v.optional(v.object({ iv: v.string(), ct: v.string() })),
+        name: v.optional(v.string()),
+        min: v.optional(v.number()),
       })
     ),
   },
@@ -99,18 +100,18 @@ export const syncReminders = mutation({
     const userId = await requireUserId(ctx);
     if (args.items.length > MAX_ITEMS) throw new Error("too many reminders");
     const now = Date.now();
-    const desired = new Map<string, { todoId: Id<"todos">; remindAt: number; nt?: { iv: string; ct: string } }>();
+    const desired = new Map<string, { todoId: Id<"todos">; remindAt: number; name?: string; min?: number }>();
     for (const it of args.items) {
       if (!Number.isFinite(it.remindAt)) continue;
       // already fired too long ago (or absurdly far out) — don't store
       if (it.remindAt < now - PAST_DROP_MS) continue;
       if (it.remindAt > now + 5 * 365 * 24 * 60 * 60 * 1000) continue;
-      // malformed blobs are dropped silently — pushes fall back to generic copy
-      const nt =
-        it.nt && it.nt.iv.length >= 10 && it.nt.iv.length <= 64 && it.nt.ct.length > 0 && it.nt.ct.length <= 2048
-          ? { iv: it.nt.iv, ct: it.nt.ct }
-          : undefined;
-      desired.set(`${it.todoId}:${it.remindAt}`, { todoId: it.todoId, remindAt: it.remindAt, nt });
+      desired.set(`${it.todoId}:${it.remindAt}`, {
+        todoId: it.todoId,
+        remindAt: it.remindAt,
+        name: typeof it.name === "string" ? it.name.slice(0, 200) : undefined,
+        min: typeof it.min === "number" && Number.isFinite(it.min) ? it.min : undefined,
+      });
     }
     const existing = await ctx.db
       .query("reminders")
@@ -119,9 +120,9 @@ export const syncReminders = mutation({
     for (const row of existing) {
       const want = desired.get(`${row.todoId}:${row.remindAt}`);
       if (want) {
-        // refresh the copy blob when it changed (e.g. the task was renamed)
-        const changed = !!want.nt !== !!row.nt || (!!want.nt && !!row.nt && (want.nt.iv !== row.nt.iv || want.nt.ct !== row.nt.ct));
-        if (changed) await ctx.db.patch(row._id, { nt: want.nt });
+        // refresh the copy when it changed (e.g. the task was renamed)
+        const changed = want.name !== row.name || want.min !== row.min;
+        if (changed) await ctx.db.patch(row._id, { name: want.name, min: want.min, nt: undefined });
         continue;
       }
       // a row that is still pending dispatch must survive a client sync that
@@ -141,21 +142,22 @@ export const syncReminders = mutation({
         todoId: it.todoId,
         remindAt: it.remindAt,
         sentAt: undefined,
-        nt: it.nt,
+        name: it.name,
+        min: it.min,
       });
     }
   },
 });
 
 // Reminder rows for a push batch — returns only the fields the push action
-// needs (the blob is opaque; the server cannot decrypt it).
+// needs.
 export const remindersFor = internalQuery({
   args: { ids: v.array(v.id("reminders")) },
   handler: async (ctx, args) => {
-    const out: { todoId: Id<"todos">; nt: { iv: string; ct: string } | null }[] = [];
+    const out: { todoId: Id<"todos">; name: string | null; min: number | null }[] = [];
     for (const id of args.ids) {
       const row = await ctx.db.get(id);
-      if (row) out.push({ todoId: row.todoId, nt: row.nt ?? null });
+      if (row) out.push({ todoId: row.todoId, name: row.name ?? null, min: row.min ?? null });
     }
     return out;
   },

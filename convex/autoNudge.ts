@@ -5,30 +5,22 @@ import { requireUserId } from "./userScope";
 
 // Dateless auto-nudge — bandit policy today, full NN training data tomorrow.
 //
-// Flow (same E2E-safe pattern as reminders/nudges):
+// Flow:
 // 1. The client picks ONE eligible dateless task (open, no dueAt, non-recurring
-//    or recurring-window-open, never negative/battle, never habit), chooses a
-//    random time of day (bandit exploration, epsilon = 1 for now), builds the
-//    anonymous numeric features + an opaque vault-encrypted full dump, and
+//    or recurring-window-open, never negative/battle, never habit), chooses the
+//    delivery hour (contextual bandit, overridden by an on-device kNN vibe
+//    match), builds the numeric features + a plaintext full training dump, and
 //    calls `schedule`.
 // 2. The minute cron (`dispatchDue`) fires due rows blind via pushActions.
 // 3. The client reports `clicked` (app opened from the push → 0.5) and
 //    `completed` (task finished within the window → 1.0) via `reportOutcome`.
-// The server only ever sees numbers + opaque blobs — never titles, tags,
-// descriptions, or embeddings.
 
 const PAST_DROP_MS = 5 * 60 * 1000;
 const STALE_GRACE_MS = 6 * 60 * 60 * 1000;
 export const COMPLETE_WINDOW_MS = 2 * 60 * 60 * 1000;
 
-const blob = v.optional(v.object({ iv: v.string(), ct: v.string() }));
-
-function validBlob(b: { iv: string; ct: string } | undefined): { iv: string; ct: string } | undefined {
-  if (!b) return undefined;
-  if (b.iv.length >= 10 && b.iv.length <= 64 && b.ct.length > 0 && b.ct.length <= 8192) {
-    return { iv: b.iv, ct: b.ct };
-  }
-  return undefined;
+function str(s: string | undefined, max: number): string | undefined {
+  return typeof s === "string" && s.length > 0 ? s.slice(0, max) : undefined;
 }
 
 function num(n: unknown, min: number, max: number): number {
@@ -56,8 +48,9 @@ export const schedule = mutation({
     countBefore: v.number(),
     priorCompletions: v.number(),
     vibeSim: v.optional(v.number()),
-    fb: blob,
-    nt: blob,
+    fb: v.optional(v.string()),
+    name: v.optional(v.string()),
+    min: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireUserId(ctx);
@@ -110,8 +103,9 @@ export const schedule = mutation({
         typeof args.vibeSim === "number" && Number.isFinite(args.vibeSim)
           ? Math.min(1, Math.max(0, args.vibeSim))
           : undefined,
-      fb: validBlob(args.fb),
-      nt: validBlob(args.nt),
+      fb: str(args.fb, 32_000),
+      name: str(args.name, 200),
+      min: typeof args.min === "number" && Number.isFinite(args.min) ? args.min : undefined,
       reward: 0,
     });
 
@@ -178,8 +172,8 @@ export const setEnabled = mutation({
 
 // Bandit aggregates over anonymous features only — per (ctxKey, hour) arms:
 // { sends, reward } where reward sums 0 (ignored) / 0.5 (clicked) / 1
-// (finished). No content, no user linkage in the global view, so both are
-// E2E-safe. The client scores arms from these; the server never decides.
+// (finished). The global view carries no user linkage. The client scores arms
+// from these; the server never decides.
 export type BanditStats = Record<string, Record<string, { sends: number; reward: number }>>;
 
 function accumulate(rows: { ctxKey: string; hourLocal: number; reward: number }[]): BanditStats {
@@ -221,10 +215,10 @@ export const globalStats = query({
 export const eventsFor = internalQuery({
   args: { ids: v.array(v.id("autoNudgeEvents")) },
   handler: async (ctx, args) => {
-    const out: { todoId: string; nt: { iv: string; ct: string } | null }[] = [];
+    const out: { todoId: string; name: string | null; min: number | null }[] = [];
     for (const id of args.ids) {
       const row = await ctx.db.get(id);
-      if (row) out.push({ todoId: row.todoId as unknown as string, nt: row.nt ?? null });
+      if (row) out.push({ todoId: row.todoId as unknown as string, name: row.name ?? null, min: row.min ?? null });
     }
     return out;
   },

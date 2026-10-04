@@ -42,3 +42,8 @@ yarn-error.log*
 next-env.d.ts
 
 .playwright-mcp/
+
+# convex database exports — real user data (ciphertext, salts, wrapped keys);
+# keep these out of git. Restore copies live in ~/todosst-backups/
+/backups/
+*.convex-export.zip

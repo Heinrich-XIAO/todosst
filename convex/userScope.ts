@@ -1,7 +1,6 @@
 // @convex-dev/auth issues session-scoped identity subjects ("userId|sessionId").
 // Data must be keyed by the stable userId part only, otherwise everything becomes
-// invisible after re-login (and salt lookup fails, silently regenerating the E2E
-// salt — permanent data loss).
+// invisible after re-login.
 export function stableUserId(subject: string): string {
   const idx = subject.indexOf("|");
   return idx >= 0 ? subject.slice(0, idx) : subject;
@@ -36,11 +35,4 @@ export async function requireOwnHistory(ctx: QueryCtx, id: Id<"todoHistory">): P
   if (!record) throw new Error("history record not found");
   if (record.userId !== userId) throw new Error("unauthorized");
   return record;
-}
-
-/** Validate an opaque E2E payload (ciphertext+iv) sent by the client. */
-export function validateEncryptedPayload(ciphertext: string, iv: string, maxCiphertext: number): void {
-  if (!ciphertext || !iv) throw new Error("missing ciphertext");
-  if (ciphertext.length > maxCiphertext) throw new Error("ciphertext too long");
-  if (iv.length > 64 || iv.length < 10) throw new Error("invalid iv");
 }

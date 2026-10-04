@@ -1,16 +1,47 @@
 "use client";
 
-// Portable, passphrase-encrypted vault backups ("moving accounts" / restore).
-// The file wraps a VaultSnapshot (decrypted todo nodes + history counts) with
-// AES-GCM under a key derived from an export passphrase — independent of the
-// account's vault key, so any account can import it.
+// Portable, passphrase-protected backups ("moving accounts" / restore).
+// The file wraps a VaultSnapshot (todo nodes + history counts) with AES-GCM
+// under a key derived from the export passphrase. That passphrase guards the
+// downloaded file only — it is not an account key and never leaves the device.
 
-import { decryptString, deriveKey, encryptString, type PlainNode } from "./crypto";
+import { decryptString, encryptString, type PlainNode } from "./crypto";
 
 export const EXPORT_FORMAT = "todosst-export";
 export const EXPORT_VERSION = 1;
 const PBKDF2_ITERATIONS = 310_000;
 const SALT_BYTES = 16;
+
+function base64ToBuf(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+/** PBKDF2-SHA-256 -> AES-GCM-256 key for the backup file's passphrase. */
+async function deriveKey(password: string, saltB64: string): Promise<CryptoKey> {
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(password) as unknown as BufferSource,
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  return await crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt: base64ToBuf(saltB64) as unknown as BufferSource,
+      iterations: PBKDF2_ITERATIONS,
+      hash: "SHA-256",
+    },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"]
+  );
+}
 
 export type ExportedTodo = { id: string; node: PlainNode };
 export type ExportedHistory = { todoId: string; counts: Record<string, number> };

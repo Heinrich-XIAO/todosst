@@ -5,14 +5,12 @@ import { Authenticated } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import Link from "next/link";
 import { LogOut, Settings } from "lucide-react";
-import { clearRecoverySession, useEncryption } from "./EncryptionContext";
 import { Logo } from "./Logo";
 import { ThemeToggle } from "./useTheme";
-import { VaultPanel } from "./VaultPanel";
+import { SettingsPanel } from "./SettingsPanel";
 
 export function Header() {
   const { signOut } = useAuthActions();
-  const { clearKey, key } = useEncryption();
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
@@ -26,21 +24,16 @@ export function Header() {
         <div className="flex items-center gap-4 text-sm">
           <ThemeToggle />
           <Authenticated>
-            {/* vault settings need the unlocked vault — hidden while locked */}
-            {key && (
-              <button
-                onClick={() => setSettingsOpen(true)}
-                className="opacity-60 hover:opacity-100"
-                aria-label="settings"
-                title="settings — change password, recovery key, export / import"
-              >
-                <Settings className="h-[18px] w-[18px]" aria-hidden />
-              </button>
-            )}
+            <button
+              onClick={() => setSettingsOpen(true)}
+              className="opacity-60 hover:opacity-100"
+              aria-label="settings"
+              title="settings — reminders, export / import"
+            >
+              <Settings className="h-[18px] w-[18px]" aria-hidden />
+            </button>
             <button
               onClick={() => {
-                clearKey();
-                clearRecoverySession();
                 void signOut();
               }}
               className="opacity-60 hover:opacity-100"
@@ -52,7 +45,7 @@ export function Header() {
           </Authenticated>
         </div>
       </div>
-      {settingsOpen && key && <VaultPanel onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsPanel onClose={() => setSettingsOpen(false)} />}
     </header>
   );
 }

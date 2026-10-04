@@ -3,9 +3,9 @@
 // Daily-ritual bookkeeping — never-miss-twice + auto-habit (features of the
 // today view, see TodayView.tsx / TodoApp.tsx).
 //
-// Everything here is per-device localStorage, same E2E-safe pattern as the
-// reminder "shown" marks: the server never learns whether you opened the app.
-// Days are local day indexes (dayIndexLocal in src/lib/recur.ts).
+// Everything here is per-device localStorage, so the server never learns
+// whether you opened the app. Days are local day indexes (dayIndexLocal in
+// src/lib/recur.ts).
 //
 // Model: a day is "cleared" when the today view reaches all clear. Missed
 // days are the consecutive days before today without a clear — misses are

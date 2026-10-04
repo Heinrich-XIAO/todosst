@@ -4,10 +4,9 @@ import { internal } from "./_generated/api";
 import { encryptPushPayload } from "../src/lib/pushCrypto";
 
 // Web Push sender for the V8 runtime — no Node dependency. VAPID is an ES256
-// JWT signed with WebCrypto. Reminder pushes carry client-encrypted copy blobs
-// ({name, min} under the account's notification key) relayed unread; nudge
-// pushes carry a tiny encrypted body ({t:"nudge"}). No plaintext titles, no
-// counts of vault content, nothing readable ever leaves the client.
+// JWT signed with WebCrypto. Bodies are JSON push-copy payloads (reminder /
+// nudge / auto); aes128gcm is transport encryption to the push service only,
+// so the service worker can read them.
 
 async function deliverToSubs(
   ctx: ActionCtx,
@@ -70,13 +69,13 @@ export const sendPush = internalAction({
       return;
     }
 
-    // Build the reminder payload from the client-encrypted blobs. aes128gcm is
+    // Build the reminder payload from the stored copy fields. aes128gcm is
     // single-record (4KB) so trim items until the outer JSON fits; anything
     // trimmed shows up as a "more" count in the service worker.
     const rows = await ctx.runQuery(internal.push.remindersFor, { ids: args.reminderIds });
     const blobs = rows
-      .filter((r) => r.nt)
-      .map((r) => ({ todoId: r.todoId, iv: r.nt!.iv, ct: r.nt!.ct }));
+      .filter((r) => r.name)
+      .map((r) => ({ todoId: r.todoId, name: r.name, min: r.min ?? 0 }));
     let reminderPayload: string | null = null;
     if (blobs.length > 0) {
       const MAX_ITEMS = 10;
@@ -110,9 +109,8 @@ export const sendPush = internalAction({
 });
 
 // Daily-nudge push: fire and forget (the cron dedupes per day before
-// scheduling). Carries the client-encrypted copy blob when one is stored —
-// the service worker decrypts it on-device; a missing blob (or an encryption
-// failure on a broken subscription) falls back to the generic nudge copy.
+// scheduling). Carries the stored copy fields so the service worker can render
+// personalized copy; missing values fall back to generic copy.
 export const sendNudge = internalAction({
   args: { userId: v.string() },
   handler: async (ctx, args) => {
@@ -121,10 +119,8 @@ export const sendNudge = internalAction({
     if (!publicKey || !privateKey) return;
     const subs = await ctx.runQuery(internal.push.subscriptionsFor, { userId: args.userId });
     if (subs.length === 0) return;
-    const { nb } = await ctx.runQuery(internal.nudge.forSend, { userId: args.userId });
-    const payload = nb
-      ? JSON.stringify({ t: "nudge", u: args.userId, nb })
-      : JSON.stringify({ t: "nudge" });
+    const copy = await ctx.runQuery(internal.nudge.forSend, { userId: args.userId });
+    const payload = JSON.stringify({ t: "nudge", u: args.userId, ...copy });
     await deliverToSubs(ctx, publicKey, privateKey, subs, async (s) => {
       try {
         return await encryptPushPayload({ p256dh: s.p256dh, auth: s.auth }, payload);
@@ -135,9 +131,8 @@ export const sendNudge = internalAction({
   },
 });
 
-// Dateless auto-nudge push (bandit exploration). Same blind-relay shape as
-// reminders: the client-encrypted {name, min} blob rides unread; the service
-// worker renders it as a gentle nudge. min = -1 marks auto (not due-soon).
+// Dateless auto-nudge push. Carries the plaintext copy fields so the service
+// worker can render it. min = -1 marks auto (not due-soon).
 export const sendAuto = internalAction({
   args: { userId: v.string(), eventIds: v.array(v.id("autoNudgeEvents")) },
   handler: async (ctx, args) => {
@@ -153,13 +148,16 @@ export const sendAuto = internalAction({
       return;
     }
     const rows = await ctx.runQuery(internal.autoNudge.eventsFor, { ids: args.eventIds });
-    const blobs = rows
-      .filter((r) => r.nt)
-      .map((r) => ({ todoId: r.todoId, iv: r.nt!.iv, ct: r.nt!.ct }));
+    const named = rows.find((r) => r.name);
     let payload: string | null = null;
-    if (blobs.length > 0) {
-      const first = blobs[0];
-      payload = JSON.stringify({ t: "auto", u: args.userId, items: [first], more: 0, eid: args.eventIds[0] });
+    if (named) {
+      payload = JSON.stringify({
+        t: "auto",
+        u: args.userId,
+        items: [{ todoId: named.todoId, name: named.name, min: named.min ?? 0 }],
+        more: 0,
+        eid: args.eventIds[0],
+      });
     }
     const { delivered, retryable } = await deliverToSubs(ctx, publicKey, privateKey, subs, async (s) => {
       if (!payload) return null;

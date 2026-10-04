@@ -5,22 +5,31 @@ import { authTables } from "@convex-dev/auth/server";
 export default defineSchema({
   ...authTables,
   todos: defineTable({
-    // E2E encrypted payload: JSON {v:2,title,isCompleted,...} -> AES-GCM
+    // Plaintext node payload: JSON of PlainNode ({v,title,isCompleted,parentId,
+    // order,metadata}). The server reads and indexes this directly.
+    node: v.optional(v.string()),
+    // legacy rows written before the move to plaintext storage: AES-GCM
+    // ciphertext + iv. Only read by the one-time client-side migration
+    // (src/lib/legacyDecrypt.ts), which rewrites `node` and clears these.
+    // Once every account has migrated, drop the columns and that module.
     ciphertext: v.optional(v.string()),
     iv: v.optional(v.string()),
     userId: v.string(),
   }).index("by_user", ["userId"]),
 
-  // per-todo E2E encrypted completion history (recurring-task counts).
-  // payload: JSON {v:1,todoId,c:"d1240:3;d1241:1"} -> AES-GCM — todoId lives inside
-  // the ciphertext, so the server never sees which record belongs to which todo.
+  // per-todo completion history (recurring-task counts), plaintext JSON of
+  // HistoryData {todoId, counts}.
   todoHistory: defineTable({
-    ciphertext: v.string(),
-    iv: v.string(),
+    payload: v.optional(v.string()),
+    // legacy ciphertext rows — same one-time migration path as todos
+    ciphertext: v.optional(v.string()),
+    iv: v.optional(v.string()),
     userId: v.string(),
   }).index("by_user", ["userId"]),
 
-  // per-user PBKDF2 salt (public, not secret) for E2E key derivation
+  // legacy per-user PBKDF2 salt. Retained ONLY so the one-time migration can
+  // re-derive the old vault key on the user's device. Safe to delete once all
+  // accounts have migrated.
   userSalts: defineTable({
     userId: v.string(),
     // optional: rows created before the username migration have no username
@@ -31,13 +40,10 @@ export default defineSchema({
     .index("by_userId", ["userId"])
     .index("by_username", ["username"]),
 
-  // vault master key, wrapped (AES-GCM) once per unlock method.
-  // kind "password": wrapped with PBKDF2(password, salt)
-  // kind "recovery": wrapped with PBKDF2(recovery code, salt)
-  // kind "notification": dedicated push-copy key, wrapped with the vault master
-  //   key. Unwrapped on-device (and mirrored to IndexedDB for the service
-  //   worker) so reminder pushes can carry the task name without the server
-  //   ever seeing it.
+  // legacy wrapped-key records (kind "password" | "recovery" | "notification"),
+  // read only by the one-time migration to unwrap the old vault key. The
+  // "notification" kind is unused now that push copy is plaintext. Safe to
+  // delete once all accounts have migrated.
   vaultKeys: defineTable({
     userId: v.string(),
     kind: v.union(v.literal("password"), v.literal("recovery"), v.literal("notification")),
@@ -45,9 +51,8 @@ export default defineSchema({
     iv: v.string(),
   }).index("by_user_kind", ["userId", "kind"]),
 
-  // account-level recovery: sha256 of the recovery-derived key, so the user can
-  // sign in (not just unlock) with username + recovery code. The raw key never
-  // reaches the server, so this hash cannot unwrap the vault.
+  // legacy account-level recovery verifier. Only the migration-era sign-in
+  // path reads it; safe to delete once all accounts have migrated.
   recoveryKeys: defineTable({
     userId: v.string(),
     verifier: v.string(),
@@ -67,9 +72,8 @@ export default defineSchema({
     .index("by_endpoint", ["endpoint"]),
 
   // scheduled reminders, one row per (todoId, remindAt). The plaintext
-  // timestamp plus an optional opaque push-copy blob (`nt`) — AES-GCM of
-  // {name, min} under the account's notification key. The server relays the
-  // blob inside the push payload without being able to decrypt it.
+  // timestamp plus optional push-copy fields (`name`, `min`) rendered by the
+  // service worker.
   reminders: defineTable({
     userId: v.string(),
     todoId: v.id("todos"),
@@ -80,6 +84,9 @@ export default defineSchema({
     // age out of cleanupOld (7 days).
     sentAt: v.optional(v.number()),
     sent: v.optional(v.boolean()),
+    // plaintext push copy (legacy rows: the old encrypted `nt` blob)
+    name: v.optional(v.string()),
+    min: v.optional(v.number()),
     nt: v.optional(
       v.object({
         iv: v.string(),
@@ -96,9 +103,8 @@ export default defineSchema({
     .index("by_todo", ["todoId"]),
 
   // daily ritual nudge: one row per user. Plaintext local time-of-day + UTC
-  // offset — the server learns *when* to ping, never *what* (the cron fires
-  // blind; the service worker renders generic copy). Personalized Duolingo-ish
-  // copy rides as an encrypted blob (`nb`) the cron relays unread, and a
+  // offset — the server pings at that local time. Personalized copy fields
+  // (variant + numbers) ride as plain columns for the service worker, and a
   // `skipDay` local day index suppresses the push on all-clear days.
   dailyNudges: defineTable({
     userId: v.string(),
@@ -107,8 +113,12 @@ export default defineSchema({
     utcOffsetMin: v.number(), // client-reported offset (minutes east of UTC), refreshed on app open
     enabled: v.boolean(),
     lastFiredDay: v.number(), // local day index (offset-adjusted) of last dispatch — daily dedupe
-    // AES-GCM(JSON {k, streak, missed, open}) under the account's notification
-    // key — variant + numbers for the service worker's copy
+    // copy fields: variant key + streak/missed/open counts
+    k: v.optional(v.string()),
+    streak: v.optional(v.number()),
+    missed: v.optional(v.number()),
+    open: v.optional(v.number()),
+    // legacy encrypted copy blob — only pre-migration rows carry it
     nb: v.optional(
       v.object({
         iv: v.string(),
@@ -123,10 +133,6 @@ export default defineSchema({
   // dateless auto-nudge (bandit now, NN later). One state row per user plus
   // one event row per delivery. Plaintext columns are anonymous numbers only
   // (hour, sizes, counters) — never titles/tags/descriptions/embeddings (those
-  // would leak vault content and break the E2E promise). The full task dump
-  // rides as an opaque AES-GCM blob (`fb`, vault-key encrypted client-side)
-  // the server stores blind; future training decrypts it on-device (or via an
-  // explicit opt-in upload), never by the server reading plaintext today.
   // Negatives/battles are excluded client-side and never get rows here.
   autoNudgeState: defineTable({
     userId: v.string(),
@@ -157,15 +163,13 @@ export default defineSchema({
     threshold: v.number(),
     countBefore: v.number(), // completions/counts already logged at schedule time
     priorCompletions: v.number(), // lifetime completions (history + current window)
-    // opaque full dump (title, recur rule, metadata, counts, history,
-    // timestamps…) AES-GCM encrypted with the vault key — server-blind
-    fb: v.optional(
-      v.object({
-        iv: v.string(),
-        ct: v.string(),
-      })
-    ),
-    // push-copy blob ({name, min} under the notification key) for the SW
+    // full training dump: JSON of the client-assembled FullDump (task + rule +
+    // counts + history + timestamps). Plaintext so the server (and a future
+    // offline trainer) can read it without a key.
+    fb: v.optional(v.string()),
+    // plaintext push copy for the service worker (legacy rows: old `nt` blob)
+    name: v.optional(v.string()),
+    min: v.optional(v.number()),
     nt: v.optional(
       v.object({
         iv: v.string(),
@@ -186,16 +190,9 @@ export default defineSchema({
     .index("by_pending", ["sentAt", "scheduledFor"])
     .index("by_todo", ["todoId"]),
 
-  // single-use, 10-minute grant created during recovery sign-in, allowing one
-  // password change without the current password.
-  recoveryGrants: defineTable({
-    userId: v.id("users"),
-    createdAt: v.number(),
-  }).index("by_user", ["userId"]),
-
   // fixed-window brute-force throttle for credential providers
   loginThrottle: defineTable({
-    key: v.string(), // e.g. "recovery:<username>"
+    key: v.string(), // e.g. "password:<username>"
     windowStart: v.number(),
     count: v.number(),
   }).index("by_key", ["key"]),

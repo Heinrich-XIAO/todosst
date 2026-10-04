@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "todosst",
     short_name: "todosst",
-    description: "E2E-encrypted hierarchical todo vault",
+    description: "hierarchical todo app",
     id: "/",
     start_url: "/",
     scope: "/",

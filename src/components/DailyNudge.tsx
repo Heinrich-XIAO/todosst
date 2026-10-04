@@ -1,12 +1,11 @@
 "use client";
 
-// Daily nudge — the fixed-time ritual cue, Duolingo-flavored. One plaintext
-// row per user (time-of-day + UTC offset) that the minute cron fires blind.
-// DailyNudgeSync auto-provisions 09:00 once per account, keeps the stored
-// offset fresh (DST/travel), and — on every open — syncs an encrypted copy
-// blob ({k, streak, missed, open} under the notification key) plus an
-// all-clear skip day, so the push only fires when it matters and can say
-// "your 12-day streak is at risk" without the server learning anything.
+// Daily nudge — the fixed-time ritual cue, Duolingo-flavored. One row per user
+// (time-of-day + UTC offset) that the minute cron fires. DailyNudgeSync
+// auto-provisions 09:00 once per account, keeps the stored offset fresh
+// (DST/travel), and — on every open — syncs the copy fields
+// ({k, streak, missed, open}) plus an all-clear skip day, so the push only
+// fires when it matters and can say "your 12-day streak is at risk".
 // NudgeSettings is the in-settings control.
 
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -16,7 +15,6 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { buildTodayItems, openCountOf } from "./TodayView";
 import { loadRitual, missedDays, streakOf } from "@/lib/ritual";
 import { dayIndexLocal, type RecurState } from "@/lib/recur";
-import { encryptNotifBlob } from "@/lib/notifKey";
 import type { DecryptedNode, TreeNode } from "@/lib/tree";
 
 type DailyNudgeSyncProps = {
@@ -24,7 +22,6 @@ type DailyNudgeSyncProps = {
   tree: { map: Map<string, TreeNode> };
   recurStates: Map<string, RecurState> | null;
   history: { byTodo: Map<string, Map<number, number>> } | null;
-  notifKeyB64: string | null;
   nowTs: number;
 };
 
@@ -40,7 +37,7 @@ function nudgeVariant(
   return "risk";
 }
 
-export function DailyNudgeSync({ nodes, tree, recurStates, history, notifKeyB64, nowTs }: DailyNudgeSyncProps) {
+export function DailyNudgeSync({ nodes, tree, recurStates, history, nowTs }: DailyNudgeSyncProps) {
   const pref = useQuery(api.nudge.get);
   const set = useMutation(api.nudge.set);
   const setSkipDay = useMutation(api.nudge.setSkipDay);
@@ -91,19 +88,10 @@ export function DailyNudgeSync({ nodes, tree, recurStates, history, notifKeyB64,
     const copySig = `${today}|${k}|${streak}|${missed}|${open}`;
     if (copySig === copyRef.current) return;
     copyRef.current = copySig;
-    if (!notifKeyB64) return; // no key yet — rows without a blob get generic copy
-
-    void (async () => {
-      try {
-        const nb = await encryptNotifBlob(notifKeyB64, { k, streak, missed, open });
-        void set({ hour: pref.hour, minute: pref.minute, utcOffsetMin, nb }).catch(() => {
-          copyRef.current = null; // failed write — retry on the next tick
-        });
-      } catch {
-        copyRef.current = null;
-      }
-    })();
-  }, [pref, nodes, tree, recurStates, history, habitId, notifKeyB64, nowTs, set, setSkipDay]);
+    void set({ hour: pref.hour, minute: pref.minute, utcOffsetMin, k, streak, missed, open }).catch(() => {
+      copyRef.current = null; // failed write — retry on the next tick
+    });
+  }, [pref, nodes, tree, recurStates, history, habitId, nowTs, set, setSkipDay]);
   return null;
 }
 
@@ -136,8 +124,7 @@ export function NudgeSettings() {
       </div>
       <p className="mt-1 text-[11px] leading-tight opacity-40">
         a fixed-time push each day — skipped automatically on all-clear days, and worded to
-        keep your streak alive. delivered to every signed-in browser; the server only learns
-        the time, never any content.
+        keep your streak alive. delivered to every signed-in browser.
       </p>
       <div className="mt-2 flex items-center gap-2">
         <input

@@ -3,16 +3,14 @@
 // Offline capture outbox — raw command-input captures parked on-device while
 // the network is down, replayed by TodoApp on the next unlocked+online open.
 //
-// E2E contract: the payload handed here is already vault-encrypted by the
-// caller ({iv, ciphertext} of JSON {input, parts}); the outbox itself is a
-// content-agnostic FIFO queue. Storage is IndexedDB, with a localStorage
-// fallback for browsers where IDB is unavailable (private mode, quota) —
-// nothing here ever touches the server; replay goes through the normal
-// encrypted create path.
+// The outbox is a content-agnostic FIFO queue of raw command-input captures.
+// Storage is IndexedDB, with a localStorage fallback for browsers where IDB is
+// unavailable (private mode, quota) — nothing here ever touches the server;
+// replay goes through the normal create path.
 
-import { decryptString, encryptString } from "./crypto";
-
-export type OutboxPayload = { iv: string; ciphertext: string };
+/** raw command-input text (replayed verbatim through the grammar) plus the
+ *  working-directory path segments captured under */
+export type OutboxPayload = { input: string; parts: string[] };
 
 export type OutboxEntry = {
   id: string;
@@ -21,12 +19,7 @@ export type OutboxEntry = {
   payload: OutboxPayload;
 };
 
-export type CapturePayload = {
-  /** raw command-input text, replayed verbatim through the grammar */
-  input: string;
-  /** working-directory path segments (titles) at capture time */
-  parts: string[];
-};
+export type CapturePayload = OutboxPayload;
 
 const DB_NAME = "todosst-outbox";
 const DB_VERSION = 1;
@@ -84,11 +77,10 @@ function isValidEntry(e: unknown): e is OutboxEntry {
     typeof entry.attempts === "number" &&
     entry.attempts >= 0 &&
     !!entry.payload &&
-    typeof entry.payload.iv === "string" &&
-    typeof entry.payload.ciphertext === "string" &&
-    entry.payload.iv.length > 0 &&
-    entry.payload.ciphertext.length > 0 &&
-    entry.payload.ciphertext.length <= MAX_PAYLOAD_CHARS
+    typeof entry.payload.input === "string" &&
+    entry.payload.input.length > 0 &&
+    entry.payload.input.length <= MAX_PAYLOAD_CHARS &&
+    Array.isArray(entry.payload.parts)
   );
 }
 
@@ -125,16 +117,15 @@ export function newEntryId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** Park an encrypted capture. Returns the new entry id (so the caller can
- * offer undo while the entry waits), or null when no storage was available. */
+/** Park a capture. Returns the new entry id (so the caller can offer undo
+ * while the entry waits), or null when no storage was available. */
 export async function outboxAdd(payload: OutboxPayload): Promise<string | null> {
   if (
     !payload ||
-    typeof payload.iv !== "string" ||
-    typeof payload.ciphertext !== "string" ||
-    payload.iv.length === 0 ||
-    payload.ciphertext.length === 0 ||
-    payload.ciphertext.length > MAX_PAYLOAD_CHARS
+    typeof payload.input !== "string" ||
+    payload.input.length === 0 ||
+    payload.input.length > MAX_PAYLOAD_CHARS ||
+    !Array.isArray(payload.parts)
   ) {
     return null;
   }
@@ -237,25 +228,21 @@ export async function outboxMarkAttempt(id: string): Promise<void> {
   lsWrite(entries);
 }
 
-// ---------- capture payload codec (vault-encrypted) ----------
+// ---------- capture payload codec ----------
 
-/** Encrypt a capture under the vault key and park it. Returns the entry id
- * or null when storage was unavailable. */
-export async function outboxAddCapture(key: CryptoKey, capture: CapturePayload): Promise<string | null> {
-  const payload = await encryptString(key, JSON.stringify(capture));
-  return await outboxAdd(payload);
+/** Park a capture for replay. Returns the entry id or null when storage was
+ *  unavailable. */
+export async function outboxAddCapture(capture: CapturePayload): Promise<string | null> {
+  return await outboxAdd({ input: capture.input, parts: capture.parts });
 }
 
 /**
- * Decrypt a queued capture. Throws when the key doesn't match (vault key
- * rotated between capture and replay) or the row is corrupt — callers treat
- * that as a failed attempt, not a network problem.
+ * Read a queued capture. Throws when the row is corrupt — callers treat that as
+ * a failed attempt, not a network problem.
  */
-export async function openCapture(key: CryptoKey, payload: OutboxPayload): Promise<CapturePayload> {
-  const json = await decryptString(key, payload.iv, payload.ciphertext);
-  const raw = JSON.parse(json) as unknown;
-  if (!raw || typeof raw !== "object") throw new Error("corrupt capture");
-  const cap = raw as Partial<CapturePayload>;
-  if (typeof cap.input !== "string" || !Array.isArray(cap.parts)) throw new Error("corrupt capture");
-  return { input: cap.input, parts: cap.parts.filter((p): p is string => typeof p === "string") };
+export function openCapture(payload: OutboxPayload): CapturePayload {
+  if (!payload || typeof payload.input !== "string" || !Array.isArray(payload.parts)) {
+    throw new Error("corrupt capture");
+  }
+  return { input: payload.input, parts: payload.parts.filter((p): p is string => typeof p === "string") };
 }

@@ -1,7 +1,6 @@
 "use client";
-/* eslint-disable react-hooks/set-state-in-effect -- decrypt/history/timer-driven
-   state sync in effects is inherent to the encrypted vault lifecycle here;
-   same tradeoff as EncryptionContext.tsx */
+/* eslint-disable react-hooks/set-state-in-effect -- history/timer-driven
+   state sync in effects is inherent to the query + recurrence lifecycle here */
 
 import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
@@ -16,10 +15,10 @@ import { PushAutoEnable } from "./PushAutoEnable";
 import { DailyNudgeSync } from "./DailyNudge";
 import { AutoNudgeSync } from "./AutoNudge";
 import { InstallHint } from "./InstallHint";
+import { LegacyMigration } from "./LegacyMigration";
 import { AuthForm } from "./AuthForm";
-import { useEncryption, getRememberedKey } from "./EncryptionContext";
 import type { PlainNode } from "@/lib/crypto";
-import { encryptString, decryptString, toPlainNode } from "@/lib/crypto";
+import { encodeNode, parseNode, toPlainNode } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
 import { decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
 import { runInput, type CommandContext, type InputOutcome } from "@/lib/grammar";
@@ -72,7 +71,6 @@ import {
   remindItemsFor,
   withReminderDefault,
 } from "@/lib/reminders";
-import { encryptNotifBlob } from "@/lib/notifKey";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
 import { registerServiceWorker } from "@/lib/push";
 import { useOnline } from "@/lib/useOnline";
@@ -85,7 +83,6 @@ import {
   OUTBOX_MAX_ATTEMPTS,
   type OutboxEntry,
 } from "@/lib/outbox";
-import { UnlockScreen } from "./UnlockScreen";
 import { MetadataPanel } from "./MetadataPanel";
 import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
 import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
@@ -120,10 +117,10 @@ function captureToastLine(raw: string): string {
 // how long a completed task takes to fade away
 const FADE_MS = 3000;
 
-// Cache key for decrypted rows: ciphertext (with its iv) uniquely identifies a
-// payload version; rows without ciphertext key off their id.
-function cacheKeyFor(t: { _id: Id<"todos">; iv?: string; ciphertext?: string }): string {
-  return t.ciphertext ? `${t.iv}:${t.ciphertext}` : `row:${t._id}`;
+// Cache key for parsed rows: the plaintext node uniquely identifies a payload
+// version; rows without one key off their id.
+function cacheKeyFor(t: { _id: Id<"todos">; node?: string }): string {
+  return t.node ?? `row:${t._id}`;
 }
 
 // Everything the recursive row renderer needs from TodoTask. Passed as one
@@ -485,38 +482,12 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 }
 
 function TodoTask() {
-  const { key, notifKeyB64, isLocked, isReady, lock, clearStoredKey } = useEncryption();
   const online = useOnline();
-  const [hasRemembered, setHasRemembered] = useState(false);
-  useEffect(() => {
-    try {
-      setHasRemembered(!!getRememberedKey());
-    } catch {
-      setHasRemembered(false);
-    }
-  }, [key]);
   const todos = useQuery(api.todos.list);
   const createTodo = useMutation(api.todos.create);
   const updateTodo = useMutation(api.todos.update);
   const removeTodo = useMutation(api.todos.remove);
   const removeMany = useMutation(api.todos.removeMany);
-  const cryptoEncNode = useCallback(
-    async (n: PlainNode) => {
-      const { encryptNode } = await import("@/lib/crypto");
-      if (!key) throw new Error("locked");
-      return await encryptNode(key, n);
-    },
-    [key]
-  );
-  const cryptoDecNode = useCallback(
-    async (iv: string, ct: string) => {
-      const { decryptNode } = await import("@/lib/crypto");
-      if (!key) throw new Error("locked");
-      return await decryptNode(key, iv, ct);
-    },
-    [key]
-  );
-
   const pathname = usePathname() ?? "/";
   // the view lives in the URL: a "/tree" prefix shows the tree view, anything
   // else is today. Deep links like /tree/host%20hackathon just work.
@@ -553,101 +524,70 @@ function TodoTask() {
   );
 
   const [nodes, setNodes] = useState<DecryptedNode[] | null>(null);
-  const [decryptError, setDecryptError] = useState<string | null>(null);
-  const [isDecrypting, setIsDecrypting] = useState(false);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
   const [fadingIds, setFadingIds] = useState<Set<string>>(new Set());
 
   const isLoading = todos === undefined;
 
-  // The `todos` query re-fires on every mutation; decrypting every row again
-  // each time is wasteful. Results are cached per payload (iv+ciphertext) and
-  // the cache is dropped whenever the key changes.
-  const decryptCacheRef = useRef(new Map<string, DecryptedNode>());
-  const decryptKeyRef = useRef<CryptoKey | null>(null);
+  // The `todos` query re-fires on every mutation; re-parsing every row each
+  // time is wasteful, so results are cached per stored payload string.
+  const parseCacheRef = useRef(new Map<string, DecryptedNode>());
 
   useEffect(() => {
     if (todos === undefined) return;
-    if (!key) {
-      decryptKeyRef.current = null;
-      decryptCacheRef.current.clear();
-      setNodes(null);
-      setDecryptError(null);
-      setIsDecrypting(false);
-      setCountOverrides(new Map()); // optimistic counts are session-scoped like the decrypt cache
-      return;
-    }
-    if (decryptKeyRef.current !== key) {
-      decryptKeyRef.current = key;
-      decryptCacheRef.current.clear();
-    }
     let cancelled = false;
-    const misses = todos.filter((t) => !decryptCacheRef.current.has(cacheKeyFor(t)));
+    const misses = todos.filter((t) => !parseCacheRef.current.has(cacheKeyFor(t)));
     if (misses.length === 0) {
-      // fully cached — synchronous state update, no loading flash. A prior
-      // run may still be in flight (it was cancelled); reset the flag here so
-      // it can never stick true.
-      setIsDecrypting(false);
-      const results = todos.map((t) => decryptCacheRef.current.get(cacheKeyFor(t))!);
-      const failed = results.some((r) => r.title === "— unable to decrypt —");
-      setDecryptError(failed ? "wrong password or corrupted vault — some items could not be decrypted." : null);
-      setNodes(results);
+      // fully cached — synchronous state update, no loading flash
+      setIsParsing(false);
+      setReadError(null);
+      setNodes(todos.map((t) => parseCacheRef.current.get(cacheKeyFor(t))!));
       return;
     }
-    setIsDecrypting(true);
-    setDecryptError(null);
+    setIsParsing(true);
     (async () => {
       try {
-        await Promise.all(
-          misses.map(async (t) => {
-            let result: DecryptedNode;
-            try {
-              if (!t.ciphertext || !t.iv) throw new Error("row has no ciphertext");
-              const plain = await cryptoDecNode(t.iv, t.ciphertext);
-              if (plain.title.length > 200) throw new Error("title too long");
-              result = {
-                ...plain,
-                // ensure order finite
-                order: typeof plain.order === "number" && Number.isFinite(plain.order) ? plain.order : t._creationTime,
-                _id: t._id,
-                _creationTime: t._creationTime,
-                _raw: { ciphertext: t.ciphertext, iv: t.iv },
-              } satisfies DecryptedNode;
-            } catch {
-              result = {
-                v: 2 as const,
-                title: "— unable to decrypt —",
-                isCompleted: false,
-                parentId: null,
-                order: t._creationTime,
-                metadata: {},
-                _id: t._id,
-                _creationTime: t._creationTime,
-                _raw: { ciphertext: t.ciphertext, iv: t.iv },
-              } satisfies DecryptedNode;
-            }
-            // never cache after cancellation: the cache was cleared and
-            // re-keyed when the effect re-ran (lock, key change) — an old run
-            // writing here would poison it with wrong-key results
-            if (cancelled) return;
-            decryptCacheRef.current.set(cacheKeyFor(t), result);
-          })
-        );
+        for (const t of misses) {
+          let result: DecryptedNode;
+          try {
+            if (!t.node) throw new Error("row has no payload");
+            const plain = parseNode(t.node);
+            if (plain.title.length > 200) throw new Error("title too long");
+            result = {
+              ...plain,
+              order: typeof plain.order === "number" && Number.isFinite(plain.order) ? plain.order : t._creationTime,
+              _id: t._id,
+              _creationTime: t._creationTime,
+              _raw: {},
+            } satisfies DecryptedNode;
+          } catch {
+            result = {
+              v: 2 as const,
+              title: "— unable to read —",
+              isCompleted: false,
+              parentId: null,
+              order: t._creationTime,
+              metadata: {},
+              _id: t._id,
+              _creationTime: t._creationTime,
+              _raw: {},
+            } satisfies DecryptedNode;
+          }
+          if (cancelled) return;
+          parseCacheRef.current.set(cacheKeyFor(t), result);
+        }
         if (cancelled) return;
-        const results = todos.map((t) => decryptCacheRef.current.get(cacheKeyFor(t))!);
-        // detect if any decrypt failed
-        const failed = results.some((r) => r.title === "— unable to decrypt —");
-        if (failed) setDecryptError("wrong password or corrupted vault — some items could not be decrypted.");
-        setNodes(results);
+        setReadError(null);
+        setNodes(todos.map((t) => parseCacheRef.current.get(cacheKeyFor(t))!));
       } finally {
-        // the rerun (cancelled this one) owns the flag: it either set it true
-        // again or reset it on an early-return path
-        if (!cancelled) setIsDecrypting(false);
+        if (!cancelled) setIsParsing(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [todos, key, cryptoDecNode]);
+  }, [todos]);
 
   const tree = useMemo(() => {
     if (!nodes) return { roots: [] as TreeNode[], map: new Map<string, TreeNode>(), orphans: 0 };
@@ -674,7 +614,7 @@ function TodoTask() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      if (!historyRecords || !key) {
+      if (!historyRecords) {
         historyRef.current = null;
         if (!cancelled) setHistory(null);
         return;
@@ -684,8 +624,8 @@ function TodoTask() {
       await Promise.all(
         historyRecords.map(async (r) => {
           try {
-            const json = await decryptString(key, r.iv, r.ciphertext);
-            const data = decodeHistoryPayload(json);
+            if (!r.payload) return;
+            const data = decodeHistoryPayload(r.payload);
             if (!data) return;
             byTodo.set(data.todoId, data.counts);
             idByTodo.set(data.todoId, r._id);
@@ -698,22 +638,21 @@ function TodoTask() {
     return () => {
       cancelled = true;
     };
-  }, [historyRecords, key]);
+  }, [historyRecords]);
 
   // prune history records whose todo no longer exists — e.g. the todo was
   // deleted while history was still loading, so its record id was unknown and
-  // the row leaked on the server (the id is inside the ciphertext, the server
-  // cannot garbage-collect). One sweep per unlock.
+  // the row leaked on the server. One sweep per load.
   const historyPrunedRef = useRef(false);
   useEffect(() => {
-    if (!nodes || !history || !key) return;
+    if (!nodes || !history) return;
     if (historyPrunedRef.current) return;
     historyPrunedRef.current = true;
     const ids = new Set(nodes.map((n) => n._id as string));
     for (const [todoId, hid] of history.idByTodo) {
       if (!ids.has(todoId)) void historyRemove({ id: hid }).catch(() => {});
     }
-  }, [nodes, history, key, historyRemove]);
+  }, [nodes, history, historyRemove]);
 
   const [recurStates, setRecurStates] = useState<Map<string, RecurState> | null>(null);
   // negative tasks: the window that just ended (one level back) — drives the
@@ -761,15 +700,15 @@ function TodoTask() {
 
   // ---- reminders: server sync + in-app firing ----
   // The client derives remindAt timestamps (plus each one's offset in minutes)
-  // from decrypted metadata and syncs the full desired set to the server, each
-  // row carrying the push copy {name, min} encrypted under the notification
-  // key. Completing, editing, deleting or un-deleting a task converges the rows
-  // automatically; a rename re-syncs and refreshes the copy blobs.
+  // from task metadata and syncs the full desired set to the server, each row
+  // carrying the push copy {name, min}. Completing, editing, deleting or
+  // un-deleting a task converges the rows automatically; a rename re-syncs and
+  // refreshes the copy.
   const syncReminders = useMutation(api.push.syncReminders);
   const syncedSigRef = useRef<string | null>(null);
   const syncSeqRef = useRef(0);
   useEffect(() => {
-    if (!nodes || !key) {
+    if (!nodes) {
       syncedSigRef.current = null;
       return;
     }
@@ -791,35 +730,15 @@ function TodoTask() {
       }
     }
     plain.sort((a, b) => (a.todoId < b.todoId ? -1 : a.todoId > b.todoId ? 1 : a.remindAt - b.remindAt));
-    // the key material is part of the signature so a key arrival (or rotation)
-    // re-syncs rows that were written without a copy blob
-    const sig = JSON.stringify([notifKeyB64, plain]);
+    const sig = JSON.stringify(plain);
     if (sig === syncedSigRef.current) return;
     syncedSigRef.current = sig;
     const seq = ++syncSeqRef.current;
-    void (async () => {
-      let items: { todoId: Id<"todos">; remindAt: number; nt?: { iv: string; ct: string } }[];
-      if (notifKeyB64) {
-        try {
-          items = await Promise.all(
-            plain.map(async (p) => ({
-              todoId: p.todoId,
-              remindAt: p.remindAt,
-              nt: await encryptNotifBlob(notifKeyB64, { name: p.name, min: p.min }),
-            }))
-          );
-        } catch {
-          items = plain.map((p) => ({ todoId: p.todoId, remindAt: p.remindAt }));
-        }
-      } else {
-        items = plain.map((p) => ({ todoId: p.todoId, remindAt: p.remindAt }));
-      }
-      if (seq !== syncSeqRef.current) return; // a newer desired set superseded this run
-      void syncReminders({ items }).catch(() => {
-        syncedSigRef.current = null;
-      });
-    })();
-  }, [nodes, recurStates, key, notifKeyB64, syncReminders]);
+    if (seq !== syncSeqRef.current) return; // a newer desired set superseded this run
+    void syncReminders({ items: plain }).catch(() => {
+      syncedSigRef.current = null;
+    });
+  }, [nodes, recurStates, syncReminders]);
 
   const [remindToast, setRemindToast] = useState<{ title: string; lines: string[]; onUndo?: () => void } | null>(
     null
@@ -895,7 +814,6 @@ function TodoTask() {
     }
   }, []);
   useEffect(() => {
-    if (isLocked) return;
     const onVisible = () => {
       if (document.hidden) return;
       checkDueSoon();
@@ -909,16 +827,16 @@ function TodoTask() {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [isLocked, checkDueSoon, checkOverdue]);
+  }, [checkDueSoon, checkOverdue]);
 
   // the tick effect's first run happens while nodes is still null — surface
   // overdue/due-soon as soon as the first decrypt lands instead of waiting
   // up to 30s
   useEffect(() => {
-    if (isLocked || !nodes) return;
+    if (!nodes) return;
     checkDueSoon();
     checkOverdue();
-  }, [isLocked, nodes, checkDueSoon, checkOverdue]);
+  }, [nodes, checkDueSoon, checkOverdue]);
 
   const listFlat = nodes ?? [];
 
@@ -1029,7 +947,6 @@ function TodoTask() {
 
   // If no input/textarea/select is focused, typing should go straight into the new-task box
   useEffect(() => {
-    if (isLocked) return;
     function isTypingTarget(el: Element | null) {
       if (!el) return false;
       const tag = el.tagName;
@@ -1064,11 +981,10 @@ function TodoTask() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isLocked, notice, helpOpen, confirmDeleteId, selectedId]);
+  }, [notice, helpOpen, confirmDeleteId, selectedId]);
 
   // Ctrl/Cmd+F focuses the search field
   useEffect(() => {
-    if (isLocked) return;
     function onKeyDown(e: KeyboardEvent) {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
         const active = document.activeElement as Element | null;
@@ -1080,7 +996,7 @@ function TodoTask() {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isLocked]);
+  }, []);
 
   // filter helper for tree: keep node if matches or has matching descendant.
   // A plain function declaration (not useCallback) — it recurses via its own
@@ -1385,7 +1301,6 @@ function TodoTask() {
   // window, "seal" for a failed one; either writes the confirmation into the
   // encrypted metadata (closing the window for good) and celebrates with a toast
   async function handleConfirmHold(node: TreeNode, windowDay: number) {
-    if (!key) return;
     const meta = node.metadata as PlainNode["metadata"];
     if (holdOf(meta, windowDay) !== undefined) return;
     const updated = withHold(meta, windowDay, Date.now());
@@ -1418,8 +1333,7 @@ function TodoTask() {
           const holds = { ...(meta.holds ?? {}) };
           delete holds[String(windowDay)];
           try {
-            const { ciphertext, iv } = await cryptoEncNode(toPlainNode(cur, { metadata: { ...meta, holds } }));
-            await updateTodo({ id: node._id, ciphertext, iv });
+            await updateTodo({ id: node._id, node: encodeNode(toPlainNode(cur, { metadata: { ...meta, holds } })) });
           } catch {
             setNotice("undo failed — the window record is still saved");
           }
@@ -1542,13 +1456,12 @@ function TodoTask() {
             })
           : {};
         const node = toPlainNode({ title, isCompleted: false, parentId: parentId as Id<"todos"> | null, order, metadata });
-        const { ciphertext, iv } = await cryptoEncNode(node);
-        const newId = await createTodo({ ciphertext, iv });
+        const newId = await createTodo({ node: encodeNode(node) });
         virtualNodes.push({
           ...toPlainNode({ title, isCompleted: false, parentId, order, metadata }),
           _id: newId as Id<"todos">,
           _creationTime: Date.now(),
-          _raw: { ciphertext, iv },
+          _raw: {},
         } as DecryptedNode);
         chainIds.push(newId as string);
         opts?.createdIds?.push(newId as string);
@@ -1594,8 +1507,7 @@ function TodoTask() {
           ...(outcome.recur ? { recur: outcome.recur } : {}),
         }),
       });
-      const { ciphertext, iv } = await cryptoEncNode(node);
-      const newId = await createTodo({ ciphertext, iv });
+      const newId = await createTodo({ node: encodeNode(node) });
       opts?.createdIds?.push(newId as string);
       opts?.recentTitles?.add(dedupKey);
       return newId as Id<"todos">;
@@ -1607,10 +1519,9 @@ function TodoTask() {
   // toast; undo drops the entry before it ever syncs. parts = the
   // working-directory titles the capture was made under.
   async function parkCapture(raw: string, parts: string[]) {
-    if (!key) return;
     let savedId: string | null = null;
     try {
-      savedId = await outboxAddCapture(key, { input: raw, parts });
+      savedId = await outboxAddCapture({ input: raw, parts });
     } catch {}
     if (savedId !== null) {
       setRemindToast({
@@ -1654,8 +1565,8 @@ function TodoTask() {
     entry: OutboxEntry,
     recentTitles?: Set<string>
   ): Promise<{ text: string; createdIds: string[] } | null> {
-    if (!key || !nodes) throw new Error("vault not ready");
-    const cap = await openCapture(key, entry.payload);
+    if (!nodes) throw new Error("not ready");
+    const cap = await openCapture(entry.payload);
     const outcome = runInput(cap.input, {
       currentPath: "/",
       pushPath: () => {},
@@ -1701,7 +1612,7 @@ function TodoTask() {
   async function handleCreateRoot(e: React.FormEvent) {
     e.preventDefault();
     const raw = newRootTitle.trim();
-    if (!raw || !key) return;
+    if (!raw) return;
     // grammar registry decides: !commands run via ctx, creation forms return a plan
     const rawOutcome = runInput(raw, commandCtx);
     if (rawOutcome.type === "unknown-command") {
@@ -1764,15 +1675,14 @@ function TodoTask() {
     metadata: PlainNode["metadata"]
   ): Promise<Id<"todos"> | null> {
     const parent = tree.map.get(parentId);
-    if (!parent || title.length > 200 || !key) return null;
+    if (!parent || title.length > 200) return null;
     if (parent.children.some((c) => c.title === title)) {
       setNotice(DUPLICATE_MSG);
       return null;
     }
     const order = parent.children.length ? Math.max(...parent.children.map((c) => c.order)) + 1 : 0;
     const node = toPlainNode({ title, isCompleted: false, parentId, order, metadata });
-    const { ciphertext, iv } = await cryptoEncNode(node);
-    const newId = await createTodo({ ciphertext, iv });
+    const newId = await createTodo({ node: encodeNode(node) });
     setCollapsed((prev) => {
       const next = new Set(prev);
       next.delete(parentId);
@@ -1785,7 +1695,7 @@ function TodoTask() {
     const rawChild = addChildTitle.trim();
     const parsed = parseNegInput(rawChild);
     const title = parsed.title;
-    if (!title || title.length > 200 || !key) return;
+    if (!title || title.length > 200) return;
     const parent = tree.map.get(parentId);
     if (!parent) return;
     const childParts = [...getAncestors(parentId, tree.map).map((a) => a.title), parent.title];
@@ -1838,7 +1748,6 @@ function TodoTask() {
   // only; the sheet disables the other fields while offline since the grammar
   // can't encode them.
   async function submitSheet(draft: TaskDraft): Promise<boolean> {
-    if (!key) return false;
     const ruleStr = draft.metadata.recur ?? null;
     const recurToken = recurTokenFor(ruleStr);
     // offline raw: grammar input the replay path can re-create (the "!"
@@ -1903,7 +1812,7 @@ function TodoTask() {
 
 // the offered auto-habit meta-task: "open todosst ~daily" at root
   async function handleCreateHabit() {
-    if (!key || !nodes) return;
+    if (!nodes) return;
     const { title, ruleStr } = parseRecurInput(`${HABIT_TITLE} ~daily`);
     if (!ruleStr || nodes.some((n) => (n.parentId ?? null) === null && n.title === title)) {
       setNotice(DUPLICATE_MSG);
@@ -1918,8 +1827,7 @@ function TodoTask() {
       order,
       metadata: { recur: ruleStr, habit: true },
     });
-    const { ciphertext, iv } = await cryptoEncNode(node);
-    await createTodo({ ciphertext, iv });
+    await createTodo({ node: encodeNode(node) });
   }
 
   function handleDismissHabitOffer() {
@@ -1928,21 +1836,17 @@ function TodoTask() {
   }
 
   async function pushHistory(todoId: string, windowDay: number, count: number) {
-    if (!key) return;
     const store = historyRef.current;
-    // history not loaded yet (list pending or records mid-decrypt): a blind
-    // insert would create a second record for this todo that the decrypt
-    // merge can never reconcile — the todoId is inside the ciphertext, so the
-    // later last-wins merge would silently drop one record's days. The count
+    // history not loaded yet (list pending): a blind insert would create a
+    // second record for this todo that the merge can never reconcile. The count
     // still lives in the node's metadata; the next write re-merges fully.
     if (!store) return;
     const merged = new Map(store.byTodo.get(todoId) ?? []);
     if (count > 0) merged.set(windowDay, count);
     else merged.delete(windowDay);
     const payload = encodeHistoryPayload({ todoId, counts: merged });
-    const { ciphertext, iv } = await encryptString(key, payload);
     const hid = store.idByTodo.get(todoId);
-    const putId = await historyPut(hid ? { id: hid, ciphertext, iv } : { ciphertext, iv });
+    const putId = await historyPut(hid ? { id: hid, payload } : { payload });
     // optimistic ref/state update so rapid successive writes merge instead of
     // each computing from the same pre-write snapshot
     const byTodo = new Map(store.byTodo);
@@ -1974,7 +1878,7 @@ function TodoTask() {
     next: number,
     opts?: { targetDay?: number; metadata?: PlainNode["metadata"] }
   ) {
-    if (!key || !nodes) return;
+    if (!nodes) return;
     const meta = opts?.metadata ?? (node.metadata as PlainNode["metadata"]);
     rs = rs ?? (await resolveRs(node));
     // an exhausted rule's final window is immutable history — never mutate it
@@ -2035,8 +1939,7 @@ function TodoTask() {
       });
     }
     try {
-      const { ciphertext, iv } = await cryptoEncNode(updated);
-      await Promise.all([updateTodo({ id: node._id, ciphertext, iv }), pushHistory(node._id as string, targetDay, clamped)]);
+      await Promise.all([updateTodo({ id: node._id, node: encodeNode(updated) }), pushHistory(node._id as string, targetDay, clamped)]);
     } catch (e) {
       clearCountOverride(node._id as string, targetDay);
       if (prevNode) {
@@ -2066,7 +1969,6 @@ function TodoTask() {
   }
 
   async function handleToggle(node: TreeNode) {
-    if (!key) return;
     const meta0 = node.metadata as PlainNode["metadata"];
     const rs = await resolveRs(node);
     const isRecurring = rs?.isRecurring ?? !!meta0.recur;
@@ -2119,9 +2021,8 @@ function TodoTask() {
     } as DecryptedNode;
     setNodes((prev) => (prev ? prev.map((n) => (n._id === node._id ? optimisticPlain : n)) : prev));
     try {
-      const { ciphertext, iv } = await cryptoEncNode(updated);
       await Promise.all([
-        updateTodo({ id: node._id, ciphertext, iv }),
+        updateTodo({ id: node._id, node: encodeNode(updated) }),
         pushHistory(node._id as string, targetDay, nextCount),
       ]);
     } catch (e) {
@@ -2224,7 +2125,7 @@ function TodoTask() {
 
   async function commitEdit(id: Id<"todos">) {
     const v = editValue.trim();
-    if (!v || v.length > 200 || !key) {
+    if (!v || v.length > 200) {
       setEditingId(null);
       return;
     }
@@ -2233,7 +2134,7 @@ function TodoTask() {
 
   async function handleRename(id: Id<"todos">, raw: string): Promise<boolean> {
     const v = raw.trim();
-    if (!v || v.length > 200 || !key) return false;
+    if (!v || v.length > 200) return false;
     const cur = nodes?.find((n) => n._id === id);
     if (!cur) return false;
     if (v === cur.title) return true;
@@ -2242,8 +2143,7 @@ function TodoTask() {
       return false;
     }
     const updated = toPlainNode(cur, { title: v });
-    const { ciphertext, iv } = await cryptoEncNode(updated);
-    await updateTodo({ id, ciphertext, iv });
+    await updateTodo({ id, node: encodeNode(updated) });
     return true;
   }
 
@@ -2298,7 +2198,7 @@ function TodoTask() {
   // subtree — the toast countdown restarts and undo can be retried.
   async function handleUndo() {
     const snap = undoState?.snap;
-    if (!snap || !key) {
+    if (!snap) {
       setUndoState(null);
       return;
     }
@@ -2311,8 +2211,7 @@ function TodoTask() {
         parentId: plain.parentId ? (idMap.get(plain.parentId) ?? (plain.parentId as Id<"todos">)) : null,
       });
       try {
-        const { ciphertext, iv } = await cryptoEncNode(restored);
-        const newId = await createTodo({ ciphertext, iv });
+        const newId = await createTodo({ node: encodeNode(restored) });
         idMap.set(oldId, newId as Id<"todos">);
       } catch {
         setNotice("undo stopped partway — press undo again to retry the rest");
@@ -2327,8 +2226,7 @@ function TodoTask() {
           todoId: newId as string,
           counts: new Map(h.counts),
         });
-        const { ciphertext, iv } = await encryptString(key, payload);
-        await historyPut({ ciphertext, iv });
+        await historyPut({ payload });
       } catch {
         // history restore is best-effort; node data matters more
       }
@@ -2404,15 +2302,15 @@ function TodoTask() {
     }
   }
 
-  // key changed (locked/unlocked/re-derived) — plaintext snapshot may no longer
-  // round-trip with the new key, drop it; re-arm the history orphan sweep
+  // re-mount (sign-out/sign-in) — the undo snapshot references rows this
+  // account may no longer own; drop it and re-arm the history orphan sweep
   useEffect(() => {
     setUndoState(null);
     historyPrunedRef.current = false;
-  }, [key]);
+  }, []);
 
   async function handleUpdateMetadata(id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) {
-    if (!key || !nodes) return;
+    if (!nodes) return;
     const cur = nodes.find((n) => n._id === id);
     if (!cur) return;
     let metadata: PlainNode["metadata"] = { ...cur.metadata, ...patch };
@@ -2435,8 +2333,7 @@ function TodoTask() {
       }
     }
     const updated = toPlainNode(cur, { isCompleted, metadata: { ...metadata, completedAt } });
-    const { ciphertext, iv } = await cryptoEncNode(updated);
-    await updateTodo({ id, ciphertext, iv });
+    await updateTodo({ id, node: encodeNode(updated) });
     // push seeded counts into the history record too
     if (metadata.counts && !metadata.recur) {
       const windowDay = dayIndexLocal(cur._creationTime);
@@ -2447,7 +2344,7 @@ function TodoTask() {
   }
 
   async function handleMove(draggedId: string, targetParentId: string | null, targetIndex: number) {
-    if (!key || !nodes) return;
+    if (!nodes) return;
     const dragged = nodes.find((n) => n._id === draggedId);
     if (!dragged) return;
     // cycle check: target cannot be descendant of dragged
@@ -2475,8 +2372,7 @@ function TodoTask() {
     else newOrder = (filtered[targetIndex - 1].order + filtered[targetIndex].order) / 2;
 
     const updated = toPlainNode(dragged, { parentId: targetParentId, order: newOrder });
-    const { ciphertext, iv } = await cryptoEncNode(updated);
-    await updateTodo({ id: dragged._id as Id<"todos">, ciphertext, iv });
+    await updateTodo({ id: dragged._id as Id<"todos">, node: encodeNode(updated) });
     if (targetParentId) {
       setCollapsed((prev) => {
         const next = new Set(prev);
@@ -2590,12 +2486,12 @@ function TodoTask() {
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [refreshPendingCaptures, online, key]);
+  }, [refreshPendingCaptures, online]);
 
   const drainingRef = useRef(false);
   const deadNotifiedRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!online || !key || !nodes || isDecrypting) return;
+    if (!online || !nodes || isParsing) return;
     if (pendingCaptures.length === 0 || drainingRef.current) return;
     drainingRef.current = true;
     void (async () => {
@@ -2659,12 +2555,7 @@ function TodoTask() {
     // already deps here (tree derives from nodes); adding its identity would
     // re-run this effect on every render. drainingRef makes reruns harmless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online, key, nodes, isDecrypting, pendingCaptures, refreshPendingCaptures]);
-
-  if (isLocked) {
-    if (!isReady) return <p className="text-sm opacity-60">preparing vault…</p>;
-    return <UnlockScreen />;
-  }
+  }, [online, nodes, isParsing, pendingCaptures, refreshPendingCaptures]);
 
   // Bundle of state/handlers for the module-level row renderer (stable component
   // type — no remount of the task tree on re-render).
@@ -2716,7 +2607,6 @@ function TodoTask() {
     <div className="w-full max-w-[720px] bg-background pb-[calc(3rem+env(safe-area-inset-bottom))] md:border md:border-foreground md:pb-0">
       <div className="flex items-center justify-between border-b border-foreground px-3 py-2 text-xs">
         <span className="flex flex-1 items-center gap-2">
-          <span>E2E Encrypted</span>
           {!online && <span className="opacity-40">· offline</span>}
           {pendingCaptures.length > 0 && (
             <span className="opacity-40" title="captured offline — syncs when you're back online">
@@ -2738,31 +2628,12 @@ function TodoTask() {
             tree
           </button>
         </span>
-        <span className="flex flex-1 items-center justify-end gap-3">
-          {hasRemembered && (
-            <button
-              onClick={() => {
-                clearStoredKey();
-                setHasRemembered(false);
-              }}
-              className="opacity-60 hover:opacity-100 underline underline-offset-4"
-              title="remove locally stored key — you will need password next time"
-            >
-              forget device
-            </button>
-          )}
-          <button
-            onClick={() => {
-              lock();
-            }}
-            className="opacity-60 hover:opacity-100 underline underline-offset-4"
-          >
-            lock
-          </button>
-        </span>
+        <span className="flex flex-1 items-center justify-end gap-3" />
       </div>
 
       <InstallHint />
+
+      <LegacyMigration />
 
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
       {view === "tree" && (
@@ -2951,7 +2822,7 @@ function TodoTask() {
           setDragId(null);
         }}
       >
-        {isLoading || isDecrypting ? (
+        {isLoading || isParsing ? (
           <p className="px-3 py-8 text-sm opacity-60">loading…</p>
         ) : listFlat.length === 0 ? (
           <div className="px-3 py-12 text-sm">
@@ -2963,11 +2834,11 @@ function TodoTask() {
           <div className="px-3 py-8 text-sm opacity-60">
             {currentDirInfo.id === null ? "no matching tasks." : "empty — add a task in this directory."}
           </div>
-        ) : decryptError ? (
-          <div className="border-b border-foreground bg-background px-3 py-2 text-xs">{decryptError}</div>
+        ) : readError ? (
+          <div className="border-b border-foreground bg-background px-3 py-2 text-xs">{readError}</div>
         ) : null}
 
-        {!isLoading && !isDecrypting && listFlat.length > 0 && currentDirInfo.exists && visibleRoots.length > 0 && (
+        {!isLoading && !isParsing && listFlat.length > 0 && currentDirInfo.exists && visibleRoots.length > 0 && (
           <ul>
             {visibleRoots.map((root) => (
               <RenderNode key={root._id} node={root} ctx={rowCtx} />
@@ -3047,8 +2918,8 @@ function TodoTask() {
         }
       />
 
-      <DailyNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} notifKeyB64={notifKeyB64} nowTs={nowTs} />
-      <AutoNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} notifKeyB64={notifKeyB64} vaultKey={key} nowTs={nowTs} />
+      <DailyNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} nowTs={nowTs} />
+      <AutoNudgeSync nodes={nodes} tree={tree} recurStates={recurStates} history={history} nowTs={nowTs} />
       </div>
   );
 }
@@ -3106,10 +2977,9 @@ export function TodoApp() {
   useEffect(() => {
     void registerServiceWorker();
   }, []);
-  // Offline fresh open: the auth/salt queries can never resolve, so the auth
-  // gate would hang on "loading…" forever. With a remembered vault key the
-  // app can boot straight into the capture UI (EncryptionContext unlocks
-  // offline from the same key); once online, the auth gate takes over again.
+  // Offline fresh open: the auth query can never resolve, so the gate would
+  // hang on "loading…" forever. Boot straight into the capture UI instead;
+  // once online, the auth gate takes over again.
   useEffect(() => {
     if (isAuthed === false) {
       // signed out for real (valid token check while online) — back to the gate
@@ -3117,7 +2987,7 @@ export function TodoApp() {
       return;
     }
     if (offlineBootstrapped || online) return;
-    if (getRememberedKey()) setOfflineBootstrapped(true);
+    setOfflineBootstrapped(true);
   }, [online, offlineBootstrapped, isAuthed]);
   if (offlineBootstrapped) return <TodoTask />;
   return (

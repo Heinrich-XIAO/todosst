@@ -2,12 +2,11 @@
 
 // Vibe store — device-local IndexedDB for task embeddings + timing labels.
 //
-// E2E rule: embeddings are NEVER uploaded. Sentence vectors are invertible
-// (embedding-inversion recovers source text), so a server-side copy would leak
-// vault content exactly like plaintext titles. Labels (best-hour per vibe)
-// stay here for the same reason — they describe the user's routine. The only
-// thing that ever leaves the device is anonymous numbers (hour, reward,
-// "a label exists"), already covered by the auto-nudge event rows.
+// Embeddings are never uploaded: sentence vectors are invertible
+// (embedding-inversion recovers source text), so they stay local like the
+// titles they came from. Labels (best-hour per vibe) stay here too — they
+// describe the user's routine. What leaves the device is anonymous numbers
+// (hour, reward, "a label exists"), already covered by the auto-nudge rows.
 
 import type { VibeLabel } from "./vibe";
 import { hashTitle } from "./vibe";

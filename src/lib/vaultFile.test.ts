@@ -1,6 +1,6 @@
 // @ts-nocheck — runs under `bun test` (bun:test types not installed)
 import { test, expect } from "bun:test";
-import { encryptNode, decryptNode, toPlainNode } from "./crypto";
+import { encodeNode, parseNode, toPlainNode } from "./crypto";
 import {
   buildExportFile,
   openExportFile,
@@ -127,15 +127,11 @@ test("importOrder rejects cycles", () => {
   ).toBeNull();
 });
 
-test("exported nodes decrypt back through the normal node codec", async () => {
+test("exported nodes round-trip through the normal node codec", () => {
   const src = node({ title: "check", isCompleted: true, metadata: { dueAt: 123, tags: ["x"] } });
-  const key = await (async () => {
-    const { generateSaltB64, deriveKey } = await import("./crypto");
-    return deriveKey("somepassphrase", generateSaltB64());
-  })();
-  const payload = await encryptNode(key, src);
-  const back = await decryptNode(key, payload.iv, payload.ciphertext);
+  const back = parseNode(encodeNode(src));
   expect(back.title).toBe("check");
   expect(back.isCompleted).toBe(true);
   expect(back.metadata.dueAt).toBe(123);
+  expect(back.metadata.tags).toEqual(["x"]);
 });

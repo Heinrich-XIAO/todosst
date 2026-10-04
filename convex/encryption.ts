@@ -3,8 +3,14 @@ import { mutation, query } from "./_generated/server";
 import { stableUserId } from "./userScope";
 import type { Id } from "./_generated/dataModel";
 
+// LEGACY — one-time migration support only. These salts belong to the retired
+// client-side vault: the client re-derives the old key from the user's
+// password + this salt so it can decrypt and rewrite pre-migration rows as
+// plaintext (see convex/vault.ts and src/lib/legacyDecrypt.ts). Delete this
+// file and the userSalts table once every account has migrated.
+
 // Public query: fetch salt by username (no auth required)
-// Allows client to derive key BEFORE sign-in.
+// Allows the migration client to derive the old key BEFORE sign-in.
 export const getSalt = query({
   args: { username: v.string() },
   handler: async (ctx, args) => {
@@ -32,8 +38,7 @@ export const getMySalt = query({
   },
 });
 
-// Authenticated: my stable userId (public to me — used to key the device-side
-// notification key the service worker reads)
+// Authenticated: my stable userId (public to me)
 export const getMyId = query({
   args: {},
   handler: async (ctx) => {
@@ -43,7 +48,7 @@ export const getMyId = query({
   },
 });
 
-// Authenticated: ensure salt exists (called after sign-in). Client generates salt.
+// Authenticated: ensure a salt exists for a legacy account that never had one.
 export const ensureSalt = mutation({
   args: { salt: v.string() },
   handler: async (ctx, args) => {
