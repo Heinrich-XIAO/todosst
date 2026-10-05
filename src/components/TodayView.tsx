@@ -91,6 +91,16 @@ function SectionHead({ children }: { children: string }) {
   return <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">{children}</div>;
 }
 
+/** Local calendar label for a window day index, e.g. "Mon, Oct 6". Shared by
+ * the still-open rows ("since …") and the holds rows below. */
+function windowDayLabel(windowDay: number): string {
+  return new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 /** A row still wants action today: a recurring count below threshold, or an
  * uncompleted plain task. Completed overdue rows are settled history — they
  * no longer block all clear (the ritual must be reachable). */
@@ -183,6 +193,9 @@ function TodayRow({
   }, [checked]);
 
   const ancestors = getAncestors(node._id as Id<"todos">, map);
+  // an earlier window still open — name the day it opened so the section
+  // header ("still open") answers "since when?" per row
+  const openSince = item.group === 2 && rs?.isRecurring ? windowDayLabel(rs.windowDay) : null;
 
   if (hidden) return null;
 
@@ -217,6 +230,11 @@ function TodayRow({
             {ancestors.map((a) => a.title).join("/")}
           </button>
         )}
+        {openSince && (
+          <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={`still open since ${openSince}`}>
+            since {openSince}
+          </span>
+        )}
         {streakNote && (
           <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={streakNote}>
             {streakNote}
@@ -244,11 +262,7 @@ export type PastYearSlide = {
 };
 
 function holdDayLabel(windowDay: number): string {
-  return new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  return windowDayLabel(windowDay);
 }
 
 // One holds-section row. Open windows carry the slip control; ended windows
