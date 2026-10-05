@@ -2604,7 +2604,11 @@ function TodoTask() {
 
   return (
     <div className="w-full max-w-[720px] bg-background pb-[calc(3rem+env(safe-area-inset-bottom))] md:border md:border-foreground md:pb-0">
-      <div className="flex items-center justify-between border-b border-foreground px-3 py-2 text-xs">
+      {/* status bar — below md the only content is the offline/queue indicators,
+          so collapse the whole strip (border included) when there's nothing to say */}
+      <div
+        className={`${!online || pendingCaptures.length > 0 ? "flex" : "hidden"} items-center justify-between border-b border-foreground px-3 py-2 text-xs md:flex`}
+      >
         <span className="flex flex-1 items-center gap-2">
           {!online && <span className="opacity-40">· offline</span>}
           {pendingCaptures.length > 0 && (
