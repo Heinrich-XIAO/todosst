@@ -8,6 +8,7 @@
  * @module
  */
 
+import type * as adminCleanup from "../adminCleanup.js";
 import type * as auth from "../auth.js";
 import type * as autoNudge from "../autoNudge.js";
 import type * as crons from "../crons.js";
@@ -27,6 +28,7 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  adminCleanup: typeof adminCleanup;
   auth: typeof auth;
   autoNudge: typeof autoNudge;
   crons: typeof crons;
