@@ -3,14 +3,15 @@
 import { useEffect, useState } from "react";
 import type { PlainNode } from "@/lib/crypto";
 import { COUNT_MAX, formatMinutes, modeOf, stepOf, thresholdOf } from "@/lib/recur";
-import { habitWindowMissed } from "@/lib/habit";
 import type { TreeNode } from "@/lib/tree";
 
 // HabitFixDialog — the "But I did" correction dialog for a missed habit
 // window. Styled like the other in-app modals (TimingDialog/NoticeDialog):
-// Esc or backdrop click dismisses and records nothing. The mode-aware editor
-// sets what you actually did; confirm saves the correction and freezes the
-// window in one step (the caller writes the count, then the holds record).
+// Esc or backdrop click dismisses and records nothing. Yes-or-no (checkbox)
+// habits just answer the question — yes saves and freezes the window;
+// tally/time habits get a stepper to set what you actually did, then confirm
+// saves the correction and freezes the window in one step (the caller writes
+// the count, then the holds record).
 
 export function HabitFixDialog({
   node,
@@ -32,7 +33,6 @@ export function HabitFixDialog({
   const threshold = thresholdOf(meta);
   const step = stepOf(meta);
   const [next, setNext] = useState(count);
-  const done = !habitWindowMissed(next, threshold);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -70,64 +70,63 @@ export function HabitFixDialog({
         <p className="mt-1 truncate text-xs opacity-60" title={node.title}>
           “{node.title}”
         </p>
-        {goal !== null && <p className="mt-1 text-[11px] opacity-40">{goal}</p>}
-
-        <div className="mt-4 flex items-center justify-center">
-          {mode === "check" ? (
-            <button
-              onClick={() => setNext(done ? 0 : threshold)}
-              className="flex items-center gap-2 border border-foreground px-4 py-2 text-sm hover:bg-foreground hover:text-background"
-              aria-label={done ? "mark as missed" : "mark as done"}
-            >
-              <span
-                className={`flex h-4 w-4 items-center justify-center border border-current text-[10px] leading-none ${
-                  done ? "bg-foreground text-background" : ""
-                }`}
-              >
-                {done && <span>✓</span>}
-              </span>
-              {done ? "done" : "missed"}
+        {mode === "check" ? (
+          <div className="mt-4 flex items-center justify-end gap-2">
+            <button onClick={onDismiss} className="px-3 py-2 text-xs opacity-60 hover:opacity-100">
+              no
             </button>
-          ) : (
-            <div className="flex items-stretch border border-foreground text-sm leading-none">
-              <button
-                onClick={() => setNext(Math.max(0, next - delta))}
-                disabled={next <= 0}
-                className="px-4 py-2 hover:bg-foreground hover:text-background disabled:opacity-30"
-                aria-label="log less"
-              >
-                −
+            <button
+              onClick={() => onConfirm(threshold)}
+              className="border border-foreground bg-foreground px-4 py-2 text-xs text-background hover:opacity-90"
+            >
+              yes
+            </button>
+          </div>
+        ) : (
+          <>
+            {goal !== null && <p className="mt-1 text-[11px] opacity-40">{goal}</p>}
+
+            <div className="mt-4 flex items-center justify-center">
+              <div className="flex items-stretch border border-foreground text-sm leading-none">
+                <button
+                  onClick={() => setNext(Math.max(0, next - delta))}
+                  disabled={next <= 0}
+                  className="px-4 py-2 hover:bg-foreground hover:text-background disabled:opacity-30"
+                  aria-label="log less"
+                >
+                  −
+                </button>
+                <span
+                  className={`flex min-w-16 items-center justify-center border-x border-foreground px-3 ${
+                    next > 0 ? "bg-foreground text-background" : ""
+                  }`}
+                >
+                  {mode === "time" ? formatMinutes(next) : next}
+                </span>
+                <button
+                  onClick={() => setNext(Math.min(COUNT_MAX, next + delta))}
+                  disabled={next >= COUNT_MAX}
+                  className="border-l border-foreground px-4 py-2 hover:bg-foreground hover:text-background disabled:opacity-30"
+                  aria-label="log more"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button onClick={onDismiss} className="px-3 py-2 text-xs opacity-60 hover:opacity-100">
+                cancel
               </button>
-              <span
-                className={`flex min-w-16 items-center justify-center border-x border-foreground px-3 ${
-                  next > 0 ? "bg-foreground text-background" : ""
-                }`}
-              >
-                {mode === "time" ? formatMinutes(next) : next}
-              </span>
               <button
-                onClick={() => setNext(Math.min(COUNT_MAX, next + delta))}
-                disabled={next >= COUNT_MAX}
-                className="border-l border-foreground px-4 py-2 hover:bg-foreground hover:text-background disabled:opacity-30"
-                aria-label="log more"
+                onClick={() => onConfirm(next)}
+                className="border border-foreground bg-foreground px-4 py-2 text-xs text-background hover:opacity-90"
               >
-                +
+                confirm
               </button>
             </div>
-          )}
-        </div>
-
-        <div className="mt-4 flex items-center justify-end gap-2">
-          <button onClick={onDismiss} className="px-3 py-2 text-xs opacity-60 hover:opacity-100">
-            cancel
-          </button>
-          <button
-            onClick={() => onConfirm(next)}
-            className="border border-foreground bg-foreground px-4 py-2 text-xs text-background hover:opacity-90"
-          >
-            confirm
-          </button>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
