@@ -28,6 +28,7 @@ import {
   dayIndexToStart,
   decodeHistoryPayload,
   encodeHistoryPayload,
+  formatMinutes,
   modeOf,
   nextCountOnClick,
   normalizeRruleString,
@@ -39,6 +40,7 @@ import {
 } from "@/lib/recur";
 import type { RecurState } from "@/lib/recur";
 import { parseNegInput, buildHoldItems, holdOf, isNegative, toleranceOf, windowOutcome, withHold, type HoldItem } from "@/lib/negative";
+import { buildHabitConfirmItems, habitWindowMissed, type HabitConfirmItem } from "@/lib/habit";
 import { dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
@@ -654,8 +656,8 @@ function TodoTask() {
   }, [nodes, history, historyRemove]);
 
   const [recurStates, setRecurStates] = useState<Map<string, RecurState> | null>(null);
-  // negative tasks: the window that just ended (one level back) — drives the
-  // holds section's confirm/failed rows
+  // the window that just ended (one level back) per recurring task — drives
+  // the battles holds section and the habit check-in rows
   const [priorWindows, setPriorWindows] = useState<Map<string, number | null> | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -679,7 +681,7 @@ function TodoTask() {
       for (const { n, rs } of states) m.set(n._id as string, rs);
       const priorEntries = await Promise.all(
         states
-          .filter(({ n, rs }) => isNegative(n.metadata as PlainNode["metadata"]) && rs.isRecurring)
+          .filter(({ rs }) => rs.isRecurring)
           .map(async ({ n, rs }) => ({
             id: n._id as string,
             prev: await prevWindowDay(String((n.metadata as PlainNode["metadata"]).recur), n._creationTime, rs.windowDay),
@@ -1295,6 +1297,77 @@ function TodoTask() {
     () => buildHoldItems({ nodes, tree, recurStates, priorWindows, counts: negCounts, nowTs }),
     [nodes, tree, recurStates, priorWindows, negCounts, nowTs]
   );
+
+  // habit check-ins: missed just-ended windows (see src/lib/habit.ts) — the
+  // positive-task mirror of the battles holds above, rendered inside the
+  // habits section with a "missed?" freeze + "fix?" corrector
+  const habitConfirmItems = useMemo<HabitConfirmItem[] | null>(
+    () => buildHabitConfirmItems({ nodes, tree, recurStates, priorWindows, counts: negCounts, nowTs }),
+    [nodes, tree, recurStates, priorWindows, negCounts, nowTs]
+  );
+
+  // human count for a habit window, per mode — shared by the confirm toast
+  function describeHabitCount(meta: PlainNode["metadata"], count: number, threshold: number): string {
+    const mode = modeOf(meta);
+    if (mode === "time") return `${formatMinutes(count)} of ${formatMinutes(threshold)}`;
+    if (mode === "count") return Number.isFinite(threshold) ? `${count} of ${threshold}` : `${count} logged`;
+    return threshold > 1 ? `${count} of ${threshold}` : count > 0 ? "checked" : "unchecked";
+  }
+
+  // manual record for a habit's missed window — "did it" once the fix?
+  // corrector has lifted the count to goal, "missed" while it still falls
+  // short; either freezes the window like a battle hold, with toast undo
+  async function handleConfirmHabit(node: TreeNode, windowDay: number) {
+    const meta = node.metadata as PlainNode["metadata"];
+    if (holdOf(meta, windowDay) !== undefined) return;
+    const updated = withHold(meta, windowDay, Date.now());
+    await handleUpdateMetadata(node._id, { holds: updated.holds });
+    const count = negCounts.get(node._id as string)?.get(windowDay) ?? 0;
+    const threshold = thresholdOf(meta);
+    const day = new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    const done = !habitWindowMissed(count, threshold);
+    setRemindToast({
+      title: done ? "did it" : "missed",
+      lines: [
+        done
+          ? `${node.title} — ${day} done ✓ (${describeHabitCount(meta, count, threshold)})`
+          : `${node.title} — ${day} missed (${describeHabitCount(meta, count, threshold)})`,
+      ],
+      // undo reopens the window: strip the hold from the task's live metadata
+      // (read through the nodes ref — this render's snapshot may predate the
+      // confirm write landing in the subscription)
+      onUndo: () => {
+        void (async () => {
+          const cur = nodesRef.current?.find((n) => n._id === node._id);
+          if (!cur) return;
+          const meta = cur.metadata as PlainNode["metadata"];
+          if (holdOf(meta, windowDay) === undefined) return;
+          const holds = { ...(meta.holds ?? {}) };
+          delete holds[String(windowDay)];
+          try {
+            await updateTodo({ id: node._id, node: encodeNode(toPlainNode(cur, { metadata: { ...meta, holds } })) });
+          } catch {
+            setNotice("undo failed — the window record is still saved");
+          }
+        })();
+      },
+    });
+  }
+
+  // past-window check toggle for the fix? stepper — flips 0 <-> threshold
+  // silently (no fade, no confetti: the row just flips to "did it?")
+  async function handleHabitToggle(node: TreeNode, targetDay: number) {
+    const meta0 = node.metadata as PlainNode["metadata"];
+    const rs = recurStates?.get(node._id as string);
+    const th = thresholdOf(meta0);
+    const before = baseCountFor(node, targetDay, rs);
+    const next = nextCountOnClick(modeOf(meta0), before, th);
+    await applyCountWrite(node, rs, next, { targetDay });
+  }
 
   // manual record for a negative task's ended window — "held" for a clean
   // window, "seal" for a failed one; either writes the confirmation into the
@@ -2776,6 +2849,7 @@ function TodoTask() {
         <TodayView
           items={todayItems}
           holds={holdItems}
+          habitConfirms={habitConfirmItems}
           nowTs={nowTs}
           map={tree.map}
           slides={pastYearSlides}
@@ -2792,6 +2866,10 @@ function TodoTask() {
           onSlip={(node, targetDay) => void handleCountUp(node, 1, targetDay)}
           onUndoSlip={(node, targetDay) => void handleCountDown(node, 1, targetDay)}
           onConfirmHold={(node, windowDay) => void handleConfirmHold(node, windowDay)}
+          onConfirmHabit={(node, windowDay) => void handleConfirmHabit(node, windowDay)}
+          onHabitToggle={(node, targetDay) => void handleHabitToggle(node, targetDay)}
+          onHabitCountUp={(node, targetDay, delta) => void handleCountUp(node, delta ?? 1, targetDay)}
+          onHabitCountDown={(node, targetDay, delta) => void handleCountDown(node, delta ?? 1, targetDay)}
         />
       ) : (
       <>

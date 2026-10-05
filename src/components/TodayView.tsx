@@ -11,8 +11,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
-import { dayIndexLocal, dayIndexToStart, modeOf, stepOf, thresholdOf, type CompletionMode, type RecurState } from "@/lib/recur";
+import { COUNT_MAX, dayIndexLocal, dayIndexToStart, formatMinutes, modeOf, stepOf, thresholdOf, type CompletionMode, type RecurState } from "@/lib/recur";
 import { isNegative, type HoldItem } from "@/lib/negative";
+import { habitWindowMissed, type HabitConfirmItem } from "@/lib/habit";
 import { missCopy } from "@/lib/ritual";
 import { normalizeDueAt } from "@/lib/due";
 import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
@@ -372,6 +373,137 @@ function HoldRow({
   );
 }
 
+// One habit check-in row — the positive-task mirror of HoldRow's ended
+// windows. Only missed windows prompt (done ones stay silent history): the
+// row carries a freeze button plus a "fix?" opener that corrects the past
+// window's number. Correcting up to goal flips the row to a "did it?"
+// confirm on its own; either button freezes the window for good.
+function HabitConfirmRow({
+  item,
+  onConfirm,
+  onToggle,
+  onCountUp,
+  onCountDown,
+  onSelect,
+}: {
+  item: HabitConfirmItem;
+  onConfirm: (node: TreeNode, windowDay: number) => void;
+  onToggle: (node: TreeNode, windowDay: number) => void;
+  onCountUp: (node: TreeNode, windowDay: number, delta?: number) => void;
+  onCountDown: (node: TreeNode, windowDay: number, delta?: number) => void;
+  onSelect: (node: TreeNode) => void;
+}) {
+  const { node, windowDay, count, threshold } = item;
+  const meta = node.metadata as PlainNode["metadata"];
+  const mode = modeOf(meta);
+  const step = stepOf(meta);
+  const day = holdDayLabel(windowDay);
+  const done = !habitWindowMissed(count, threshold);
+  const detail =
+    mode === "time"
+      ? `${formatMinutes(count)} of ${formatMinutes(threshold)}`
+      : mode === "count"
+        ? Number.isFinite(threshold)
+          ? `${count} of ${threshold}`
+          : `${count} logged`
+        : threshold > 1
+          ? `${count} of ${threshold}`
+          : count > 0
+            ? "checked"
+            : "unchecked";
+  const [fixing, setFixing] = useState(false);
+  const delta = mode === "time" ? step : 1;
+  const fixer = fixing ? (
+    mode === "check" ? (
+      <button
+        onClick={() => onToggle(node, windowDay)}
+        className={`flex h-[18px] w-8 shrink-0 items-center justify-center border border-foreground text-[10px] leading-none ${
+          done ? "bg-foreground text-background" : ""
+        }`}
+        aria-label={`toggle ${node.title} for ${day}`}
+      >
+        {done ? "✓" : ""}
+      </button>
+    ) : (
+      <span className="flex h-[18px] shrink-0 items-stretch border border-foreground text-[10px] leading-none">
+        <button
+          onClick={() => onCountDown(node, windowDay, delta)}
+          disabled={count <= 0}
+          className="w-4 disabled:opacity-30"
+          aria-label={`take back ${mode === "time" ? "time" : "a count"} for ${day}`}
+        >
+          −
+        </button>
+        <span
+          className={`flex min-w-6 items-center justify-center border-l border-foreground px-1 ${
+            count > 0 ? "bg-foreground text-background" : ""
+          }`}
+        >
+          {mode === "time" ? formatMinutes(count) : count}
+        </span>
+        <button
+          onClick={() => onCountUp(node, windowDay, delta)}
+          disabled={count >= COUNT_MAX}
+          className="w-4 border-l border-foreground disabled:opacity-30"
+          aria-label={`log ${mode === "time" ? "time" : "a count"} for ${day}`}
+        >
+          +
+        </button>
+      </span>
+    )
+  ) : (
+    <button
+      onClick={() => setFixing(true)}
+      className="shrink-0 text-[10px] underline underline-offset-4 opacity-60 hover:opacity-100"
+      aria-label={`fix count for ${node.title} on ${day}`}
+    >
+      fix?
+    </button>
+  );
+  if (done) {
+    return (
+      <li className="border-b border-foreground/10 last:border-b-0">
+        <div className="flex items-center gap-2 px-3 py-2 text-sm">
+          <button
+            onClick={() => onConfirm(node, windowDay)}
+            className="h-[18px] w-16 shrink-0 border border-foreground text-[10px] leading-none hover:bg-foreground hover:text-background"
+            aria-label={`confirm ${node.title} did it`}
+          >
+            ✓ did it?
+          </button>
+          <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
+            {node.title}
+          </button>
+          {fixer}
+          <span className="shrink-0 text-[10px] opacity-40">
+            {day} — {detail}, confirm
+          </span>
+        </div>
+      </li>
+    );
+  }
+  return (
+    <li className="border-b border-foreground/10 last:border-b-0">
+      <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-60">
+        <button
+          onClick={() => onConfirm(node, windowDay)}
+          className="flex h-[18px] w-16 shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[10px] leading-none text-background hover:border-foreground"
+          aria-label={`confirm ${node.title} missed`}
+        >
+          ✕ missed?
+        </button>
+        <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
+          {node.title}
+        </button>
+        {fixer}
+        <span className="shrink-0 text-[10px] opacity-60">
+          {day} — {detail}
+        </span>
+      </div>
+    </li>
+  );
+}
+
 // Horizontal past-year carousel. Native scroll-snap does the paging (trackpad
 // + touch for free, mouse via drag-to-scroll on the track); the dots mirror
 // and drive the active slide. Squares, not
@@ -547,6 +679,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
 export function TodayView({
   items,
   holds,
+  habitConfirms,
   nowTs,
   map,
   slides = [],
@@ -563,10 +696,16 @@ export function TodayView({
   onSlip,
   onUndoSlip,
   onConfirmHold,
+  onConfirmHabit,
+  onHabitToggle,
+  onHabitCountUp,
+  onHabitCountDown,
 }: {
   items: TodayItem[] | null;
   /** negative-task rows (see buildHoldItems) — never count toward "N left" */
   holds?: HoldItem[] | null;
+  /** missed habit windows (see buildHabitConfirmItems) — render inside habits */
+  habitConfirms?: HabitConfirmItem[] | null;
   nowTs: number;
   map: Map<string, TreeNode>;
   /** past-year heatmap carousel: "all tasks" + one slide per repeating task
@@ -589,6 +728,10 @@ export function TodayView({
   onSlip: (node: TreeNode, targetDay?: number) => void;
   onUndoSlip: (node: TreeNode, targetDay?: number) => void;
   onConfirmHold: (node: TreeNode, windowDay: number) => void;
+  onConfirmHabit: (node: TreeNode, windowDay: number) => void;
+  onHabitToggle: (node: TreeNode, windowDay: number) => void;
+  onHabitCountUp: (node: TreeNode, windowDay: number, delta?: number) => void;
+  onHabitCountDown: (node: TreeNode, windowDay: number, delta?: number) => void;
 }) {
   const open = openCountOf(items ?? []);
   const missNoteOf = (i: TodayItem) => {
@@ -610,12 +753,29 @@ export function TodayView({
   // render as empty. Overdue rows are pulled out into one section that sits
   // directly below the habits/tasks sections — the header names the rows
   // between it and the next section instead of floating mid-list.
-  const sectionRows = (label: string, rows: TodayItem[]) => {
+  // Habit check-ins (missed just-ended windows) render at the top of the
+  // habits section, ahead of the current-window rows.
+  const sectionRows = (label: string, rows: TodayItem[], habitRows: HabitConfirmItem[] = []) => {
     const visible = rows.filter((i) => i.group !== 0 && (i.group === 1 || rowIsOpen(i)));
-    if (visible.length === 0) return null;
+    if (visible.length === 0 && habitRows.length === 0) return null;
     return (
       <div>
         <SectionHead>{label}</SectionHead>
+        {habitRows.length > 0 && (
+          <ul>
+            {habitRows.map((h) => (
+              <HabitConfirmRow
+                key={`${h.node._id}:${h.windowDay}`}
+                item={h}
+                onConfirm={onConfirmHabit}
+                onToggle={onHabitToggle}
+                onCountUp={onHabitCountUp}
+                onCountDown={onHabitCountDown}
+                onSelect={onSelect}
+              />
+            ))}
+          </ul>
+        )}
         {([1, 2] as const).map((g) => {
           const groupRows = visible.filter((i) => i.group === g);
           if (groupRows.length === 0) return null;
@@ -703,7 +863,7 @@ export function TodayView({
           })()}
         </>
       )}
-      {sectionRows("habits", items.filter((i) => i.rs?.isRecurring))}
+      {sectionRows("habits", items.filter((i) => i.rs?.isRecurring), habitConfirms ?? [])}
       {holdRows.length > 0 && (
         <div>
           <SectionHead>battles</SectionHead>

@@ -5,9 +5,11 @@
 // end it is HELD when the slip count stayed within tolerance (metadata.tol,
 // default 0), FAILED otherwise. Slips reuse the counts storage (day-index →
 // count, same codec as tallies/time), so history and heatmap come free.
-// metadata.holds records manual per-window confirmations: the user confirms a
-// clean window as "held" (a prompt row in the today view), which stops the
-// asking; a failed window can be sealed the same way, freezing its record.
+// metadata.holds records manual per-window confirmations, shared with habit
+// check-ins (see src/lib/habit.ts): the user confirms a clean window as
+// "held" (a prompt row in the today view), which stops the asking; a failed
+// window can be sealed the same way, freezing its record. Habits reuse the
+// same map for their "did it?" / "missed?" records.
 // Unconfirmed ended windows resolve silently once a newer window rolls in (or
 // after HOLD_GRACE_DAYS, whichever comes first — for daily and weekly rules
 // the next window always wins).
