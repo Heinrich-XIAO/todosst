@@ -1314,15 +1314,17 @@ function TodoTask() {
     return threshold > 1 ? `${count} of ${threshold}` : count > 0 ? "checked" : "unchecked";
   }
 
-  // manual record for a habit's missed window — "did it" once the fix?
-  // corrector has lifted the count to goal, "missed" while it still falls
-  // short; either freezes the window like a battle hold, with toast undo
-  async function handleConfirmHabit(node: TreeNode, windowDay: number) {
+  // manual record for a habit's missed window — "did it" once the But I did
+  // dialog has lifted the count to goal, "missed" while it still falls
+  // short; either freezes the window like a battle hold, with toast undo.
+  // countOverride carries the just-written correction (the merged-counts memo
+  // has not recomputed yet at confirm time).
+  async function handleConfirmHabit(node: TreeNode, windowDay: number, countOverride?: number) {
     const meta = node.metadata as PlainNode["metadata"];
     if (holdOf(meta, windowDay) !== undefined) return;
     const updated = withHold(meta, windowDay, Date.now());
     await handleUpdateMetadata(node._id, { holds: updated.holds });
-    const count = negCounts.get(node._id as string)?.get(windowDay) ?? 0;
+    const count = countOverride ?? (negCounts.get(node._id as string)?.get(windowDay) ?? 0);
     const threshold = thresholdOf(meta);
     const day = new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
       weekday: "short",
@@ -1358,15 +1360,19 @@ function TodoTask() {
     });
   }
 
-  // past-window check toggle for the fix? stepper — flips 0 <-> threshold
-  // silently (no fade, no confetti: the row just flips to "did it?")
-  async function handleHabitToggle(node: TreeNode, targetDay: number) {
-    const meta0 = node.metadata as PlainNode["metadata"];
+  // past-window correction from the But I did dialog — writes the corrected
+  // count into the window that just ended, then freezes it. Silent either way
+  // (no fade, no confetti: the row just flips or goes away, the toast tells
+  // the story). An exhausted rule's final window is immutable history, so a
+  // correction there falls through to the freeze alone.
+  async function handleHabitFixConfirm(node: TreeNode, windowDay: number, nextCount: number) {
     const rs = recurStates?.get(node._id as string);
-    const th = thresholdOf(meta0);
-    const before = baseCountFor(node, targetDay, rs);
-    const next = nextCountOnClick(modeOf(meta0), before, th);
-    await applyCountWrite(node, rs, next, { targetDay });
+    const clamped = Math.max(0, Math.min(Math.floor(nextCount), COUNT_MAX));
+    const current = negCounts.get(node._id as string)?.get(windowDay) ?? 0;
+    if (clamped !== current) {
+      await applyCountWrite(node, rs, clamped, { targetDay: windowDay });
+    }
+    await handleConfirmHabit(node, windowDay, clamped);
   }
 
   // manual record for a negative task's ended window — "held" for a clean
@@ -2867,9 +2873,7 @@ function TodoTask() {
           onUndoSlip={(node, targetDay) => void handleCountDown(node, 1, targetDay)}
           onConfirmHold={(node, windowDay) => void handleConfirmHold(node, windowDay)}
           onConfirmHabit={(node, windowDay) => void handleConfirmHabit(node, windowDay)}
-          onHabitToggle={(node, targetDay) => void handleHabitToggle(node, targetDay)}
-          onHabitCountUp={(node, targetDay, delta) => void handleCountUp(node, delta ?? 1, targetDay)}
-          onHabitCountDown={(node, targetDay, delta) => void handleCountDown(node, delta ?? 1, targetDay)}
+          onHabitFixConfirm={(node, windowDay, nextCount) => void handleHabitFixConfirm(node, windowDay, nextCount)}
         />
       ) : (
       <>
