@@ -40,7 +40,7 @@ export function InstallHint() {
   }, []);
   if (!show) return null;
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-foreground bg-foreground/[0.03] px-3 py-1.5 text-xs">
+    <div className="flex shrink-0 items-center justify-between gap-2 border-b border-foreground bg-foreground/[0.03] px-3 py-1.5 text-xs">
       <span className="opacity-80">install for reminders: tap share → “add to home screen”</span>
       <button
         onClick={() => {

@@ -95,6 +95,23 @@ body {
   }
 }
 
+/* today list scrollbar — the one visible scrollbar on the mobile surface: a
+   thin square thumb on the right edge, no track. Firefox gets the same look
+   via scrollbar-width/color; WebKit needs the pseudo-element rules. */
+.today-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--foreground) 35%, transparent) transparent;
+}
+.today-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.today-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.today-scroll::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--foreground) 35%, transparent);
+}
+
 /* completed-row fade-away — in the active tree view a freshly completed row is
    unmounted by the filter and remounted once fadingIds catches up (same paint,
    see TodoApp.tsx). A fresh element has no previous opacity to transition

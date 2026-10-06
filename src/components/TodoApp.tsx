@@ -2682,11 +2682,21 @@ function TodoTask() {
   };
 
   return (
-    <div className="w-full max-w-[720px] bg-background pb-[calc(3rem+env(safe-area-inset-bottom))] md:border md:border-foreground md:pb-0">
+    <div
+      className={`w-full max-w-[720px] bg-background ${
+        // both mobile views are viewport-locked: the document never scrolls —
+        // header bars stay put and each view owns an internal scroll region
+        // (today: pinned carousel above the list; tree: the task list itself).
+        // Desktop keeps the plain document flow (md: reverts).
+        view === "today"
+          ? "flex h-full min-h-0 flex-col overflow-hidden pb-[calc(3rem+env(safe-area-inset-bottom))] md:block md:h-auto md:flex-none md:overflow-visible md:border md:border-foreground md:pb-0"
+          : "flex flex-1 flex-col pb-[calc(3rem+env(safe-area-inset-bottom))] md:block md:h-auto md:flex-none md:border md:border-foreground md:pb-0"
+      }`}
+    >
       {/* status bar — below md the only content is the offline/queue indicators,
           so collapse the whole strip (border included) when there's nothing to say */}
       <div
-        className={`${!online || pendingCaptures.length > 0 ? "flex" : "hidden"} items-center justify-between border-b border-foreground px-3 py-2 text-xs md:flex`}
+        className={`${!online || pendingCaptures.length > 0 ? "flex" : "hidden"} shrink-0 items-center justify-between border-b border-foreground px-3 py-2 text-xs md:flex`}
       >
         <span className="flex flex-1 items-center gap-2">
           {!online && <span className="opacity-40">· offline</span>}
@@ -2717,7 +2727,7 @@ function TodoTask() {
 
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
       {view === "tree" && (
-        <div className="flex items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
+        <div className="flex shrink-0 items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
         <span className="font-mono flex items-center gap-1 truncate">
           <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
             /
@@ -2828,7 +2838,7 @@ function TodoTask() {
       </div>
 
       {view === "tree" && (
-        <div className="flex flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">
+        <div className="flex shrink-0 flex-wrap gap-2 border-b border-foreground/10 px-3 py-2 text-xs">
           <input
             ref={searchInputRef}
             value={search}

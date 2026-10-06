@@ -571,7 +571,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
 
   return (
     <div
-      className="border-b border-foreground/10 px-3 py-2"
+      className="shrink-0 border-b border-foreground/10 px-3 py-2"
       onPointerEnter={() => {
         hoverRef.current = true;
       }}
@@ -770,75 +770,84 @@ export function TodayView({
     );
   };
 
+  // Mobile layout: the carousel stays pinned and the sections scroll in their
+  // own region — a vertical swipe must never move the page or page the
+  // carousel ("scroll down to another thing" — see today-view recordings).
+  // The scrolled content grays out under a fade at the region's top edge and
+  // the region carries the surface's one visible scrollbar (.today-scroll).
+  // Desktop keeps the plain document flow (md: overrides).
   return (
-    <div className="min-h-[180px] pb-2">
+    <div className="flex min-h-0 flex-1 flex-col pb-2 md:block">
       {slides.length > 0 && <PastYearCarousel slides={slides} nowTs={nowTs} />}
-      {showHabitOffer && (
-        <div className="border-b border-foreground/10 px-3 py-2 text-xs">
-          <p className="opacity-80">
-            keep a streak without another box? add <span className="font-mono">open todosst ~daily</span> — it checks
-            itself whenever you reach all clear.
-          </p>
-          <div className="mt-1 flex gap-3">
-            <button onClick={onCreateHabit} className="underline underline-offset-4">
-              add it
-            </button>
-            <button onClick={onDismissHabitOffer} className="opacity-40 hover:opacity-100">
-              no thanks
-            </button>
+      <div className="today-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain md:overflow-visible">
+        <div aria-hidden className="pointer-events-none sticky top-0 z-10 -mb-6 h-6 bg-gradient-to-b from-background to-transparent md:hidden" />
+        {showHabitOffer && (
+          <div className="border-b border-foreground/10 px-3 py-2 text-xs">
+            <p className="opacity-80">
+              keep a streak without another box? add <span className="font-mono">open todosst ~daily</span> — it checks
+              itself whenever you reach all clear.
+            </p>
+            <div className="mt-1 flex gap-3">
+              <button onClick={onCreateHabit} className="underline underline-offset-4">
+                add it
+              </button>
+              <button onClick={onDismissHabitOffer} className="opacity-40 hover:opacity-100">
+                no thanks
+              </button>
+            </div>
           </div>
-        </div>
-      )}
-      {open === 0 ? (
-        <>
-          {/* the all-clear moment — full-bleed, typed, held. Negative tasks
-              never block it; their holds section renders below. */}
-          <AllClearMoment
-            doneToday={items.reduce((n, i) => n + (i.group === 1 && !rowIsOpen(i) ? 1 : 0), 0)}
-            nothingDue={items.length === 0}
-          />
-        </>
-      ) : (
-        <>
-          {sectionRows("tasks", items.filter((i) => !i.rs?.isRecurring))}
-          {(() => {
-            const overdue = items.filter((i) => i.group === 0 && rowIsOpen(i));
-            if (overdue.length === 0) return null;
-            return (
-              <div>
-                <SectionHead>{GROUP_LABELS[0]}</SectionHead>
-                <ul>
-                  {overdue.map((i) => (
-                    <TodayRow
-                      key={i.node._id}
-                      item={i}
-                      map={map}
-                      missNote={missNoteOf(i)}
-                      streakNote={streakNoteOf(i)}
-                      onToggle={onToggle}
-                      onCountUp={onCountUp}
-                      onCountDown={onCountDown}
-                      onSelect={onSelect}
-                      onJump={onJump}
-                    />
-                  ))}
-                </ul>
-              </div>
-            );
-          })()}
-        </>
-      )}
-      {sectionRows("habits", items.filter((i) => i.rs?.isRecurring), habitConfirms ?? [])}
-      {holdRows.length > 0 && (
-        <div>
-          <SectionHead>battles</SectionHead>
-          <ul>
-            {holdRows.map((h) => (
-              <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
-            ))}
-          </ul>
-        </div>
-      )}
+        )}
+        {open === 0 ? (
+          <>
+            {/* the all-clear moment — full-bleed, typed, held. Negative tasks
+                never block it; their holds section renders below. */}
+            <AllClearMoment
+              doneToday={items.reduce((n, i) => n + (i.group === 1 && !rowIsOpen(i) ? 1 : 0), 0)}
+              nothingDue={items.length === 0}
+            />
+          </>
+        ) : (
+          <>
+            {sectionRows("tasks", items.filter((i) => !i.rs?.isRecurring))}
+            {(() => {
+              const overdue = items.filter((i) => i.group === 0 && rowIsOpen(i));
+              if (overdue.length === 0) return null;
+              return (
+                <div>
+                  <SectionHead>{GROUP_LABELS[0]}</SectionHead>
+                  <ul>
+                    {overdue.map((i) => (
+                      <TodayRow
+                        key={i.node._id}
+                        item={i}
+                        map={map}
+                        missNote={missNoteOf(i)}
+                        streakNote={streakNoteOf(i)}
+                        onToggle={onToggle}
+                        onCountUp={onCountUp}
+                        onCountDown={onCountDown}
+                        onSelect={onSelect}
+                        onJump={onJump}
+                      />
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
+          </>
+        )}
+        {sectionRows("habits", items.filter((i) => i.rs?.isRecurring), habitConfirms ?? [])}
+        {holdRows.length > 0 && (
+          <div>
+            <SectionHead>battles</SectionHead>
+            <ul>
+              {holdRows.map((h) => (
+                <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

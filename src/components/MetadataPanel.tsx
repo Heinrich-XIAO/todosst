@@ -85,7 +85,7 @@ export function MetadataPanel({
     });
   };
   return (
-    <div className="flex max-h-[70dvh] flex-col border-t border-foreground bg-background p-3 text-xs">
+    <div className="flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs">
       <div className="flex shrink-0 items-center justify-between gap-3">
         <label className="flex min-w-0 flex-1 items-baseline gap-1">
           <input
