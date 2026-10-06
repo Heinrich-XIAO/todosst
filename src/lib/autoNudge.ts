@@ -121,7 +121,7 @@ export function isAutoNudgeEligible(
   const meta = n.metadata as PlainNode["metadata"];
   if (isNegative(meta)) return false; // battles/avoid tasks never get nudged
   if (meta.habit === true) return false;
-  if (n.title === "— unable to decrypt —") return false;
+  if (n.title === "— unable to read —") return false;
   if (meta.dueAt) return false; // has a due date → reminder system owns it
   if (rs?.isRecurring) {
     if (rs.expired) return false;

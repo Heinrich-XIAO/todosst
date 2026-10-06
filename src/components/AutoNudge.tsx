@@ -199,9 +199,15 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Prop
     doneRef.current = sig;
 
     const eligible = eligibleAutoNudgeTasks(nodes, recurStates, nowTs);
-    if (eligible.length === 0) return;
+    if (eligible.length === 0) {
+      doneRef.current = null; // nothing to schedule — retry on a later tick
+      return;
+    }
     const picked = pickCandidate(eligible);
-    if (!picked) return;
+    if (!picked) {
+      doneRef.current = null;
+      return;
+    }
     // the task conditions the hour: same policy, different task-kind →
     // different delivery time once the aggregates say so
     const pickedMeta = picked.metadata as PlainNode["metadata"];
