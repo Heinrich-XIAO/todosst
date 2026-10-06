@@ -36,8 +36,10 @@ export type TaskSheetMode =
 // Distance between the layout viewport bottom and the visual viewport bottom —
 // the keyboard height while an input is focused (0 when closed). iOS Safari
 // ignores interactive-widget=resizes-content, so fixed bottom-anchored panels
-// need this to stay above the keyboard.
-function useKeyboardInset() {
+// need this to stay above the keyboard. Shared with the docked details panel
+// (MetadataPanel), which lost the page's scroll-to-reveal when the today view
+// became viewport-locked.
+export function useKeyboardInset() {
   const [inset, setInset] = useState(0);
   useEffect(() => {
     const vv = window.visualViewport;

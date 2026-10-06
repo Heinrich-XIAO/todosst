@@ -16,6 +16,7 @@ import {
   TagsField,
   parseTagsInput,
 } from "./TaskFields";
+import { useKeyboardInset } from "./TaskSheet";
 
 export function MetadataPanel({
   node,
@@ -64,6 +65,10 @@ export function MetadataPanel({
     };
   }, []);
   const [nameDraft, setNameDraft] = useState(node?.title ?? "");
+  // the keyboard must never bury the panel's bottom fields: the today view no
+  // longer scrolls the page, so ride the panel up by the keyboard inset (same
+  // trick as the create sheet)
+  const keyboardInset = useKeyboardInset();
   if (!node) return null;
   const payloadLen = node._raw.ciphertext?.length ?? 0;
   const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
@@ -85,7 +90,10 @@ export function MetadataPanel({
     });
   };
   return (
-    <div className="flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs">
+    <div
+      className="flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs"
+      style={{ marginBottom: keyboardInset, maxHeight: keyboardInset ? `calc(70dvh - ${keyboardInset}px)` : undefined }}
+    >
       <div className="flex shrink-0 items-center justify-between gap-3">
         <label className="flex min-w-0 flex-1 items-baseline gap-1">
           <input
