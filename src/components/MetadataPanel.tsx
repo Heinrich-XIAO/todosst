@@ -25,6 +25,7 @@ export function MetadataPanel({
   onClose,
   nowTs,
   historyCounts,
+  overlay = false,
 }: {
   node: TreeNode | null;
   onUpdateMetadata: (id: Id<"todos">, patch: Partial<PlainNode["metadata"]>) => void;
@@ -32,6 +33,15 @@ export function MetadataPanel({
   onClose: () => void;
   nowTs: number;
   historyCounts: Map<number, number> | null;
+  /**
+   * float above the view as a bottom sheet instead of sitting in the flow.
+   * The viewport-locked today container is height-capped: when the pinned
+   * carousel plus this panel exceed it, the flex column shrinks TodayView
+   * below its shrink-0 carousel, and the overflowing grid paint-interleaves
+   * with the in-flow panel (border slicing the heatmap, legend over the
+   * header). An opaque, stacked overlay can't interleave by construction.
+   */
+  overlay?: boolean;
 }) {
   // free-text fields (name, description, tags) save on blur; pending values are
   // tracked so unmount can flush edits from paths that skip blur (node
@@ -91,7 +101,14 @@ export function MetadataPanel({
   };
   return (
     <div
-      className="flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs"
+      className={`flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs ${
+        overlay
+          ? // mobile today view only (md: falls back to flow): pin to the
+            // container's bottom padding (above the fixed nav) with its own
+            // stacking context so it always paints whole above the list
+            "max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]"
+          : ""
+      }`}
       style={{ marginBottom: keyboardInset, maxHeight: keyboardInset ? `calc(70dvh - ${keyboardInset}px)` : undefined }}
     >
       <div className="flex shrink-0 items-center justify-between gap-3">
