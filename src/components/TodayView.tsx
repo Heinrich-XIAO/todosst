@@ -701,6 +701,10 @@ export function TodayView({
   onHabitFixConfirm: (node: TreeNode, windowDay: number, nextCount: number) => void;
 }) {
   const open = openCountOf(items ?? []);
+  // The top-edge fade grays scrolled content under the region's top edge — it
+  // must stay hidden at scroll-top, or it sits over the first section header
+  // ("overdue" etc.) via its -mb-6 overlap and shadows the label.
+  const [scrolled, setScrolled] = useState(false);
   const missNoteOf = (i: TodayItem) => {
     const n = missesByTask?.get(String(i.node._id));
     return n !== undefined && i.rs?.isRecurring && rowIsOpen(i) ? missCopy(n) : null;
@@ -779,8 +783,14 @@ export function TodayView({
   return (
     <div className="flex min-h-0 flex-1 flex-col pb-2 md:block">
       {slides.length > 0 && <PastYearCarousel slides={slides} nowTs={nowTs} />}
-      <div className="today-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain md:overflow-visible">
-        <div aria-hidden className="pointer-events-none sticky top-0 z-10 -mb-6 h-6 bg-gradient-to-b from-background to-transparent md:hidden" />
+      <div
+        className="today-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain md:overflow-visible"
+        onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 4)}
+      >
+        <div
+          aria-hidden
+          className={`pointer-events-none sticky top-0 z-10 -mb-6 h-6 bg-gradient-to-b from-background to-transparent transition-opacity duration-150 md:hidden ${scrolled ? "opacity-100" : "opacity-0"}`}
+        />
         {showHabitOffer && (
           <div className="border-b border-foreground/10 px-3 py-2 text-xs">
             <p className="opacity-80">
