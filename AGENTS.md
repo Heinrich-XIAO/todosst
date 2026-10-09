@@ -2,9 +2,7 @@
 
 - When you commit, also push so the branch stays up to date.
 - Prefer suggesting commit + push by itself rather than deploying by itself, because deploying feels scarier / higher-stakes.
-- Don't automatically commit + push every time. Instead, judge whether it's probably a good idea and the user would most likely be confident in it.
-- If you are confident you understand what the user wants and why, auto-commit and push (then report it).
-- If you are not confident you understand what the user wants and why, only suggest commit + push and wait for confirmation instead of auto-doing it.
+- After a verified fix, always auto-commit and push, then report the hash. Only hold off if tests are failing or the change is risky/incomplete.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
