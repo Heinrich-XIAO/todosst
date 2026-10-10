@@ -17,6 +17,7 @@ import type * as nudge from "../nudge.js";
 import type * as push from "../push.js";
 import type * as pushActions from "../pushActions.js";
 import type * as todos from "../todos.js";
+import type * as unlockKeys from "../unlockKeys.js";
 import type * as userScope from "../userScope.js";
 import type * as users from "../users.js";
 
@@ -36,6 +37,7 @@ declare const fullApi: ApiFromModules<{
   push: typeof push;
   pushActions: typeof pushActions;
   todos: typeof todos;
+  unlockKeys: typeof unlockKeys;
   userScope: typeof userScope;
   users: typeof users;
 }>;

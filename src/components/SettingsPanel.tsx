@@ -25,6 +25,15 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const historyRecords = useQuery(api.history.list);
   const createTodoMut = useMutation(api.todos.create);
   const historyPutMut = useMutation(api.history.put);
+  const unlockKeys = useQuery(api.unlockKeys.list);
+  const issueKeyMut = useMutation(api.unlockKeys.issue);
+  const revokeKeyMut = useMutation(api.unlockKeys.revoke);
+
+  const [keyName, setKeyName] = useState("");
+  const [freshKey, setFreshKey] = useState<string | null>(null);
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [keyMsg, setKeyMsg] = useState<string | null>(null);
+  const [keyCopied, setKeyCopied] = useState(false);
 
   const [exportPass, setExportPass] = useState("");
   const [exportPass2, setExportPass2] = useState("");
@@ -136,6 +145,88 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <NudgeSettings />
+
+        <div className="mt-3 border border-foreground/20 p-3">
+          <p className="text-xs font-medium">stopscrll unlock key</p>
+          <p className="mt-1 text-[11px] leading-tight opacity-40">
+            paste one key into the stopscrll android app — finishing a task there unblocks the
+            phone. keys act as your account for the unlock api only.
+          </p>
+
+          {freshKey && (
+            <div className="mt-2 border border-foreground bg-foreground/5 p-2">
+              <p className="text-[11px] opacity-60">copy now — it is never shown again:</p>
+              <p className="mt-1 break-all font-mono text-xs">{freshKey}</p>
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(freshKey);
+                    setKeyCopied(true);
+                  } catch {
+                    setKeyMsg("copy failed — select the key manually.");
+                  }
+                }}
+                className="mt-2 border border-foreground px-2 py-1 text-[11px] hover:bg-foreground/10"
+              >
+                {keyCopied ? "copied ✓" : "copy to clipboard"}
+              </button>
+            </div>
+          )}
+          {keyMsg && <p className="mt-2 border border-foreground/30 px-3 py-2 text-xs">{keyMsg}</p>}
+
+          <div className="mt-2 flex gap-2">
+            <input
+              value={keyName}
+              onChange={(e) => setKeyName(e.target.value)}
+              placeholder="label, e.g. pixel (optional)"
+              maxLength={40}
+              className="w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
+            />
+            <button
+              onClick={async () => {
+                setKeyMsg(null);
+                setKeyCopied(false);
+                setKeyBusy(true);
+                try {
+                  const r = await issueKeyMut({ name: keyName.trim() || undefined });
+                  setFreshKey(r.key);
+                  setKeyName("");
+                } catch (e) {
+                  setKeyMsg(e instanceof Error ? e.message.toLowerCase() : "issue failed");
+                } finally {
+                  setKeyBusy(false);
+                }
+              }}
+              disabled={keyBusy || unlockKeys === undefined}
+              className="shrink-0 border border-foreground px-2 py-1 text-[11px] hover:bg-foreground/10 disabled:opacity-40"
+            >
+              {keyBusy ? "issuing…" : "new key"}
+            </button>
+          </div>
+
+          {(unlockKeys ?? []).length > 0 && (
+            <ul className="mt-2 space-y-1">
+              {(unlockKeys ?? []).map((k) => (
+                <li key={k._id} className="flex items-center gap-2 text-[11px]">
+                  <span className="font-mono opacity-60">{k.prefix}…</span>
+                  <span className="flex-1 truncate opacity-60">
+                    {k.name ?? "unnamed"} · {new Date(k.createdAt).toLocaleDateString()}
+                    {k.lastUsedAt ? ` · used ${new Date(k.lastUsedAt).toLocaleDateString()}` : " · unused"}
+                  </span>
+                  <button
+                    onClick={async () => {
+                      if (freshKey) setFreshKey(null);
+                      await revokeKeyMut({ id: k._id });
+                    }}
+                    className="border border-foreground/30 px-1.5 py-0.5 hover:bg-foreground/10"
+                  >
+                    revoke
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         <div className="mt-3 border border-foreground/20 p-3">
           <p className="text-xs font-medium">export / import</p>

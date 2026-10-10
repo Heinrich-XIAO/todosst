@@ -193,4 +193,19 @@ export default defineSchema({
     windowStart: v.number(),
     count: v.number(),
   }).index("by_key", ["key"]),
+
+  // StopScrll unlock keys: long-lived bearer tokens the user copies from
+  // settings into the StopScrll Android app. Only the SHA-256 hash is stored;
+  // the raw key is shown once at issue time and never again.
+  unlockTokens: defineTable({
+    userId: v.string(),
+    // e.g. "pixel" — free-form label so revoked keys are recognizable.
+    name: v.optional(v.string()),
+    tokenHash: v.string(), // hex SHA-256 of the raw key
+    prefix: v.string(), // first 8 chars of the raw key, for identification
+    createdAt: v.number(),
+    lastUsedAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_tokenHash", ["tokenHash"]),
 });
