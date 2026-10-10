@@ -3,7 +3,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { requireUserId, stableUserId } from "./userScope";
 import type { Doc } from "./_generated/dataModel";
 
-// StopScrll unlock keys. The raw key is returned once at issue time and only
+// Integration keys. The raw key is returned once at issue time and only
 // its SHA-256 hash is stored. Max 5 keys per user.
 
 const MAX_KEYS = 5;

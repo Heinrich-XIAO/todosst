@@ -147,7 +147,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <NudgeSettings />
 
         <div className="mt-3 border border-foreground/20 p-3">
-          <p className="text-xs font-medium">stopscrll unlock key</p>
+          <p className="text-xs font-medium">integration key</p>
           <p className="mt-1 text-[11px] leading-tight opacity-40">
             paste one key into the stopscrll android app — finishing a task there unblocks the
             phone. keys act as your account for the unlock api only.
