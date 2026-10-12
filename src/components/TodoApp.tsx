@@ -2,7 +2,7 @@
 /* eslint-disable react-hooks/set-state-in-effect -- history/timer-driven
    state sync in effects is inherent to the query + recurrence lifecycle here */
 
-import { useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
+import { memo, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, type Dispatch, type SetStateAction } from "react";
 
 // layout effect that is safe during SSR ("use client" components still
 // server-render, and useLayoutEffect warns there)
@@ -482,6 +482,197 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
   );
 }
 
+// The new-task composer owns its input state so keystrokes only re-render
+// this small form — previously the value lived in TodoTask, so every
+// character re-rendered (and reconciled) the entire task tree + today view.
+const CreateRootForm = memo(function CreateRootForm({
+  nodes,
+  roots,
+  map,
+  decodedPath,
+  isTouch,
+  stealDisabled,
+  onSubmit,
+}: {
+  nodes: DecryptedNode[] | null;
+  roots: TreeNode[];
+  map: Map<string, TreeNode>;
+  decodedPath: string;
+  isTouch: boolean;
+  stealDisabled: boolean;
+  // raw input value; resolves true when the form should clear
+  onSubmit: (raw: string) => Promise<boolean>;
+}) {
+  const [value, setValue] = useState("");
+  const [isSlashFocused, setIsSlashFocused] = useState(false);
+  const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const slashComplete = useMemo(
+    () => resolveSlashSuggest(value, nodes, roots, map, decodedPath),
+    [value, nodes, roots, map, decodedPath]
+  );
+
+  useEffect(() => {
+    setActiveSuggestIdx(0);
+  }, [slashComplete.suggestions]);
+
+  const applySlashSuggestion = useCallback(
+    (title: string) => {
+      let next: string;
+      if (slashComplete.mode === "cd") {
+        const m = /^!\s*cd/i.exec(value);
+        if (m) {
+          const afterCd = value.slice(m[0].length);
+          const lastSlash = afterCd.lastIndexOf("/");
+          next =
+            lastSlash >= 0
+              ? value.slice(0, m[0].length) + afterCd.slice(0, lastSlash + 1) + title
+              : value.slice(0, m[0].length) + " " + title;
+        } else {
+          next = "!cd " + title;
+        }
+      } else {
+        next = (slashComplete.dirPath || "") + "/" + title;
+      }
+      setValue(next);
+      setActiveSuggestIdx(0);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    },
+    [value, slashComplete]
+  );
+
+  // If no input/textarea/select is focused, typing goes straight into the box
+  useEffect(() => {
+    function isTypingTarget(el: Element | null) {
+      if (!el) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if ((el as HTMLElement).isContentEditable) return true;
+      return false;
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key.length !== 1) return;
+      // never hijack keystrokes while a modal/panel is up
+      if (stealDisabled) return;
+      const target = e.target as Element | null;
+      const active = document.activeElement as Element | null;
+      if (isTypingTarget(target) || isTypingTarget(active)) return;
+      const input = inputRef.current;
+      if (!input) return;
+      e.preventDefault();
+      input.focus();
+      setValue((prev) => prev + e.key);
+      requestAnimationFrame(() => {
+        const len = input.value.length;
+        try {
+          input.setSelectionRange(len, len);
+        } catch {}
+      });
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [stealDisabled]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!value.trim() || busy) return;
+    setBusy(true);
+    try {
+      if (await onSubmit(value)) setValue("");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="flex flex-1 items-center gap-2">
+      <div className="flex-1 relative">
+        <input
+          ref={inputRef}
+          autoFocus={!isTouch}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={() => setIsSlashFocused(true)}
+          onBlur={() => setTimeout(() => setIsSlashFocused(false), 150)}
+          onKeyDown={(e) => {
+            if (!isSlashFocused || slashComplete.suggestions.length === 0) return;
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setActiveSuggestIdx((i) => (i + 1) % slashComplete.suggestions.length);
+            } else if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiveSuggestIdx((i) => (i - 1 + slashComplete.suggestions.length) % slashComplete.suggestions.length);
+            } else if (e.key === "Enter" || e.key === "Tab") {
+              const chosen = slashComplete.suggestions[activeSuggestIdx];
+              if (e.key === "Enter" && chosen && chosen.title.toLowerCase() === slashComplete.prefix.toLowerCase() && slashComplete.prefix.length > 0) {
+                setIsSlashFocused(false);
+                return;
+              }
+              e.preventDefault();
+              if (chosen) applySlashSuggestion(chosen.title);
+            } else if (e.key === "Escape") {
+              setIsSlashFocused(false);
+            }
+          }}
+          maxLength={500}
+          className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
+        />
+        {value === "" && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-nowrap py-1 text-sm text-foreground/40"
+          >
+            <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={value === ""} />
+          </span>
+        )}
+        {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
+            <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
+              {slashComplete.mode === "cd" ? "cd " : ""}
+              {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
+            </div>
+            {slashComplete.suggestions.map((s, idx) => {
+              const isActive = idx === activeSuggestIdx;
+              const prefixLower = slashComplete.prefix.toLowerCase();
+              const titleLower = s.title.toLowerCase();
+              const matchLen = prefixLower && titleLower.startsWith(prefixLower) ? slashComplete.prefix.length : 0;
+              return (
+                <button
+                  key={s._id}
+                  type="button"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    applySlashSuggestion(s.title);
+                  }}
+                  className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${isActive ? "bg-foreground text-background" : "hover:bg-foreground/10"}`}
+                >
+                  <span className="truncate">
+                    {matchLen > 0 ? (
+                      <>
+                        <span className={isActive ? "opacity-60" : "opacity-40"}>{s.title.slice(0, matchLen)}</span>
+                        <span className="font-medium">{s.title.slice(matchLen)}</span>
+                      </>
+                    ) : (
+                      <span className="font-medium">{s.title}</span>
+                    )}
+                  </span>
+                  <span className={`ml-auto shrink-0 text-[10px] ${isActive ? "opacity-60" : "opacity-30"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <button type="submit" disabled={!value.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
+        add task
+      </button>
+    </form>
+  );
+});
+
 function TodoTask() {
   const online = useOnline();
   const todos = useQuery(api.todos.list);
@@ -493,7 +684,6 @@ function TodoTask() {
   // the view lives in the URL: a "/tree" prefix shows the tree view, anything
   // else is today. Deep links like /tree/host%20hackathon just work.
   const view = pathname === "/tree" || pathname.startsWith("/tree/") ? "tree" : "today";
-  const [newRootTitle, setNewRootTitle] = useState("");
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<Id<"todos"> | null>(null);
@@ -510,10 +700,7 @@ function TodoTask() {
   const [notice, setNotice] = useState<string | null>(null);
   const [undoState, setUndoState] = useState<{ snap: UndoSnapshot; ttl: number } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
-  const newRootInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [isSlashFocused, setIsSlashFocused] = useState(false);
-  const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
   // open the mobile new-task sheet: root-level (from the nav +) or under a
   // parent — the edit UI's fields (TaskFields) adapted for creation
   const [composer, setComposer] = useState<TaskSheetMode | null>(null);
@@ -945,44 +1132,6 @@ function TodoTask() {
     }
     seenCompletedRef.current = completed;
   }, [nodes]);
-
-  // If no input/textarea/select is focused, typing should go straight into the new-task box
-  useEffect(() => {
-    function isTypingTarget(el: Element | null) {
-      if (!el) return false;
-      const tag = el.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-      if ((el as HTMLElement).isContentEditable) return true;
-      return false;
-    }
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.ctrlKey || e.metaKey || e.altKey) return;
-      // allow shortcuts / navigation keys
-      if (e.key.length !== 1) return;
-      // never hijack keystrokes while a modal/panel is up — dialogs autofocus
-      // a button (not an input), so the target checks below pass and typed
-      // characters would be swallowed into the hidden input behind the dialog
-      if (notice || helpOpen || confirmDeleteId || selectedId) return;
-      const target = e.target as Element | null;
-      const active = document.activeElement as Element | null;
-      if (isTypingTarget(target) || isTypingTarget(active)) return;
-      const input = newRootInputRef.current;
-      if (!input) return;
-      e.preventDefault();
-      input.focus();
-      // Append the pressed key via React state; input is controlled by newRootTitle
-      setNewRootTitle((prev) => prev + e.key);
-      // ensure cursor at end after React renders
-      requestAnimationFrame(() => {
-        const len = input.value.length;
-        try {
-          input.setSelectionRange(len, len);
-        } catch {}
-      });
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [notice, helpOpen, confirmDeleteId, selectedId]);
 
   // Ctrl/Cmd+F focuses the search field
   useEffect(() => {
@@ -1449,42 +1598,6 @@ function TodoTask() {
     return !nodes?.some((n) => (n.parentId ?? null) === null && n.title === HABIT_TITLE);
   }, [nodes, habitNode, habitOfferGone]);
 
-  // intellisense: autocomplete for "/..." paths and "!cd ..." commands
-  const slashComplete = useMemo(
-    () => resolveSlashSuggest(newRootTitle, nodes, tree.roots, tree.map, decodedPath),
-    [newRootTitle, nodes, tree, decodedPath]
-  );
-
-  useEffect(() => {
-    setActiveSuggestIdx(0);
-  }, [slashComplete.suggestions]);
-
-  const applySlashSuggestion = useCallback(
-    (title: string) => {
-      let next: string;
-      if (slashComplete.mode === "cd") {
-        // keep "!cd" + whatever dir portion was typed (up to the last "/"), append the suggestion
-        const m = /^!\s*cd/i.exec(newRootTitle);
-        if (m) {
-          const afterCd = newRootTitle.slice(m[0].length);
-          const lastSlash = afterCd.lastIndexOf("/");
-          next =
-            lastSlash >= 0
-              ? newRootTitle.slice(0, m[0].length) + afterCd.slice(0, lastSlash + 1) + title
-              : newRootTitle.slice(0, m[0].length) + " " + title;
-        } else {
-          next = "!cd " + title;
-        }
-      } else {
-        next = (slashComplete.dirPath || "") + "/" + title;
-      }
-      setNewRootTitle(next);
-      setActiveSuggestIdx(0);
-      requestAnimationFrame(() => newRootInputRef.current?.focus());
-    },
-    [newRootTitle, slashComplete]
-  );
-
   // Shared creation core for grammar outcomes — used live by the input box
   // and on replay by the offline outbox, so path reuse/dedup/order behave
   // identically in both paths. Returns true when a create mutation was
@@ -1630,7 +1743,6 @@ function TodoTask() {
       setNotice("task titles are limited to 200 characters");
       return;
     }
-    setNewRootTitle("");
     await parkCapture(raw, pwdParts);
   }
 
@@ -1687,29 +1799,29 @@ function TodoTask() {
     return null;
   }
 
-  async function handleCreateRoot(e: React.FormEvent) {
-    e.preventDefault();
-    const raw = newRootTitle.trim();
-    if (!raw) return;
+  // Root-input submit owned by CreateRootForm (which owns the text state so
+  // typing never re-renders this component). Returns true when the form
+  // should clear, false to keep the text (dedup/notice paths).
+  const submitRootInput = async (rawInput: string): Promise<boolean> => {
+      const raw = rawInput.trim();
+      if (!raw) return false;
     // grammar registry decides: !commands run via ctx, creation forms return a plan
     const rawOutcome = runInput(raw, commandCtx);
     if (rawOutcome.type === "unknown-command") {
       setNotice(`unknown command: !${rawOutcome.name} (try !help)`);
-      return;
+      return false;
     }
     if (rawOutcome.type === "ignored") {
-      setNewRootTitle("");
-      return;
+      return true;
     }
     // offline: !cd/!help already ran above (pure client-side); captures park
     // in the outbox and replay on the next unlocked+online open
     if (!online) {
       if (rawOutcome.type === "create-task" || rawOutcome.type === "create-slash") {
         await captureOffline(raw, rawOutcome);
-        return;
+        return true;
       }
-      setNewRootTitle("");
-      return;
+      return true;
     }
     // a task typed inside a nonexistent directory (e.g. after a typo'd !cd)
     // resolves like an absolute slash path from root: the missing directory
@@ -1721,7 +1833,7 @@ function TodoTask() {
         : rawOutcome;
     if (outcome.type === "create-task" && outcome.title.length > 200) {
       setNotice("task titles are limited to 200 characters");
-      return;
+      return false;
     }
     if (outcome.type === "create-slash" || outcome.type === "create-task") {
       let created = false;
@@ -1733,16 +1845,16 @@ function TodoTask() {
         // create converges instead of duplicating
         if (isNetworkError(err)) {
           await captureOffline(raw, rawOutcome);
-          return;
+          return true;
         }
         throw err;
       }
       // dedup drops and no-ops keep the text (same convention as before:
       // notice shown, input kept for fixing)
-      if (!created) return;
+      if (!created) return false;
     }
-    setNewRootTitle("");
-  }
+      return true;
+  };
 
   // Shared child-creation core for the inline input and the mobile composer
   // sheet: dedup, append order, encrypt, create, keep the parent un-collapsed.
@@ -2751,90 +2863,15 @@ function TodoTask() {
 
       {/* top controls — desktop-width only; below md, the nav "+" sheet is the only create affordance */}
       <div className="hidden flex-wrap gap-2 border-b border-foreground p-3 md:flex">
-      <form onSubmit={handleCreateRoot} className="flex flex-1 items-center gap-2">
-        <div className="flex-1 relative">
-          <input
-            ref={newRootInputRef}
-            autoFocus={!isTouch}
-            value={newRootTitle}
-            onChange={(e) => setNewRootTitle(e.target.value)}
-            onFocus={() => setIsSlashFocused(true)}
-            onBlur={() => setTimeout(() => setIsSlashFocused(false), 150)}
-            onKeyDown={(e) => {
-              if (!isSlashFocused || slashComplete.suggestions.length === 0) return;
-              if (e.key === "ArrowDown") {
-                e.preventDefault();
-                setActiveSuggestIdx((i) => (i + 1) % slashComplete.suggestions.length);
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                setActiveSuggestIdx((i) => (i - 1 + slashComplete.suggestions.length) % slashComplete.suggestions.length);
-              } else if (e.key === "Enter" || e.key === "Tab") {
-                const chosen = slashComplete.suggestions[activeSuggestIdx];
-                // if exact match, let Enter submit instead of re-applying same value
-                if (e.key === "Enter" && chosen && chosen.title.toLowerCase() === slashComplete.prefix.toLowerCase() && slashComplete.prefix.length > 0) {
-                  setIsSlashFocused(false);
-                  return;
-                }
-                // autocomplete active suggestion instead of submitting
-                e.preventDefault();
-                if (chosen) applySlashSuggestion(chosen.title);
-              } else if (e.key === "Escape") {
-                setIsSlashFocused(false);
-              }
-            }}
-            maxLength={500}
-            className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
-          />
-          {newRootTitle === "" && (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-nowrap py-1 text-sm text-foreground/40"
-            >
-              <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={newRootTitle === ""} />
-            </span>
-          )}
-          {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
-            <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
-              <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
-                {slashComplete.mode === "cd" ? "cd " : ""}
-                {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
-              </div>
-              {slashComplete.suggestions.map((s, idx) => {
-                const isActive = idx === activeSuggestIdx;
-                const prefixLower = slashComplete.prefix.toLowerCase();
-                const titleLower = s.title.toLowerCase();
-                const matchLen = prefixLower && titleLower.startsWith(prefixLower) ? slashComplete.prefix.length : 0;
-                return (
-                  <button
-                    key={s._id}
-                    type="button"
-                    onMouseDown={(e) => {
-                      e.preventDefault();
-                      applySlashSuggestion(s.title);
-                    }}
-                    className={`flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs ${isActive ? "bg-foreground text-background" : "hover:bg-foreground/10"}`}
-                  >
-                    <span className={`truncate ${isActive ? "" : ""}`}>
-                      {matchLen > 0 ? (
-                        <>
-                          <span className={isActive ? "opacity-60" : "opacity-40"}>{s.title.slice(0, matchLen)}</span>
-                          <span className="font-medium">{s.title.slice(matchLen)}</span>
-                        </>
-                      ) : (
-                        <span className="font-medium">{s.title}</span>
-                      )}
-                    </span>
-                    <span className={`ml-auto shrink-0 text-[10px] ${isActive ? "opacity-60" : "opacity-30"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-        <button type="submit" disabled={!newRootTitle.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
-          add task
-        </button>
-      </form>
+      <CreateRootForm
+        nodes={nodes}
+        roots={tree.roots}
+        map={tree.map}
+        decodedPath={decodedPath}
+        isTouch={isTouch}
+        stealDisabled={!!(notice || helpOpen || confirmDeleteId || selectedId)}
+        onSubmit={submitRootInput}
+      />
       </div>
 
       {view === "tree" && (
