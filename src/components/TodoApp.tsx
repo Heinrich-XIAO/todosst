@@ -485,7 +485,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 // The new-task composer owns its input state so keystrokes only re-render
 // this small form — previously the value lived in TodoTask, so every
 // character re-rendered (and reconciled) the entire task tree + today view.
-const CreateRootForm = memo(function CreateRootForm({
+export const CreateRootForm = memo(function CreateRootForm({
   nodes,
   roots,
   map,
