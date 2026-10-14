@@ -278,6 +278,18 @@ export function parseTagsInput(raw: string): string[] {
 }
 
 export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; onPatch: OnPatch }) {
+  // The date input keeps a local draft: while the year is mid-typing the
+  // browser emits values we refuse to commit (e.g. "0002-10-14"). Binding the
+  // input straight to metadata would make React snap it back to the last
+  // committed value, wiping the month/day already entered. Re-sync the draft
+  // whenever the committed value changes (our own commits or remote edits).
+  const committedDue = metadata.dueAt ? formatDueInput(normalizeDueAt(metadata.dueAt)) : "";
+  const [dueDraft, setDueDraft] = useState(committedDue);
+  const [syncedDue, setSyncedDue] = useState(committedDue);
+  if (committedDue !== syncedDue) {
+    setSyncedDue(committedDue);
+    setDueDraft(committedDue);
+  }
   return (
     <div className="flex flex-wrap gap-2">
       <label className="flex-1 block">
@@ -300,8 +312,9 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
         <span className="opacity-60">due</span>
         <input
           type="date"
-          value={metadata.dueAt ? formatDueInput(normalizeDueAt(metadata.dueAt)) : ""}
+          value={dueDraft}
           onChange={(e) => {
+            setDueDraft(e.target.value);
             // clearing wipes the time of day with the date; a freshly added
             // due date defaults the time to the next full hour, while edits
             // to an existing date keep its time as-is

@@ -10,11 +10,14 @@ import { DAY_MS, dayIndexLocal } from "./recur";
 const HOUR_MS = 3_600_000;
 
 /** Parse a date-input value ("YYYY-MM-DD") as local midnight. Rejects
- * malformed or rolled-over dates (e.g. "2026-02-30"). */
+ * malformed or rolled-over dates (e.g. "2026-02-30") and years below 1000 —
+ * those are the browser's intermediate values while the year is still being
+ * typed ("0002", "0020", "0202"). */
 export function parseDueInput(value: string): number | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!m) return null;
   const [y, mo, day] = [Number(m[1]), Number(m[2]) - 1, Number(m[3])];
+  if (y < 1000) return null;
   const d = new Date(y, mo, day);
   if (d.getFullYear() !== y || d.getMonth() !== mo || d.getDate() !== day) return null;
   return d.getTime();

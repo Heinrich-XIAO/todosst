@@ -22,6 +22,9 @@ test("parseDueInput rejects malformed and rolled-over dates", () => {
   expect(parseDueInput("not-a-date")).toBe(null);
   expect(parseDueInput("2026-2-15")).toBe(null);
   expect(parseDueInput("2026-02-30")).toBe(null);
+  // intermediate values while the year is being typed
+  expect(parseDueInput("0002-10-14")).toBe(null);
+  expect(parseDueInput("0202-10-14")).toBe(null);
 });
 
 test("formatDueInput shows the local calendar date, not the UTC one", () => {
