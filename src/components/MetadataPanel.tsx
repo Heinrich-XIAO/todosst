@@ -79,6 +79,21 @@ export function MetadataPanel({
   // longer scrolls the page, so ride the panel up by the keyboard inset (same
   // trick as the create sheet)
   const keyboardInset = useKeyboardInset();
+  // Escape closes the panel without touching any pending edit (blur-flush
+  // still runs via the unmount cleanup)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        const t = e.target as HTMLElement | null;
+        // let text inputs blur first (their own Enter/Escape handler does
+        // that) so typing isn't lost — a second Escape then closes
+        if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA") && document.activeElement === t) return;
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
   if (!node) return null;
   const payloadLen = node._raw.ciphertext?.length ?? 0;
   const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
@@ -103,12 +118,17 @@ export function MetadataPanel({
     <div
       className={`flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs ${
         overlay
-          ? // mobile today view only (md: falls back to flow): pin to the
-            // container's bottom padding (above the fixed nav) with its own
-            // stacking context so it always paints whole above the list
+          ? // mobile today view: pin to the container's bottom padding (above
+            // the fixed nav) with its own stacking context so it always paints
+            // whole above the list
             "max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]"
           : ""
-      }`}
+        // desktop (md+): viewport-fixed bottom sheet, centered on the 720px
+        // column. In-flow rendering left the panel at the end of the document,
+        // so opening a task at the top showed nothing until the user scrolled
+        // all the way down. Fixed positioning makes it appear immediately,
+        // and the shadow marks it as an overlay rather than page content.
+      } md:fixed md:inset-x-0 md:bottom-0 md:z-30 md:mx-auto md:w-full md:max-w-[720px] md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]`}
       style={{ marginBottom: keyboardInset, maxHeight: keyboardInset ? `calc(70dvh - ${keyboardInset}px)` : undefined }}
     >
       <div className="flex shrink-0 items-center justify-between gap-3">
