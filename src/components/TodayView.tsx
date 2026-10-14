@@ -8,7 +8,7 @@
 // open), plus plain tasks with a due date of today or earlier. Everything else
 // stays in the tree view.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
 import { dayIndexLocal, dayIndexToStart, formatMinutes, modeOf, stepOf, thresholdOf, type CompletionMode, type RecurState } from "@/lib/recur";
@@ -162,6 +162,7 @@ function TodayRow({
   onCountDown,
   onSelect,
   onJump,
+  onHidden,
 }: {
   item: TodayItem;
   map: Map<string, TreeNode>;
@@ -175,6 +176,9 @@ function TodayRow({
   onCountDown: (node: TreeNode, delta?: number) => Promise<void>;
   onSelect: (node: TreeNode) => void;
   onJump: (parts: string[]) => void;
+  /** reports the row's fade-out visibility so section headers can drop away
+   * with their (only hidden) rows instead of dangling empty */
+  onHidden?: (id: string, hidden: boolean) => void;
 }) {
   const { node, rs } = item;
   const meta = node.metadata as PlainNode["metadata"];
@@ -193,6 +197,12 @@ function TodayRow({
     }
     setHidden(false);
   }, [checked]);
+
+  // let the parent track which rows have faded out, so section headers that
+  // pointed at (only now-hidden) rows stop rendering instead of dangling.
+  useEffect(() => {
+    onHidden?.(String(node._id), hidden);
+  }, [hidden, onHidden, node._id]);
 
   const ancestors = getAncestors(node._id as Id<"todos">, map);
   // an earlier window still open — name the day it opened so the section
@@ -705,6 +715,32 @@ export function TodayView({
   // must stay hidden at scroll-top, or it sits over the first section header
   // ("overdue" etc.) via its -mb-6 overlap and shadows the label.
   const [scrolled, setScrolled] = useState(false);
+  // track rows that have faded out so section headers don't dangle empty
+  const [hiddenTaskRows, setHiddenTaskRows] = useState<Set<string>>(new Set());
+  const markRowHidden = useCallback((id: string, hiddenFlag: boolean) => {
+    setHiddenTaskRows((prev) => {
+      const already = prev.has(id);
+      if (hiddenFlag === already) return prev;
+      const next = new Set(prev);
+      if (hiddenFlag) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+  useEffect(() => {
+    setHiddenTaskRows((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of prev) {
+        if (!items?.some((i) => String(i.node._id) === id)) {
+          next.delete(id);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [items]);
+
   const missNoteOf = (i: TodayItem) => {
     const n = missesByTask?.get(String(i.node._id));
     return n !== undefined && i.rs?.isRecurring && rowIsOpen(i) ? missCopy(n) : null;
@@ -727,7 +763,7 @@ export function TodayView({
   // Habit check-ins (missed just-ended windows) render at the top of the
   // habits section, ahead of the current-window rows.
   const sectionRows = (label: string, rows: TodayItem[], habitRows: HabitConfirmItem[] = []) => {
-    const visible = rows.filter((i) => i.group !== 0 && (i.group === 1 || rowIsOpen(i)));
+    const visible = rows.filter((i) => i.group !== 0 && (i.group === 1 || rowIsOpen(i)) && !hiddenTaskRows.has(String(i.node._id)));
     if (visible.length === 0 && habitRows.length === 0) return null;
     return (
       <div>
@@ -759,13 +795,14 @@ export function TodayView({
                     map={map}
                     missNote={missNoteOf(i)}
                     streakNote={streakNoteOf(i)}
-                    onToggle={onToggle}
-                    onCountUp={onCountUp}
-                    onCountDown={onCountDown}
-                    onSelect={onSelect}
-                    onJump={onJump}
-                  />
-                ))}
+                      onToggle={onToggle}
+                      onCountUp={onCountUp}
+                      onCountDown={onCountDown}
+                      onSelect={onSelect}
+                      onJump={onJump}
+                      onHidden={markRowHidden}
+                    />
+                  ))}
               </ul>
             </div>
           );
@@ -838,6 +875,7 @@ export function TodayView({
                         onCountDown={onCountDown}
                         onSelect={onSelect}
                         onJump={onJump}
+                        onHidden={markRowHidden}
                       />
                     ))}
                   </ul>
