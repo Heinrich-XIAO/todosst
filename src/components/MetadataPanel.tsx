@@ -123,12 +123,12 @@ export function MetadataPanel({
             // whole above the list
             "max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]"
           : ""
-        // desktop (md+): viewport-fixed bottom sheet, centered on the 720px
-        // column. In-flow rendering left the panel at the end of the document,
-        // so opening a task at the top showed nothing until the user scrolled
-        // all the way down. Fixed positioning makes it appear immediately,
-        // and the shadow marks it as an overlay rather than page content.
-      } md:fixed md:inset-x-0 md:bottom-0 md:z-30 md:mx-auto md:w-full md:max-w-[720px] md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]`}
+        // desktop (md+): side-docked in the row layout owned by TodoApp
+        // (main list left, this panel right). Stacked in-flow rendering left
+        // the panel at the end of the document, so opening a task at the top
+        // showed nothing until the user scrolled all the way down. The
+        // sticky aside keeps it visible immediately, next to the selection.
+      } md:static md:z-auto md:mx-0 md:w-full md:max-w-none md:border-0 md:shadow-none md:max-h-[calc(100dvh-2rem)]`}
       style={{ marginBottom: keyboardInset, maxHeight: keyboardInset ? `calc(70dvh - ${keyboardInset}px)` : undefined }}
     >
       <div className="flex shrink-0 items-center justify-between gap-3">

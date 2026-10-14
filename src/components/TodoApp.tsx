@@ -2888,7 +2888,7 @@ function TodoTask() {
 
   return (
     <div
-      className={`w-full max-w-[720px] bg-background ${
+      className={`w-full max-w-[720px] bg-background ${selectedNode ? "md:max-w-[1080px]" : ""} ${
         // both mobile views are viewport-locked: the document never scrolls —
         // header bars stay put and each view owns an internal scroll region
         // (today: pinned carousel above the list; tree: the task list itself).
@@ -2929,6 +2929,12 @@ function TodoTask() {
       </div>
 
       <InstallHint />
+
+      {/* desktop side-dock: on md+ the list and the details panel sit
+          side-by-side (main left, details right). Both wrappers are `contents`
+          below md so mobile layout and flex order are untouched. */}
+      <div className="contents md:flex md:items-start">
+      <div className="contents md:block md:min-w-0 md:flex-1">
 
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
       {view === "tree" && (
@@ -3071,6 +3077,22 @@ function TodoTask() {
       </div>
       </>
       )}
+      </div>
+      {selectedNode && (
+      <div className="contents md:block md:w-[360px] md:shrink-0 md:sticky md:top-4 md:border-l md:border-foreground">
+        <MetadataPanel
+          key={selectedNode._id}
+          node={selectedNode}
+          onUpdateMetadata={handleUpdateMetadata}
+          onRename={handleRename}
+          onClose={() => setSelectedId(null)}
+          nowTs={nowTs}
+          historyCounts={history?.byTodo.get(selectedNode._id as string) ?? null}
+          overlay={view === "today"}
+        />
+      </div>
+      )}
+      </div>
 
       {confirmNode && (
         <DeleteConfirmDialog
@@ -3101,19 +3123,6 @@ function TodoTask() {
           lines={remindToast.lines}
           onUndo={remindToast.onUndo}
           onClose={() => setRemindToast(null)}
-        />
-      )}
-
-      {selectedNode && (
-        <MetadataPanel
-          key={selectedNode._id}
-          node={selectedNode}
-          onUpdateMetadata={handleUpdateMetadata}
-          onRename={handleRename}
-          onClose={() => setSelectedId(null)}
-          nowTs={nowTs}
-          historyCounts={history?.byTodo.get(selectedNode._id as string) ?? null}
-          overlay={view === "today"}
         />
       )}
 
