@@ -73,6 +73,7 @@ import {
   withReminderDefault,
 } from "@/lib/reminders";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
+import { parseNlpDate } from "@/lib/nlpDate";
 import { registerServiceWorker } from "@/lib/push";
 import { useOnline } from "@/lib/useOnline";
 import {
@@ -514,6 +515,35 @@ export const CreateRootForm = memo(function CreateRootForm({
     [value, nodes, roots, map, decodedPath]
   );
 
+  // Todoist-style inline date highlight: the same deterministic parse the
+  // submit path uses, run per keystroke (µs-scale regex, no model). Segments
+  // render in a backdrop div behind a transparent-text input.
+  const nlp = useMemo(() => parseNlpDate(value), [value]);
+  const nlpSegs = useMemo(() => {
+    const segs: { text: string; hot: boolean }[] = [];
+    let pos = 0;
+    for (const s of nlp.spans) {
+      if (s.start > pos) segs.push({ text: value.slice(pos, s.start), hot: false });
+      segs.push({ text: value.slice(s.start, s.end), hot: true });
+      pos = s.end;
+    }
+    if (pos < value.length) segs.push({ text: value.slice(pos), hot: false });
+    return segs;
+  }, [value, nlp]);
+  const nlpLabel = useMemo(() => {
+    if (nlp.spans.length === 0) return null;
+    const bits: string[] = [];
+    if (nlp.dueAt !== null) {
+      bits.push(
+        new Date(nlp.dueAt).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" })
+      );
+      if (nlp.dueTimeMin !== null)
+        bits.push(`${Math.floor(nlp.dueTimeMin / 60)}:${String(nlp.dueTimeMin % 60).padStart(2, "0")}`);
+    }
+    if (nlp.recur) bits.push("repeats");
+    return bits.join(" · ");
+  }, [nlp]);
+
   useEffect(() => {
     setActiveSuggestIdx(0);
   }, [slashComplete.suggestions]);
@@ -590,6 +620,22 @@ export const CreateRootForm = memo(function CreateRootForm({
   return (
     <form onSubmit={handleSubmit} className="flex flex-1 items-center gap-2">
       <div className="flex-1 relative">
+        {nlp.spans.length > 0 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-pre py-1 text-sm text-foreground"
+          >
+            {nlpSegs.map((s, i) =>
+              s.hot ? (
+                <mark key={i} className="bg-amber-300/60 px-px text-inherit">
+                  {s.text}
+                </mark>
+              ) : (
+                <span key={i}>{s.text}</span>
+              )
+            )}
+          </div>
+        )}
         <input
           ref={inputRef}
           autoFocus={!isTouch}
@@ -618,7 +664,7 @@ export const CreateRootForm = memo(function CreateRootForm({
             }
           }}
           maxLength={500}
-          className="w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none"
+          className={`w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none ${nlp.spans.length > 0 ? "text-transparent caret-foreground selection:bg-foreground/20" : ""}`}
         />
         {value === "" && (
           <span
@@ -666,6 +712,11 @@ export const CreateRootForm = memo(function CreateRootForm({
           </div>
         )}
       </div>
+      {nlpLabel && (
+        <span title={nlp.cleanTitle ? `title: “${nlp.cleanTitle}”` : undefined} className="shrink-0 border border-amber-500/40 bg-amber-300/15 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300">
+          📅 {nlpLabel}
+        </span>
+      )}
       <button type="submit" disabled={!value.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
         add task
       </button>
@@ -1757,11 +1808,27 @@ function TodoTask() {
   ): Promise<{ text: string; createdIds: string[] } | null> {
     if (!nodes) throw new Error("not ready");
     const cap = await openCapture(entry.payload);
-    const outcome = runInput(cap.input, {
+    // same NL-date strip as the live submit so offline captures keep due dates
+    const capNlp = cap.input.trim().startsWith("!") ? null : parseNlpDate(cap.input.trim());
+    const capHeard = capNlp && capNlp.spans.length > 0 ? capNlp : null;
+    const outcome = runInput(capHeard?.cleanTitle || cap.input, {
       currentPath: "/",
       pushPath: () => {},
       showHelp: () => {},
     });
+    if (
+      capHeard &&
+      (capHeard.dueAt !== null || capHeard.recur) &&
+      (outcome.type === "create-task" || outcome.type === "create-slash")
+    ) {
+      outcome.metadata = {
+        ...(capHeard.dueAt !== null ? { dueAt: capHeard.dueAt } : {}),
+        ...(capHeard.dueTimeMin !== null ? { dueTimeMin: capHeard.dueTimeMin } : {}),
+        ...outcome.metadata,
+      };
+      if (capHeard.recur && !outcome.recur) outcome.recur = capHeard.recur;
+      if (capHeard.recur && !outcome.metadata.recur) outcome.metadata.recur = capHeard.recur;
+    }
     const createdIds: string[] = [];
     if (outcome.type === "create-task") {
       // re-resolve the capture-time working directory against the current tree
@@ -1785,6 +1852,7 @@ function TodoTask() {
             parts: [...cap.parts, outcome.title],
             recur: outcome.recur,
             neg: outcome.neg,
+            metadata: outcome.metadata,
           },
           { createdIds }
         );
@@ -1805,8 +1873,33 @@ function TodoTask() {
   const submitRootInput = async (rawInput: string): Promise<boolean> => {
       const raw = rawInput.trim();
       if (!raw) return false;
+    // Todoist-style NL dates: strip heard spans ("tmrw") before the grammar
+    // sees the text, then reattach the resolution as metadata. Bang commands
+    // bypass NLP entirely (a directory can be named "tomorrow").
+    const nlp = raw.startsWith("!") ? null : parseNlpDate(raw);
+    const heard = nlp && nlp.spans.length > 0 ? nlp : null;
+    const grammarRaw = heard && heard.cleanTitle ? heard.cleanTitle : raw;
+    const nlpMeta: PlainNode["metadata"] =
+      heard && (heard.dueAt !== null || heard.recur)
+        ? {
+            ...(heard.dueAt !== null ? { dueAt: heard.dueAt } : {}),
+            ...(heard.dueTimeMin !== null ? { dueTimeMin: heard.dueTimeMin } : {}),
+            ...(heard.recur ? { recur: heard.recur } : {}),
+          }
+        : {};
     // grammar registry decides: !commands run via ctx, creation forms return a plan
-    const rawOutcome = runInput(raw, commandCtx);
+    const rawOutcome = runInput(grammarRaw, commandCtx);
+    // an NL recurrence loses to an explicit ~token, never overrides it
+    if (heard?.recur && (rawOutcome.type === "create-task" || rawOutcome.type === "create-slash") && !rawOutcome.recur) {
+      rawOutcome.recur = heard.recur;
+    }
+    if (
+      (rawOutcome.type === "create-task" || rawOutcome.type === "create-slash") &&
+      Object.keys(nlpMeta).length > 0
+    ) {
+      rawOutcome.metadata = { ...nlpMeta, ...rawOutcome.metadata };
+      if (heard?.recur && !rawOutcome.metadata.recur) rawOutcome.metadata.recur = heard.recur;
+    }
     if (rawOutcome.type === "unknown-command") {
       setNotice(`unknown command: !${rawOutcome.name} (try !help)`);
       return false;
@@ -1829,7 +1922,7 @@ function TodoTask() {
     // of silently falling back to root while the header still says "(not found)"
     const outcome: InputOutcome =
       rawOutcome.type === "create-task" && !currentDirInfo.exists && rawOutcome.title.length <= 200
-        ? { type: "create-slash", parts: [...currentDirInfo.parts, rawOutcome.title], recur: rawOutcome.recur }
+        ? { type: "create-slash", parts: [...currentDirInfo.parts, rawOutcome.title], recur: rawOutcome.recur, metadata: rawOutcome.metadata }
         : rawOutcome;
     if (outcome.type === "create-task" && outcome.title.length > 200) {
       setNotice("task titles are limited to 200 characters");
