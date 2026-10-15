@@ -41,7 +41,10 @@ export function bandPos(clientY: number, top: number, height: number): DropPos {
   return "child";
 }
 
-export function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {
+export function buildTree(
+  nodes: DecryptedNode[],
+  opts?: { isDone?: (n: DecryptedNode) => boolean }
+): { roots: TreeNode[]; map: Map<string, TreeNode>; orphans: number } {
   const map = new Map<string, TreeNode>();
   // init
   for (const n of nodes) {
@@ -77,10 +80,16 @@ export function buildTree(nodes: DecryptedNode[]): { roots: TreeNode[]; map: Map
     const parent = map.get(parentId)!;
     parent.children.push(tn);
   }
-  // compute depth + sort: active first, then by order/creationTime (so completed always below)
+  // compute depth + sort: active first, then by order/creationTime (so completed always below).
+  // isDone defaults to the stored checkbox; callers pass the visual checked
+  // state so recurring tasks done for today (count >= threshold, isCompleted
+  // still false) also sink below their open siblings instead of interleaving.
+  const isDone = opts?.isDone ?? ((n: DecryptedNode) => n.isCompleted);
   function sortAndDepth(list: TreeNode[], depth: number) {
     list.sort((a, b) => {
-      if (a.isCompleted !== b.isCompleted) return a.isCompleted ? 1 : -1;
+      const da = isDone(a);
+      const db = isDone(b);
+      if (da !== db) return da ? 1 : -1;
       if (a.order !== b.order) return a.order - b.order;
       return a._creationTime - b._creationTime;
     });

@@ -178,6 +178,45 @@ type RowCtx = {
   openChildComposer: (parentId: Id<"todos">, parentTitle: string) => void;
 };
 
+// Visual checked state mirrors the row checkbox (see RenderNode): recurring
+// tasks are done when their current-window count reaches threshold
+// (isCompleted stays false so they remain visible in the active filter),
+// plain tasks when isCompleted. Battles never count as done.
+function checkedOf(
+  node: TreeNode,
+  recurStates: Map<string, RecurState> | null | undefined,
+  countOverrides: Map<string, number>,
+  currentCount: (node: TreeNode, rs: RecurState | undefined) => number
+): boolean {
+  const meta = node.metadata as PlainNode["metadata"];
+  if (isNegative(meta)) return false;
+  const rs = recurStates?.get(node._id as string);
+  const count =
+    countOverrides.get(`${node._id}:${rs?.windowDay ?? dayIndexLocal(node._creationTime)}`) ??
+    currentCount(node, rs);
+  if (rs?.isRecurring) return count >= thresholdOf(meta);
+  return node.isCompleted;
+}
+
+// Sibling order for display: open rows first (by order/creation), checked
+// rows sink to the bottom of their own level. Applied per level so a done
+// child drops to the bottom of its folder while the folder itself stays put,
+// and done roots drop to the very bottom.
+function sortByChecked(
+  list: TreeNode[],
+  recurStates: Map<string, RecurState> | null | undefined,
+  countOverrides: Map<string, number>,
+  currentCount: (node: TreeNode, rs: RecurState | undefined) => number
+): TreeNode[] {
+  return [...list].sort((a, b) => {
+    const da = checkedOf(a, recurStates, countOverrides, currentCount);
+    const db = checkedOf(b, recurStates, countOverrides, currentCount);
+    if (da !== db) return da ? 1 : -1;
+    if (a.order !== b.order) return a.order - b.order;
+    return a._creationTime - b._creationTime;
+  });
+}
+
 function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
   const {
     tree,
@@ -474,7 +513,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
 
       {hasChildren && isExpanded && (
         <ul>
-          {node.children.map((child) => (
+          {sortByChecked(node.children, recurStates, countOverrides, currentCount).map((child) => (
             <RenderNode key={child._id} node={child} ctx={ctx} />
           ))}
         </ul>
@@ -3069,7 +3108,7 @@ function TodoTask() {
 
         {!isLoading && !isParsing && listFlat.length > 0 && currentDirInfo.exists && visibleRoots.length > 0 && (
           <ul>
-            {visibleRoots.map((root) => (
+            {sortByChecked(visibleRoots, recurStates, countOverrides, currentCount).map((root) => (
               <RenderNode key={root._id} node={root} ctx={rowCtx} />
             ))}
           </ul>
