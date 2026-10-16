@@ -88,6 +88,14 @@ function naiveDayIndex(d: Date): number {
   return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) / DAY_MS;
 }
 
+/** Naive-space (wall-clock-as-UTC) midnight starting the day after idx — the
+ * exclusive upper bound for "last occurrence on or before idx" queries. Day
+ * arithmetic stays in naive space so DST-length days can't shift the bound. */
+function naiveStartOfNextDay(idx: number): Date {
+  const base = new Date((idx + 1) * DAY_MS);
+  return new Date(Date.UTC(base.getUTCFullYear(), base.getUTCMonth(), base.getUTCDate()));
+}
+
 /** Parse an RRULE string into an RRule anchored at anchorTs (fallback when the string has no DTSTART). Cached. */
 export async function getRule(ruleStr: string, anchorTs: number): Promise<RRule | null> {
   const clean = normalizeRruleString(ruleStr);
@@ -210,17 +218,23 @@ export async function recurState(meta: RecurMetadata, anchorTs: number, nowTs: n
     return { isRecurring: false, windowDay, count: countFor(meta, windowDay), nextTs: null, summary: "", expired: false };
   }
   // all occurrence math happens in naive local wall-clock space (see toNaiveLocal)
-  const current = rule.before(toNaiveLocal(nowTs - graceMsOf(meta)), true);
+  // windows are calendar days: the current window is the last occurrence on
+  // or before the grace-adjusted day. Querying before() at the exact
+  // grace-adjusted instant would let a time-of-day in the rule (e.g.
+  // BYHOUR=4) delay today's window until hour+grace (08:00 for 4am + 4h
+  // grace) — instead the bound is the next midnight, so only the day matters.
+  const effDay = dayIndexLocal(nowTs - graceMsOf(meta));
+  const current = rule.before(naiveStartOfNextDay(effDay), false);
   const next = rule.after(toNaiveLocal(Math.max(nowTs, anchorTs)), false);
   let windowDay: number;
   if (current) {
     windowDay = naiveDayIndex(current);
   } else {
-    // before(eff) is null when eff predates dtstart — e.g. the rule's first
+    // before() is null when the effective day predates dtstart — e.g. the rule's first
     // occurrence is today and now is still inside the grace window after
-    // midnight. Retry without the grace subtraction so today's window stays
+    // midnight. Retry against today (no grace subtraction) so today's window stays
     // reachable before deferring to the upcoming one.
-    const plain = rule.before(toNaiveLocal(nowTs), true);
+    const plain = rule.before(naiveStartOfNextDay(dayIndexLocal(nowTs)), false);
     if (plain) {
       windowDay = naiveDayIndex(plain);
     } else if (next) {

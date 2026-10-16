@@ -201,6 +201,22 @@ test("recurState — daily window rolls with grace across midnight", async () =>
   expect(rs4.windowDay).toBe(dayIndexLocal(new Date(2026, 0, 6, 12).getTime()));
 }, 20000);
 
+test("recurState — BYHOUR must not delay today's window past grace (weekday 4am rule)", async () => {
+  // FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR;BYHOUR=4 with default 4h grace:
+  // at Fri 07:55 the effective instant (03:55) predates today's 04:00
+  // occurrence, but windows are calendar days — the window must already be Fri
+  // (old code returned Thu until 08:00, showing "still open since Thu").
+  const anchor = dayIndexToStart(dayIndexLocal(new Date(2026, 9, 12, 12).getTime())); // Mon Oct 12
+  const rule = "FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,TU,WE,TH,FR;BYHOUR=4;BYMINUTE=0;BYSECOND=0";
+  const fri = (h: number, m: number) => new Date(2026, 9, 16, h, m).getTime();
+  const friIdx = dayIndexLocal(fri(12, 0));
+  const thuIdx = dayIndexLocal(new Date(2026, 9, 15, 12).getTime());
+  expect((await recurState({ recur: rule }, anchor, fri(7, 55))).windowDay).toBe(friIdx);
+  expect((await recurState({ recur: rule }, anchor, fri(8, 5))).windowDay).toBe(friIdx);
+  // inside the post-midnight grace the previous day's window still holds
+  expect((await recurState({ recur: rule }, anchor, fri(0, 30))).windowDay).toBe(thuIdx);
+}, 20000);
+
 test("recurState — future rule tallies into upcoming window", async () => {
   const anchor = dayIndexToStart(dayIndexLocal(new Date(2026, 5, 1, 12).getTime())); // Jun 1
   const may1 = new Date(2026, 4, 1, 12).getTime();
