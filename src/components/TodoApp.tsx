@@ -3059,6 +3059,7 @@ function TodoTask() {
           onConfirmHold={(node, windowDay) => void handleConfirmHold(node, windowDay)}
           onConfirmHabit={(node, windowDay) => void handleConfirmHabit(node, windowDay)}
           onHabitFixConfirm={(node, windowDay, nextCount) => void handleHabitFixConfirm(node, windowDay, nextCount)}
+          isTouch={isTouch}
         />
       ) : (
       <>

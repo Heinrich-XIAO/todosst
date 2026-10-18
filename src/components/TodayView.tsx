@@ -386,20 +386,24 @@ function HoldRow({
 
 // One habit check-in row — the positive-task mirror of HoldRow's ended
 // windows. Only missed windows prompt (done ones stay silent history): the
-// row carries a freeze button plus a "But I did" button that opens a dialog
-// to correct the past window's number and confirm in one step. Confirming at
-// goal flips the row to a "did it?" confirm on its own; either button
-// freezes the window for good.
+// row carries a freeze button plus a "But I did" button. On touch devices it
+// opens a dialog to correct the past window's number and confirm in one
+// step; on desktop the dialog is skipped and the goal is applied directly.
+// Confirming at goal flips the row to a "did it?" confirm on its own; either
+// button freezes the window for good.
 function HabitConfirmRow({
   item,
   onConfirm,
   onFixConfirm,
   onSelect,
+  isTouch,
 }: {
   item: HabitConfirmItem;
   onConfirm: (node: TreeNode, windowDay: number) => void;
   onFixConfirm: (node: TreeNode, windowDay: number, nextCount: number) => void;
   onSelect: (node: TreeNode) => void;
+  /** touch device: "But I did" opens the fix dialog; desktop applies the goal */
+  isTouch?: boolean;
 }) {
   const { node, windowDay, count, threshold } = item;
   const meta = node.metadata as PlainNode["metadata"];
@@ -461,7 +465,7 @@ function HabitConfirmRow({
           {node.title}
         </button>
         <button
-          onClick={() => setFixOpen(true)}
+          onClick={() => (isTouch ? setFixOpen(true) : onFixConfirm(node, windowDay, Number.isFinite(threshold) ? threshold : 1))}
           className="shrink-0 text-[10px] underline underline-offset-4 opacity-60 hover:opacity-100"
           aria-label={`correct ${node.title} for ${day}`}
         >
@@ -679,6 +683,7 @@ export function TodayView({
   onConfirmHold,
   onConfirmHabit,
   onHabitFixConfirm,
+  isTouch = false,
 }: {
   items: TodayItem[] | null;
   /** negative-task rows (see buildHoldItems) — never count toward "N left" */
@@ -709,6 +714,9 @@ export function TodayView({
   onConfirmHold: (node: TreeNode, windowDay: number) => void;
   onConfirmHabit: (node: TreeNode, windowDay: number) => void;
   onHabitFixConfirm: (node: TreeNode, windowDay: number, nextCount: number) => void;
+  /** touch-first device — the "But I did" correction opens a dialog here;
+   * desktop skips it and applies the goal directly */
+  isTouch?: boolean;
 }) {
   const open = openCountOf(items ?? []);
   // The top-edge fade grays scrolled content under the region's top edge — it
@@ -777,6 +785,7 @@ export function TodayView({
                 onConfirm={onConfirmHabit}
                 onFixConfirm={onHabitFixConfirm}
                 onSelect={onSelect}
+                isTouch={isTouch}
               />
             ))}
           </ul>
