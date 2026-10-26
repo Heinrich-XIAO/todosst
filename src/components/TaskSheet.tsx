@@ -82,6 +82,7 @@ export function TaskSheet({
       : {}
   );
   const [metadata, setMetadata] = useState<PlainNode["metadata"]>(initialMetadata);
+  const dueDateEditedRef = useRef(false);
   const [busy, setBusy] = useState(false);
   // mirror of metadata for submit-time reads — blur commits can land in the
   // same event tick as the submit tap, before the state update re-renders
@@ -90,7 +91,18 @@ export function TaskSheet({
   const dirLabelRef = useRef<HTMLButtonElement>(null);
 
   const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
-    metaRef.current = withReminderDefault({ ...metaRef.current, ...patch });
+    if (Object.prototype.hasOwnProperty.call(patch, "dueAt")) dueDateEditedRef.current = true;
+    const merged = { ...metaRef.current, ...patch };
+    if (mode.kind === "create" && mode.initialDueAt && !dueDateEditedRef.current && Object.prototype.hasOwnProperty.call(patch, "recur")) {
+      if (merged.recur) {
+        delete merged.dueAt;
+        delete merged.dueTimeMin;
+      } else {
+        merged.dueAt = mode.initialDueAt;
+        merged.dueTimeMin = defaultDueTimeMin(nowTs);
+      }
+    }
+    metaRef.current = withReminderDefault(merged);
     setMetadata(metaRef.current);
   };
 

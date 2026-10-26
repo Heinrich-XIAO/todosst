@@ -41,7 +41,7 @@ import {
 import type { RecurState } from "@/lib/recur";
 import { parseNegInput, buildHoldItems, holdOf, isNegative, toleranceOf, windowOutcome, withHold, type HoldItem } from "@/lib/negative";
 import { buildHabitConfirmItems, habitWindowMissed, type HabitConfirmItem } from "@/lib/habit";
-import { dueInstant, normalizeDueAt } from "@/lib/due";
+import { defaultDueTimeMin, dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
 import { ReminderToast } from "./ReminderToast";
@@ -74,6 +74,7 @@ import {
 } from "@/lib/reminders";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
 import { parseNlpDate } from "@/lib/nlpDate";
+import { encodeTodayCaptureInput, isDirectoryOnlyInput, parseTodayCaptureInput, withTodayDueDate } from "@/lib/todayCapture";
 import { registerServiceWorker } from "@/lib/push";
 import { useOnline } from "@/lib/useOnline";
 import {
@@ -93,7 +94,6 @@ import { NoticeDialog } from "./NoticeDialog";
 type Filter = "all" | "active" | "completed";
 
 const DUPLICATE_MSG = "a task with that path already exists";
-
 // the auto-habit meta-task, offered on the first today visit; created via
 // parseRecurInput(`${HABIT_TITLE} ~daily`) so the offered string is the truth
 const HABIT_TITLE = "open todosst";
@@ -1799,7 +1799,7 @@ function TodoTask() {
   // Park a raw capture in the local outbox (vault-encrypted) and confirm via
   // toast; undo drops the entry before it ever syncs. parts = the
   // working-directory titles the capture was made under.
-  async function parkCapture(raw: string, parts: string[]) {
+  async function parkCapture(raw: string, parts: string[], displayRaw = raw) {
     let savedId: string | null = null;
     try {
       savedId = await outboxAddCapture({ input: raw, parts });
@@ -1807,7 +1807,7 @@ function TodoTask() {
     if (savedId !== null) {
       setRemindToast({
         title: "captured offline",
-        lines: [captureToastLine(raw)],
+        lines: [captureToastLine(displayRaw)],
         onUndo: () => {
           outboxDelete(savedId as string).catch(() => {});
           refreshPendingCaptures();
@@ -1825,7 +1825,7 @@ function TodoTask() {
   // Offline path for the main input: validate against the same limits the
   // online create path enforces (an unsyncable capture would just burn its
   // retry attempts), then park.
-  async function captureOffline(raw: string, outcome: InputOutcome) {
+  async function captureOffline(raw: string, outcome: InputOutcome, todayDefault?: { dayStart: number; dueTimeMin: number }) {
     const tooLong =
       (outcome.type === "create-task" && outcome.title.length > 200) ||
       (outcome.type === "create-slash" && outcome.parts.some((p) => p.length > 200));
@@ -1833,7 +1833,10 @@ function TodoTask() {
       setNotice("task titles are limited to 200 characters");
       return;
     }
-    await parkCapture(raw, pwdParts);
+    const captureInput = todayDefault
+      ? encodeTodayCaptureInput(raw, todayDefault.dayStart, todayDefault.dueTimeMin)
+      : raw;
+    await parkCapture(captureInput, pwdParts, raw);
   }
 
   // Replay one outbox entry through the grammar. Returns the decrypted input
@@ -1847,10 +1850,12 @@ function TodoTask() {
   ): Promise<{ text: string; createdIds: string[] } | null> {
     if (!nodes) throw new Error("not ready");
     const cap = await openCapture(entry.payload);
+    const todayCapture = parseTodayCaptureInput(cap.input);
+    const captureInput = todayCapture?.raw ?? cap.input;
     // same NL-date strip as the live submit so offline captures keep due dates
-    const capNlp = cap.input.trim().startsWith("!") ? null : parseNlpDate(cap.input.trim());
+    const capNlp = captureInput.trim().startsWith("!") ? null : parseNlpDate(captureInput.trim());
     const capHeard = capNlp && capNlp.spans.length > 0 ? capNlp : null;
-    const outcome = runInput(capHeard?.cleanTitle || cap.input, {
+    const outcome = runInput(capHeard?.cleanTitle || captureInput, {
       currentPath: "/",
       pushPath: () => {},
       showHelp: () => {},
@@ -1868,8 +1873,13 @@ function TodoTask() {
       if (capHeard.recur && !outcome.recur) outcome.recur = capHeard.recur;
       if (capHeard.recur && !outcome.metadata.recur) outcome.metadata.recur = capHeard.recur;
     }
+    const directoryOnly = isDirectoryOnlyInput(captureInput);
+    const datedOutcome = todayCapture && !directoryOnly
+      ? withTodayDueDate(outcome, todayCapture.dueAt, todayCapture.dueTimeMin)
+      : outcome;
     const createdIds: string[] = [];
-    if (outcome.type === "create-task") {
+    if (datedOutcome.type === "create-task") {
+      const taskOutcome = datedOutcome;
       // re-resolve the capture-time working directory against the current tree
       let parentId: string | null = null;
       let resolved = true;
@@ -1882,25 +1892,25 @@ function TodoTask() {
         parentId = found._id as string;
       }
       if (resolved) {
-        await createForOutcome(outcome, { parentId: parentId as Id<"todos"> | null, recentTitles, createdIds });
+        await createForOutcome(datedOutcome, { parentId: parentId as Id<"todos"> | null, recentTitles, createdIds });
       } else {
         // the directory vanished since capture — recreate the chain, task last
         await createForOutcome(
           {
             type: "create-slash",
-            parts: [...cap.parts, outcome.title],
-            recur: outcome.recur,
-            neg: outcome.neg,
-            metadata: outcome.metadata,
+            parts: [...cap.parts, taskOutcome.title],
+            recur: taskOutcome.recur,
+            neg: taskOutcome.neg,
+            metadata: taskOutcome.metadata,
           },
           { createdIds }
         );
       }
-      return createdIds.length > 0 ? { text: cap.input, createdIds } : null;
+      return createdIds.length > 0 ? { text: todayCapture?.raw ?? captureInput, createdIds } : null;
     }
-    if (outcome.type === "create-slash") {
-      await createForOutcome(outcome, { createdIds });
-      return createdIds.length > 0 ? { text: cap.input, createdIds } : null;
+    if (datedOutcome.type === "create-slash") {
+      await createForOutcome(datedOutcome, { createdIds });
+      return createdIds.length > 0 ? { text: todayCapture?.raw ?? captureInput, createdIds } : null;
     }
     // commands/unknown/ignored were never enqueued; drop defensively
     return null;
@@ -1912,6 +1922,9 @@ function TodoTask() {
   const submitRootInput = async (rawInput: string): Promise<boolean> => {
       const raw = rawInput.trim();
       if (!raw) return false;
+    const todayDefault = view === "today"
+      ? { dayStart: dayIndexToStart(dayIndexLocal(nowTs)), dueTimeMin: defaultDueTimeMin(nowTs) }
+      : undefined;
     // Todoist-style NL dates: strip heard spans ("tmrw") before the grammar
     // sees the text, then reattach the resolution as metadata. Bang commands
     // bypass NLP entirely (a directory can be named "tomorrow").
@@ -1927,7 +1940,7 @@ function TodoTask() {
           }
         : {};
     // grammar registry decides: !commands run via ctx, creation forms return a plan
-    const rawOutcome = runInput(grammarRaw, commandCtx);
+    let rawOutcome = runInput(grammarRaw, commandCtx);
     // an NL recurrence loses to an explicit ~token, never overrides it
     if (heard?.recur && (rawOutcome.type === "create-task" || rawOutcome.type === "create-slash") && !rawOutcome.recur) {
       rawOutcome.recur = heard.recur;
@@ -1939,6 +1952,8 @@ function TodoTask() {
       rawOutcome.metadata = { ...nlpMeta, ...rawOutcome.metadata };
       if (heard?.recur && !rawOutcome.metadata.recur) rawOutcome.metadata.recur = heard.recur;
     }
+    const directoryOnly = isDirectoryOnlyInput(raw);
+    if (todayDefault && !directoryOnly) rawOutcome = withTodayDueDate(rawOutcome, todayDefault.dayStart, todayDefault.dueTimeMin);
     if (rawOutcome.type === "unknown-command") {
       setNotice(`unknown command: !${rawOutcome.name} (try !help)`);
       return false;
@@ -1950,7 +1965,7 @@ function TodoTask() {
     // in the outbox and replay on the next unlocked+online open
     if (!online) {
       if (rawOutcome.type === "create-task" || rawOutcome.type === "create-slash") {
-        await captureOffline(raw, rawOutcome);
+        await captureOffline(raw, rawOutcome, directoryOnly ? undefined : todayDefault);
         return true;
       }
       return true;
@@ -1976,7 +1991,7 @@ function TodoTask() {
         // losing the thought; replay reuses existing path nodes so a partial
         // create converges instead of duplicating
         if (isNetworkError(err)) {
-          await captureOffline(raw, rawOutcome);
+          await captureOffline(raw, rawOutcome, directoryOnly ? undefined : todayDefault);
           return true;
         }
         throw err;
@@ -2111,7 +2126,13 @@ function TodoTask() {
     }
     const rawWithPath = [...parts, raw].join("/");
     if (!online) {
-      await parkCapture(rawWithPath, parts);
+      const todayDueAt = composer?.kind === "create" && composer.initialDueAt && !ruleStr && draft.metadata.dueAt != null
+        ? draft.metadata.dueAt
+        : null;
+      const captureInput = todayDueAt !== null
+        ? encodeTodayCaptureInput(rawWithPath, todayDueAt, draft.metadata.dueTimeMin ?? defaultDueTimeMin(nowTs))
+        : rawWithPath;
+      await parkCapture(captureInput, parts, rawWithPath);
       return true;
     }
     const outcome: InputOutcome = parts.length
@@ -2122,7 +2143,13 @@ function TodoTask() {
     const created = await createForOutcome(outcome, parts.length ? undefined : { parentId: null }).catch(
       async (err: unknown) => {
         if (isNetworkError(err)) {
-          await parkCapture(rawWithPath, parts);
+          const todayDueAt = composer?.kind === "create" && composer.initialDueAt && !ruleStr && draft.metadata.dueAt != null
+            ? draft.metadata.dueAt
+            : null;
+          const captureInput = todayDueAt !== null
+            ? encodeTodayCaptureInput(rawWithPath, todayDueAt, draft.metadata.dueTimeMin ?? defaultDueTimeMin(nowTs))
+            : rawWithPath;
+          await parkCapture(captureInput, parts, rawWithPath);
           return null;
         }
         throw err;
@@ -2972,7 +2999,7 @@ function TodoTask() {
       {/* desktop side-dock: on md+ the list and the details panel sit
           side-by-side (main left, details right). Both wrappers are `contents`
           below md so mobile layout and flex order are untouched. */}
-      <div className="contents md:flex md:items-start">
+      <div className="contents md:flex md:items-stretch">
       <div className="contents md:block md:min-w-0 md:flex-1">
 
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
