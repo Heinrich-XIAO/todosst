@@ -34,9 +34,8 @@ import {
   randomDeliveryTime,
   recurKindOf,
 } from "@/lib/autoNudge";
-import { augmentTitle, nearestHour } from "@/lib/vibe";
-import { embed, embedOne, embeddingsReady, warmEmbeddings } from "@/lib/embeddings";
-import { getVector, listLabels, putVector, saveLabel, vectorIds } from "@/lib/vibeStore";
+import { nearestHour } from "@/lib/vibe";
+import { getVector, listLabels, saveLabel } from "@/lib/vibeStore";
 import { TimingDialog } from "./TimingDialog";
 import { childrenOf, type DecryptedNode, type TreeNode } from "@/lib/tree";
 
@@ -52,18 +51,6 @@ const DAY_KEY = "todosst:autoNudgeDay";
 const PENDING_KEY = "todosst:autoNudgePending";
 const LABELED_KEY = "todosst:labeledAuto";
 const CLICK_PARAM = "auto";
-
-// background embed sweep: a few unvectorized tasks per tick so creation-time
-// embedding never blocks anything and covers every create path (input,
-// composer, outbox replay) without touching them
-const EMBED_BATCH = 5;
-
-// how long the app gets to itself before the model download may start — the
-// ~23MB model plus the ONNX WASM runtime saturate the network and the main
-// thread, so it must never overlap startup on a slow device
-const WARM_DELAY_MS = 8_000;
-const WARM_IDLE_TIMEOUT_MS = 5_000;
-type NetInfo = { saveData?: boolean; effectiveType?: string };
 
 function readLabeled(): Set<string> {
   try {
@@ -120,53 +107,6 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Prop
     }
   });
 
-  // background model download: parked until after startup. It waits for the
-  // window `load` event plus a settle delay, then runs only while the tab is
-  // visible and the main thread is idle; a hidden tab starts it as soon as it
-  // is shown again. Data-saver / 2G connections never download it — the bandit
-  // policy is the permanent fallback, so nothing breaks without the model.
-  useEffect(() => {
-    let started = false;
-    let settled = false;
-    let timer = 0;
-    const kick = () => {
-      if (started || document.visibilityState === "hidden") return;
-      started = true;
-      try {
-        const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
-          .requestIdleCallback;
-        if (typeof ric === "function") ric(() => warmEmbeddings(), { timeout: WARM_IDLE_TIMEOUT_MS });
-        else window.setTimeout(() => warmEmbeddings(), WARM_IDLE_TIMEOUT_MS);
-      } catch {
-        warmEmbeddings();
-      }
-    };
-    const onLoad = () => {
-      timer = window.setTimeout(() => {
-        settled = true;
-        kick();
-      }, WARM_DELAY_MS);
-    };
-    const onVisibility = () => {
-      if (settled && document.visibilityState === "visible" && !started) kick();
-    };
-    try {
-      const conn = (navigator as unknown as { connection?: NetInfo }).connection;
-      if (conn?.saveData === true) return;
-      if (/^(slow-)?2g$/.test(conn?.effectiveType ?? "")) return;
-      if (document.readyState === "complete") onLoad();
-      else window.addEventListener("load", onLoad, { once: true });
-      document.addEventListener("visibilitychange", onVisibility);
-    } catch {
-      return;
-    }
-    return () => {
-      window.clearTimeout(timer);
-      window.removeEventListener("load", onLoad);
-      document.removeEventListener("visibilitychange", onVisibility);
-    };
-  }, []);
-
   // click attribution: ?auto=<eventId> from the push → half reward
   useEffect(() => {
     try {
@@ -179,29 +119,6 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Prop
       }
     } catch {}
   }, [reportOutcome]);
-
-  // embed sweep: vectorize tasks created while the model was still
-  // downloading (or on this device for the first time), a few per tick
-  useEffect(() => {
-    if (!nodes || !embeddingsReady()) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const known = await vectorIds();
-        const missing = nodes.filter((n) => !known.has(n._id as string) && n.title.trim().length > 0).slice(0, EMBED_BATCH);
-        for (const n of missing) {
-          if (cancelled) return;
-          const hit = await getVector(n._id as string, n.title);
-          if (hit || cancelled) continue;
-          const vec = await embedOne(n.title);
-          if (vec && !cancelled) await putVector(n._id as string, n.title, vec);
-        }
-      } catch {}
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [nodes, nowTs]);
 
   // completion attribution: pending nudged task finished → full reward.
   // The server only honors completions inside the post-dispatch window.
@@ -265,14 +182,14 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Prop
     void (async () => {
       try {
         // vibe override: an explicit "best time" label on a similar-vibe task
-        // beats the bandit's inferred hour — a single label is ground truth
+        // beats the bandit's inferred hour — a single label is ground truth.
+        // Only tasks this device vectorized before the model was dropped can
+        // match; everything else takes the bandit's hour.
         let vibeSim: number | undefined;
         let hour = chooseHour(ctxKey, myStats, globalStats, nowTs);
         try {
-          const vec =
-            (await getVector(picked._id as string, picked.title)) ?? (await embedOne(picked.title));
+          const vec = await getVector(picked._id as string, picked.title);
           if (vec) {
-            await putVector(picked._id as string, picked.title, vec).catch(() => {});
             const hit = nearestHour(vec, await listLabels());
             if (hit) {
               hour = hit.hour;
@@ -342,16 +259,10 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Prop
     setLabelReq(null);
     markLabeled(eventId);
     try {
-      // the label + its augmented neighbors share the hour — the neighborhood
-      // generalizes from day one instead of memorizing one phrasing
-      const vec = (await getVector(todoId, labelTitle)) ?? (await embedOne(labelTitle));
-      if (vec) {
-        const variants = await embed(augmentTitle(labelTitle)).catch(() => null);
-        await saveLabel(
-          { vec, hour, at: Date.now(), todoId },
-          (variants ?? []).filter((v) => Array.isArray(v) && v.length === vec.length)
-        );
-      }
+      // a label sticks to a vector this device already has; without the model
+      // there is nothing new to attach one to, so an unlabeled save just reports
+      const vec = await getVector(todoId, labelTitle);
+      if (vec) await saveLabel({ vec, hour, at: Date.now(), todoId });
       await reportOutcome({ eventId: eventId as Id<"autoNudgeEvents">, labeled: true }).catch(() => {});
     } catch {}
   }

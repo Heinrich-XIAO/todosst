@@ -2,11 +2,12 @@
 
 // Vibe store — device-local IndexedDB for task embeddings + timing labels.
 //
-// Embeddings are never uploaded: sentence vectors are invertible
-// (embedding-inversion recovers source text), so they stay local like the
-// titles they came from. Labels (best-hour per vibe) stay here too — they
-// describe the user's routine. What leaves the device is anonymous numbers
-// (hour, reward, "a label exists"), already covered by the auto-nudge rows.
+// Read-only for vectors: the on-device embedding model was dropped, so nothing
+// writes new vectors — rows cached while it existed still drive the vibe
+// override, and everything else falls back to the bandit. Embeddings are never
+// uploaded (sentence vectors are invertible, so they stay local like the titles
+// they came from) and labels (best-hour per vibe) stay here too. What leaves the
+// device is anonymous numbers (hour, reward, "a label exists").
 
 import type { VibeLabel } from "./vibe";
 import { hashTitle } from "./vibe";
@@ -16,7 +17,6 @@ const DB_VERSION = 1;
 const VECTORS = "vectors";
 const LABELS = "labels";
 
-const MAX_VECTORS = 1000;
 const MAX_LABELS = 500;
 
 export type VectorRow = {
@@ -94,32 +94,6 @@ export async function getVector(todoId: string, title: string): Promise<number[]
     return row.vec;
   } catch {
     return null;
-  }
-}
-
-export async function putVector(todoId: string, title: string, vec: number[]): Promise<void> {
-  try {
-    await tx(VECTORS, "readwrite", (s) =>
-      s.put({ id: todoId, vec: vec.slice(0, 1024), titleHash: hashTitle(title), at: Date.now() })
-    );
-    // opportunistic cap — failures are harmless
-    try {
-      const all = await tx<VectorRow[]>(VECTORS, "readonly", (s) => s.getAll());
-      if (all.length > MAX_VECTORS) {
-        const drop = all.sort((a, b) => a.at - b.at).slice(0, all.length - MAX_VECTORS);
-        for (const d of drop) await tx(VECTORS, "readwrite", (s) => s.delete(d.id)).catch(() => {});
-      }
-    } catch {}
-  } catch {}
-}
-
-/** Todo ids already vectorized (for the embed-sync sweep). */
-export async function vectorIds(): Promise<Set<string>> {
-  try {
-    const keys = await tx<IDBValidKey[]>(VECTORS, "readonly", (s) => s.getAllKeys());
-    return new Set(keys.map(String));
-  } catch {
-    return new Set();
   }
 }
 
