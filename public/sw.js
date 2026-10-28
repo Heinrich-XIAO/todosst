@@ -15,6 +15,11 @@
 const SHELL_CACHE = "todosst-shell-v1";
 const ASSET_CACHE = "todosst-assets-v1";
 const SHELL_URL = "/";
+// how long a navigation waits on the network before painting the cached shell
+// instead. The shell is the same document for every path, so a slow connection
+// must not hold the screen blank — the network response then refreshes the
+// cache for the next visit.
+const NAV_STALL_MS = 1500;
 // navigations cached per-URL (revisit offline = byte-exact shell); trimmed to
 // the newest few so long breadcrumb histories don't grow the cache unbounded
 const MAX_NAV_ENTRIES = 8;
@@ -80,6 +85,16 @@ async function trimNavigations(cache) {
   } catch {}
 }
 
+async function readShell(cache, req) {
+  try {
+    return (
+      (await cache.match(req, { ignoreSearch: true })) || (await cache.match(SHELL_URL))
+    );
+  } catch {
+    return null;
+  }
+}
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
@@ -96,21 +111,48 @@ self.addEventListener("fetch", (event) => {
   if (req.mode === "navigate") {
     event.respondWith(
       (async () => {
+        const cache = await caches.open(SHELL_CACHE);
+        const cached = await readShell(cache, req);
+        const preload = event.preloadResponse
+          ? event.preloadResponse.catch(() => null)
+          : Promise.resolve(null);
+        const net = preload.then((p) => p || fetch(req));
+        net.catch(() => {}); // late rejection must not be unhandled
         try {
-          const preload = event.preloadResponse ? await event.preloadResponse.catch(() => null) : null;
-          const res = preload || (await fetch(req));
+          // first visit has nothing cached to paint instead, so it just waits
+          let stalled = false;
+          let timer = 0;
+          const res = cached
+            ? await Promise.race([
+                net,
+                new Promise((resolve) => {
+                  timer = self.setTimeout(() => {
+                    stalled = true;
+                    resolve(cached);
+                  }, NAV_STALL_MS);
+                }),
+              ])
+            : await net;
+          self.clearTimeout(timer);
+          if (stalled) {
+            // painted from cache — let the slow response warm the cache for next time
+            void net
+              .then((r) => {
+                if (r && r.ok) {
+                  return cache.put(req, r.clone()).then(() => trimNavigations(cache));
+                }
+              })
+              .catch(() => {});
+            return res;
+          }
           if (res && res.ok) {
             try {
-              const cache = await caches.open(SHELL_CACHE);
               await cache.put(req, res.clone());
               await trimNavigations(cache);
             } catch {}
           }
           return res;
         } catch {
-          const cache = await caches.open(SHELL_CACHE);
-          const cached =
-            (await cache.match(req, { ignoreSearch: true })) || (await cache.match(SHELL_URL));
           return cached || Response.error();
         }
       })()

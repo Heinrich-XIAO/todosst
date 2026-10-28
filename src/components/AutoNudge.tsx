@@ -58,6 +58,13 @@ const CLICK_PARAM = "auto";
 // composer, outbox replay) without touching them
 const EMBED_BATCH = 5;
 
+// how long the app gets to itself before the model download may start — the
+// ~23MB model plus the ONNX WASM runtime saturate the network and the main
+// thread, so it must never overlap startup on a slow device
+const WARM_DELAY_MS = 8_000;
+const WARM_IDLE_TIMEOUT_MS = 5_000;
+type NetInfo = { saveData?: boolean; effectiveType?: string };
+
 function readLabeled(): Set<string> {
   try {
     const raw = localStorage.getItem(LABELED_KEY);
@@ -113,14 +120,51 @@ export function AutoNudgeSync({ nodes, tree, recurStates, history, nowTs }: Prop
     }
   });
 
-  // background model download: idle-first so first paint never waits for ~23MB
+  // background model download: parked until after startup. It waits for the
+  // window `load` event plus a settle delay, then runs only while the tab is
+  // visible and the main thread is idle; a hidden tab starts it as soon as it
+  // is shown again. Data-saver / 2G connections never download it — the bandit
+  // policy is the permanent fallback, so nothing breaks without the model.
   useEffect(() => {
+    let started = false;
+    let settled = false;
+    let timer = 0;
+    const kick = () => {
+      if (started || document.visibilityState === "hidden") return;
+      started = true;
+      try {
+        const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => void })
+          .requestIdleCallback;
+        if (typeof ric === "function") ric(() => warmEmbeddings(), { timeout: WARM_IDLE_TIMEOUT_MS });
+        else window.setTimeout(() => warmEmbeddings(), WARM_IDLE_TIMEOUT_MS);
+      } catch {
+        warmEmbeddings();
+      }
+    };
+    const onLoad = () => {
+      timer = window.setTimeout(() => {
+        settled = true;
+        kick();
+      }, WARM_DELAY_MS);
+    };
+    const onVisibility = () => {
+      if (settled && document.visibilityState === "visible" && !started) kick();
+    };
     try {
-      const start = () => window.setTimeout(() => warmEmbeddings(), 1000);
-      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void) => void }).requestIdleCallback;
-      if (typeof ric === "function") ric(() => warmEmbeddings());
-      else start();
-    } catch {}
+      const conn = (navigator as unknown as { connection?: NetInfo }).connection;
+      if (conn?.saveData === true) return;
+      if (/^(slow-)?2g$/.test(conn?.effectiveType ?? "")) return;
+      if (document.readyState === "complete") onLoad();
+      else window.addEventListener("load", onLoad, { once: true });
+      document.addEventListener("visibilitychange", onVisibility);
+    } catch {
+      return;
+    }
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("load", onLoad);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, []);
 
   // click attribution: ?auto=<eventId> from the push → half reward
