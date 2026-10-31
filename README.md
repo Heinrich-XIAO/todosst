@@ -72,6 +72,33 @@ bun run lint
 bunx tsc --noEmit
 ```
 
+### Load benchmark
+
+Measures what a first-time visitor actually waits for — the first frame with
+visible pixels — in a real Chromium against a production build, under network
+emulation and both cold and warm profiles. Frame timestamps come from the
+compositor's screencast and each frame is decoded and compared with its own
+background colour, so the number is "time until something is on screen", not a
+synthetic marker. FCP, LCP and full HTML completion are collected alongside as
+cross-checks.
+
+```bash
+npx playwright install chromium                # once
+bun run build
+bun run start -- -p 3100 &
+bun run bench:load -- --url http://127.0.0.1:3100/ --runs 5
+```
+
+Add `--map todosst.bench=127.0.0.1 --url http://todosst.bench:3100/` to get
+throttling and the production (non-localhost) caching path, `--save-frames
+bench/.out/frames` to keep the first visible frame of every run, and `--json
+bench/.out/results.json` for raw per-run samples.
+
+The run is unauthenticated — the header plus sign-in gate, which is the public
+entry state, so no Convex backend is needed. The target is plain HTTP, so no
+service worker is active (warm means browser cache) and no TLS handshake is
+paid; add roughly one RTT for TLS when comparing to a real deployment.
+
 ## Deploy to Vercel
 
 1. `bunx convex deploy` — creates production Convex deployment.
