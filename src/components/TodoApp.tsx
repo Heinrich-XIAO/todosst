@@ -1570,9 +1570,10 @@ function TodoTask() {
     const key = `${node._id}:${windowDay}`;
     if (pendingConfirmsRef.current.has(key)) return;
     pendingConfirmsRef.current.add(key);
-    // optimistic — without this the row and its toast wait on mutation + query
-    // push + re-parse (a full round trip per tap), which reads as the button
-    // doing nothing at all
+    // optimistic — the row goes and the toast lands on the tap itself; the
+    // write reconciles behind them. Waiting on the write meant the toast (the
+    // only confirmation there is) showed up a full mutation + query push +
+    // re-parse later, which reads as the button being slow.
     const plain = toPlainNode(live, { metadata: withHold(meta, windowDay, Date.now()) });
     const optimistic = {
       ...plain,
@@ -1581,8 +1582,63 @@ function TodoTask() {
       _raw: live._raw,
     } as DecryptedNode;
     setNodes((cur) => (cur ? cur.map((n) => (n._id === live._id ? optimistic : n)) : cur));
+    const count = countOverride ?? (negCounts.get(node._id as string)?.get(windowDay) ?? 0);
+    const threshold = thresholdOf(meta);
+    const day = new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+    const done = !habitWindowMissed(count, threshold);
+    const write = updateTodo({ id: live._id, node: encodeNode(plain) });
+    const toast = {
+      title: done ? "did it" : "missed",
+      lines: [
+        done
+          ? `${node.title} — ${day} done ✓ (${describeHabitCount(meta, count, threshold)})`
+          : `${node.title} — ${day} missed (${describeHabitCount(meta, count, threshold)})`,
+      ],
+      // undo reopens the window: strip the hold from the task's live metadata
+      // (read through the nodes ref — this render's snapshot may predate the
+      // confirm write landing in the subscription). It waits for that write
+      // first, so the undo write can never land ahead of it and get overwritten.
+      onUndo: () => {
+        void (async () => {
+          await write.catch(() => {});
+          const cur = nodesRef.current?.find((n) => n._id === node._id);
+          if (!cur) return;
+          const curMeta = cur.metadata as PlainNode["metadata"];
+          if (holdOf(curMeta, windowDay) === undefined) return;
+          const holds = { ...(curMeta.holds ?? {}) };
+          delete holds[String(windowDay)];
+          // optimistic, same as the confirm itself: the row comes back on tap
+          // instead of after the round trip
+          setNodes((prev) =>
+            prev ? prev.map((n) => (n._id === cur._id ? { ...n, metadata: { ...curMeta, holds } } : n)) : prev
+          );
+          try {
+            await updateTodo({
+              id: node._id,
+              node: encodeNode(toPlainNode(cur, { metadata: { ...curMeta, holds } })),
+            });
+          } catch {
+            setNodes((prev) =>
+              prev
+                ? prev.map((n) =>
+                    n._id === cur._id
+                      ? { ...n, metadata: { ...curMeta, holds: { ...(curMeta.holds ?? {}) } } }
+                      : n
+                  )
+                : prev
+            );
+            setNotice("undo failed — the window record is still saved");
+          }
+        })();
+      },
+    };
+    setRemindToast(toast);
     try {
-      await updateTodo({ id: live._id, node: encodeNode(plain) });
+      await write;
     } catch {
       // drop only this window's hold from whatever the row holds now
       setNodes((cur) =>
@@ -1596,55 +1652,12 @@ function TodoTask() {
             })
           : cur
       );
+      // retract the confirmation, unless another toast has replaced it
+      setRemindToast((cur) => (cur === toast ? null : cur));
       setNotice("couldn't save that check-in — try again");
-      return;
     } finally {
       pendingConfirmsRef.current.delete(key);
     }
-    const count = countOverride ?? (negCounts.get(node._id as string)?.get(windowDay) ?? 0);
-    const threshold = thresholdOf(meta);
-    const day = new Date(dayIndexToStart(windowDay)).toLocaleDateString(undefined, {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-    });
-    const done = !habitWindowMissed(count, threshold);
-    setRemindToast({
-      title: done ? "did it" : "missed",
-      lines: [
-        done
-          ? `${node.title} — ${day} done ✓ (${describeHabitCount(meta, count, threshold)})`
-          : `${node.title} — ${day} missed (${describeHabitCount(meta, count, threshold)})`,
-      ],
-      // undo reopens the window: strip the hold from the task's live metadata
-      // (read through the nodes ref — this render's snapshot may predate the
-      // confirm write landing in the subscription)
-      onUndo: () => {
-        void (async () => {
-          const cur = nodesRef.current?.find((n) => n._id === node._id);
-          if (!cur) return;
-          const meta = cur.metadata as PlainNode["metadata"];
-          if (holdOf(meta, windowDay) === undefined) return;
-          const holds = { ...(meta.holds ?? {}) };
-          delete holds[String(windowDay)];
-          // optimistic, same as the confirm itself: the row comes back on tap
-          // instead of after the round trip
-          setNodes((prev) =>
-            prev ? prev.map((n) => (n._id === cur._id ? { ...n, metadata: { ...meta, holds } } : n)) : prev
-          );
-          try {
-            await updateTodo({ id: node._id, node: encodeNode(toPlainNode(cur, { metadata: { ...meta, holds } })) });
-          } catch {
-            setNodes((prev) =>
-              prev
-                ? prev.map((n) => (n._id === cur._id ? { ...n, metadata: { ...meta, holds: { ...(meta.holds ?? {}) } } } : n))
-                : prev
-            );
-            setNotice("undo failed — the window record is still saved");
-          }
-        })();
-      },
-    });
   }
 
   // past-window correction from the But I did dialog — writes the corrected
