@@ -501,6 +501,9 @@ const AUTO_MS = 6000;
 function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: number }) {
   const trackRef = useRef<HTMLDivElement>(null);
   const [active, setActive] = useState(0);
+  // deleting the task a slide belonged to can leave `active` past the end;
+  // the mount window below must still show the last slide
+  const shown = Math.min(active, Math.max(0, slides.length - 1));
   const hoverRef = useRef(false);
   const interactRef = useRef(0);
   // mouse drag-to-scroll: touch + trackpad already page via native
@@ -639,9 +642,16 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
           endDrag();
         }}
       >
-        {slides.map((s) => (
+        {slides.map((s, i) => (
           <div key={s.id} className="w-full shrink-0 snap-center">
-            <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} negative={s.negative} />
+            {/* only the active slide and its neighbours mount a grid: a grid is
+                371 cells plus a ResizeObserver, and mounting every slide made
+                the first paint and every later render pay for all of them.
+                The wrappers stay mounted so the scroll geometry (and therefore
+                every snap position) is identical. */}
+            {Math.abs(i - shown) <= 1 ? (
+              <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} negative={s.negative} />
+            ) : null}
           </div>
         ))}
       </div>

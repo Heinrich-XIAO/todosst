@@ -125,6 +125,16 @@ function cacheKeyFor(t: { _id: Id<"todos">; node?: string }): string {
   return t.node ?? `row:${t._id}`;
 }
 
+// Shallow identity compare for the derived maps handed to memos and children:
+// rebuilding an identical map on a data change invalidates every consumer
+// (today rows, holds, habit rows, the heatmap carousel) for nothing.
+function sameEntryMap<K, V>(prev: Map<K, V> | null, next: Map<K, V>): boolean {
+  if (prev === next) return true;
+  if (!prev || prev.size !== next.size) return false;
+  for (const [k, v] of next) if (prev.get(k) !== v) return false;
+  return true;
+}
+
 // Everything the recursive row renderer needs from TodoTask. Passed as one
 // bundle so RenderNode can live at module level — a component type defined
 // inside another component changes identity every render, which remounts the
@@ -936,6 +946,11 @@ function TodoTask() {
   // the window that just ended (one level back) per recurring task — drives
   // the battles holds section and the habit check-in rows
   const [priorWindows, setPriorWindows] = useState<Map<string, number | null> | null>(null);
+  // Rule parsing is the expensive half of a data change (an rrule parse plus
+  // two occurrence searches per node, ~0.12ms each), and one write only ever
+  // replaces one node object — the parsed state is cached per node for the
+  // current tick so the other rows cost a map lookup instead of a reparse.
+  const recurCacheRef = useRef(new WeakMap<DecryptedNode, { nowTs: number; rs: RecurState; prev: number | null }>());
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -948,27 +963,29 @@ function TodoTask() {
       }
       // parallel: the sequential await-per-node version blocked todayItems
       // (and therefore checkbox state) on the slowest rule parse.
+      const cache = recurCacheRef.current;
       const states = await Promise.all(
-        nodes.map(async (n) => ({
-          n,
-          rs: await recurState(n.metadata as PlainNode["metadata"], n._creationTime, nowTs),
-        }))
+        nodes.map(async (n) => {
+          const hit = cache.get(n);
+          if (hit && hit.nowTs === nowTs) return { n, rs: hit.rs, prev: hit.prev };
+          const meta = n.metadata as PlainNode["metadata"];
+          const rs = await recurState(meta, n._creationTime, nowTs);
+          const prev = rs.isRecurring
+            ? await prevWindowDay(String(meta.recur), n._creationTime, rs.windowDay)
+            : null;
+          cache.set(n, { nowTs, rs, prev });
+          return { n, rs, prev };
+        })
       );
       const m = new Map<string, RecurState>();
-      for (const { n, rs } of states) m.set(n._id as string, rs);
-      const priorEntries = await Promise.all(
-        states
-          .filter(({ rs }) => rs.isRecurring)
-          .map(async ({ n, rs }) => ({
-            id: n._id as string,
-            prev: await prevWindowDay(String((n.metadata as PlainNode["metadata"]).recur), n._creationTime, rs.windowDay),
-          }))
-      );
       const prior = new Map<string, number | null>();
-      for (const { id, prev } of priorEntries) prior.set(id, prev);
+      for (const { n, rs, prev } of states) {
+        m.set(n._id as string, rs);
+        if (rs.isRecurring) prior.set(n._id as string, prev);
+      }
       if (!cancelled) {
-        setRecurStates(m);
-        setPriorWindows(prior);
+        setRecurStates((cur) => (sameEntryMap(cur, m) ? cur : m));
+        setPriorWindows((cur) => (sameEntryMap(cur, prior) ? cur : prior));
       }
     })();
     return () => {

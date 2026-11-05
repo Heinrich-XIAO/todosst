@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { dayIndexLocal, dayIndexToStart, formatMinutes, type CompletionMode } from "@/lib/recur";
 import { MONTHS } from "@/lib/months";
 
@@ -12,6 +12,23 @@ import { MONTHS } from "@/lib/months";
 
 const LEVELS = ["bg-foreground/5", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
 const CELL_PX = 12; // 10px cell + 2px gap
+
+const DATE_OPTS: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
+// A full grid asks for 371 day labels and the carousel can mount several grids,
+// so the Intl call is by far the most expensive thing in this component's
+// render — one call took ~22µs, i.e. ~8ms per grid per render. The label for a
+// day index never changes, so it is formatted once and kept.
+const dayLabels = new Map<number, string>();
+function dayLabel(idx: number): string {
+  let label = dayLabels.get(idx);
+  if (label === undefined) {
+    label = new Date(dayIndexToStart(idx)).toLocaleDateString(undefined, DATE_OPTS);
+    // a long-lived tab could walk years of cells; keep the map bounded
+    if (dayLabels.size > 2048) dayLabels.clear();
+    dayLabels.set(idx, label);
+  }
+  return label;
+}
 
 function levelFor(count: number): number {
   if (count <= 0) return 0;
@@ -37,11 +54,7 @@ function cellTooltip(
   negative: boolean,
 ): string | null {
   if (cell.future) return null;
-  const date = new Date(dayIndexToStart(cell.idx)).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  const date = dayLabel(cell.idx);
   if (negative) {
     return cell.count > 0
       ? `${cell.count} slip${cell.count === 1 ? "" : "s"} — ${date}`
@@ -53,7 +66,10 @@ function cellTooltip(
   return `${amount} — ${date}`;
 }
 
-export function Heatmap({
+// memoized: every slide in the carousel is a full grid, and the Today view
+// re-renders on any state change — an unchanged grid must not re-render
+// 371 cells for a keystroke elsewhere on the page
+export const Heatmap = memo(function Heatmap({
   counts,
   nowTs,
   weeks = 53,
@@ -225,4 +241,4 @@ export function Heatmap({
       </div>
     </div>
   );
-}
+});
