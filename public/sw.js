@@ -18,8 +18,10 @@ const SHELL_URL = "/";
 // how long a navigation waits on the network before painting the cached shell
 // instead. The shell is the same document for every path, so a slow connection
 // must not hold the screen blank — the network response then refreshes the
-// cache for the next visit.
-const NAV_STALL_MS = 1500;
+// cache for the next visit. Kept short: a cold serverless render routinely
+// takes seconds, and every millisecond here is dead time before the cached
+// shell (and therefore the app's JS) can start loading.
+const NAV_STALL_MS = 300;
 // navigations cached per-URL (revisit offline = byte-exact shell); trimmed to
 // the newest few so long breadcrumb histories don't grow the cache unbounded
 const MAX_NAV_ENTRIES = 8;

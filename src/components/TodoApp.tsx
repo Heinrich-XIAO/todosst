@@ -10,7 +10,7 @@ const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayout
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
-import { AuthLoading, Unauthenticated, Authenticated } from "convex/react";
+import { AuthLoading, Unauthenticated, Authenticated, useConvexAuth } from "convex/react";
 import { PushAutoEnable } from "./PushAutoEnable";
 import { DailyNudgeSync } from "./DailyNudge";
 import { AutoNudgeSync } from "./AutoNudge";
@@ -3349,7 +3349,13 @@ function BottomNav({
 export function TodoApp() {
   const online = useOnline();
   const [offlineBootstrapped, setOfflineBootstrapped] = useState(false);
-  const isAuthed = useQuery(api.auth.isAuthenticated);
+  // The session token ships with the server-rendered payload (the root layout
+  // wraps this in ConvexAuthNextjsServerProvider), so the client already knows
+  // at hydration whether it is signed in. Gating on an `auth.isAuthenticated`
+  // query spent a whole websocket round trip — connect, then query — before any
+  // view could mount, which delayed the first todos query by that same trip.
+  const { isLoading: authLoading, isAuthenticated } = useConvexAuth();
+  const isAuthed = authLoading ? undefined : isAuthenticated;
   // register the service worker on every visit — it backs both the push
   // subscription (PushAutoEnable) and the offline shell cache
   useEffect(() => {
