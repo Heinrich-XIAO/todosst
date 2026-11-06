@@ -240,7 +240,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {ioErr && <p className="mt-2 border border-foreground bg-background px-3 py-2 text-xs">{ioErr}</p>}
 
           <div className="mt-4">
-            <p className="text-[11px] opacity-60">export (choose a passphrase for the file)</p>
+            <p className="font-mono text-[11px] opacity-60">export (choose a passphrase for the file)</p>
             <label className="mt-1 block">
               <span className="text-xs opacity-60">passphrase</span>
               <input
@@ -277,7 +277,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="mt-4">
-            <p className="text-[11px] opacity-60">import (restore or merge into this account)</p>
+            <p className="font-mono text-[11px] opacity-60">import (restore or merge into this account)</p>
             {/* the native file input speaks Title Case in its own font; hide it
                 behind a label styled like every other button here */}
             <label className="mt-1 flex cursor-pointer items-center gap-2 text-[11px]">
