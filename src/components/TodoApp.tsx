@@ -393,7 +393,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     >
       <div
         data-drop-row
-        style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
+        style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 28 + 12}px` }}
         className={`group flex items-center gap-2 border-b border-foreground/10 py-2 pr-3 text-sm ${
           dropHint?.id === node._id
             ? dropHint.pos === "child"
@@ -410,7 +410,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       >
         <button
           onClick={() => hasChildren && toggleExpanded(node._id)}
-          className={`-ml-1 h-6 w-6 shrink-0 flex items-center justify-center text-xs ${hasChildren ? "opacity-60 hover:opacity-100" : "pointer-events-none opacity-0"}`}
+          className={`-my-1 -ml-1 h-6 w-6 shrink-0 flex items-center justify-center text-xs ${hasChildren ? "opacity-60 hover:opacity-100" : "pointer-events-none opacity-0"}`}
           aria-label={isExpanded ? "collapse" : "expand"}
           aria-expanded={hasChildren ? isExpanded : undefined}
           tabIndex={hasChildren ? 0 : -1}
@@ -479,7 +479,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             {node.title}
             {node.metadata.priority ? <span className="ml-2 border border-foreground/40 px-1 text-[11px]">{node.metadata.priority}</span> : null}
             {node.metadata.dueAt ? (
-              <span className="ml-2 font-mono text-[11px] opacity-60">{shortDue(normalizeDueAt(node.metadata.dueAt))}</span>
+              <span className="ml-2 inline-block font-mono text-[11px] opacity-60">{shortDue(normalizeDueAt(node.metadata.dueAt))}</span>
             ) : null}
           </button>
         )}
@@ -499,7 +499,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
                 ? openChildComposer(node._id, node.title)
                 : setAddChildParent(node._id)
             }
-            className="flex h-8 w-8 items-center justify-center opacity-40 hover:opacity-100 md:h-auto md:w-auto md:opacity-60"
+            className="-my-2 flex h-8 w-8 items-center justify-center opacity-60 hover:opacity-100 md:my-0 md:h-auto md:w-auto"
             aria-label={`add a sub-task to ${node.title}`}
           >
             <Plus className="h-4 w-4 md:hidden" aria-hidden />
@@ -513,7 +513,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           ) : (
             <button
               onClick={() => setConfirmDeleteId(node._id)}
-              className="flex h-8 w-8 items-center justify-center opacity-40 hover:opacity-100 md:h-auto md:w-auto md:opacity-60"
+              className="-my-2 flex h-8 w-8 items-center justify-center opacity-60 hover:opacity-100 md:my-0 md:h-auto md:w-auto"
               aria-label={`delete ${node.title}`}
             >
               <X className="h-4 w-4 md:hidden" aria-hidden />
@@ -524,7 +524,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       </div>
 
       {addChildParent === node._id && (
-        <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 16 + 36}px` }}>
+        <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 28 + 36}px` }}>
           <input
             autoFocus
             value={addChildTitle}
@@ -3190,6 +3190,7 @@ function TodoTask() {
           <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
             /
           </button>
+          {pwdParts.length === 0 && <span className="opacity-60">root</span>}
           {pwdParts.map((part, idx) => (
             <span key={`${part}-${idx}`} className="flex items-center gap-1">
               {idx > 0 && <span className="opacity-20">/</span>}

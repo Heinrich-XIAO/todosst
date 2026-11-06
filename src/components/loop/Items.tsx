@@ -472,7 +472,7 @@ function FieldInput({
   if (field.kind === "bool") {
     return (
       <label className="flex items-center gap-2 font-mono text-xs">
-        <input type="checkbox" checked={value === true} onChange={(e) => onSave(e.target.checked)} className="h-4 w-4 accent-foreground" />
+        <input type="checkbox" checked={value === true} onChange={(e) => onSave(e.target.checked)} className="check" />
         {field.label}
       </label>
     );

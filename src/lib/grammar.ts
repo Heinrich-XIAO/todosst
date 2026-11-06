@@ -124,7 +124,7 @@ export const GRAMMAR: GrammarEntry[] = [
     kind: "syntax",
     id: "slash-path",
     docs: [
-      { example: "/host hackathon/write emails", note: "directories first — the LAST segment is the task" },
+      { example: "/host hackathon/write emails", note: "directories first — the last segment is the task" },
       { example: "/grocery/", note: "trailing / = create just an empty directory" },
     ],
     parse: (input) => {

@@ -40,8 +40,9 @@ export function Chip({ children, on, onClick }: { children: ReactNode; on?: bool
     <button
       type="button"
       onClick={onClick}
-      className={`whitespace-nowrap px-2 py-0.5 font-mono text-[11px] ${
-        on ? "border border-foreground bg-foreground text-background" : "border border-foreground/30 opacity-70 hover:opacity-100"
+      aria-pressed={on}
+      className={`whitespace-nowrap px-1.5 py-0.5 font-mono text-xs ${
+        on ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"
       }`}
     >
       {children}
@@ -50,7 +51,7 @@ export function Chip({ children, on, onClick }: { children: ReactNode; on?: bool
 }
 
 export function Tag({ children }: { children: ReactNode }) {
-  return <span className="border border-foreground/40 px-1.5 py-px font-mono text-[10px]">{children}</span>;
+  return <span className="border border-foreground/40 px-1.5 py-px font-mono text-[11px]">{children}</span>;
 }
 
 export function Label({ children }: { children: ReactNode }) {

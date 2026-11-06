@@ -122,7 +122,7 @@ function RunCard({ run, ctx }: { run: Doc<"runs">; ctx: LoopCtx }) {
                   type="checkbox"
                   checked={s.done}
                   onChange={(e) => void ctx.act(ctx.m.toggleStep({ runId: run._id, stepId: s.id, done: e.target.checked }))}
-                  className="mt-0.5 h-4 w-4 shrink-0 accent-foreground"
+                  className="check mt-0.5"
                 />
                 <span className={s.done ? "line-through opacity-50" : ""}>{s.title}</span>
               </label>

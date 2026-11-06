@@ -82,11 +82,15 @@ export function CountControl({
     <>
       <button
         {...(holdNeeded ? toggleHold.holdProps : { onClick: onToggle })}
-        className={`h-4 w-4 shrink-0 border flex items-center justify-center ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"} ${holdNeeded ? "touch-none select-none" : ""}`}
+        className={`relative h-4 w-4 shrink-0 border flex items-center justify-center after:absolute after:-inset-3 after:content-[''] ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"} ${holdNeeded ? "touch-none select-none" : ""}`}
         aria-label={holdNeeded ? (checked ? "hold to un-check" : "hold to check") : "toggle"}
         title={holdNeeded ? `press and hold (or click) to ${checked ? "un-check" : "check"}` : undefined}
       >
-        {checked && <span className="text-[10px] leading-none">✓</span>}
+        {checked && (
+          <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden>
+            <path d="M1.5 5.2 4 7.5 8.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          </svg>
+        )}
       </button>
       {holdNeeded && toggleHold.pill}
     </>

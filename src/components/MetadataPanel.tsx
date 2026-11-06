@@ -116,7 +116,7 @@ export function MetadataPanel({
   };
   return (
     <div
-      className={`flex max-h-[70dvh] shrink-0 flex-col border-t border-foreground bg-background p-3 text-xs ${
+      className={`flex max-h-[70dvh] shrink-0 md:max-h-none flex-col border-t border-foreground bg-background p-3 text-xs ${
         overlay
           ? // mobile today view: pin to the container's bottom padding (above
             // the fixed nav) with its own stacking context so it always paints
@@ -183,7 +183,7 @@ export function MetadataPanel({
             pendingRef.current.tags = undefined;
           }}
         />
-        <PayloadField payloadLen={payloadLen} />
+        {payloadLen > 0 && <PayloadField payloadLen={payloadLen} />}
       </div>
     </div>
   );

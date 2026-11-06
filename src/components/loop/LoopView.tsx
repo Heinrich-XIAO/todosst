@@ -186,7 +186,7 @@ export function LoopView({
     <div className="flex min-h-0 flex-1 flex-col">
       <CaptureBar sigils={sigils} onCapture={capture} autoVoice={launch.voice} onProblem={setNotice} />
 
-      <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-foreground/10 px-3 py-2">
+      <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-foreground/10 px-1.5 py-2">
         <Chip on={tab === "inbox"} onClick={() => setTab("inbox")}>
           inbox{inboxCount > 0 ? ` ${inboxCount}` : ""}
         </Chip>

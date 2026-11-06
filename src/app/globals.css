@@ -3,12 +3,15 @@
 :root {
   --background: #ffffff;
   --foreground: #000000;
+  /* the ✓ inside a checked box is drawn in the background color */
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23fff' stroke-width='1.6'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 
 .dark {
   --background: #000000;
   --foreground: #ffffff;
+  --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -17,6 +20,7 @@
   :root:not(.light) {
     --background: #000000;
     --foreground: #ffffff;
+    --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -39,20 +43,19 @@
   }
 }
 
-/* native checkboxes in the house style — the same hairline square as the
-   task checkbox, filled with an inset gap when on (no browser accent blue) */
+/* native checkboxes in the house style — the same 16px hairline square
+   and filled ✓ as the task checkbox (no browser accent blue) */
 .check {
   appearance: none;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
   border: 1px solid var(--foreground);
   background: transparent;
   cursor: pointer;
 }
 .check:checked {
-  background: var(--foreground);
-  box-shadow: inset 0 0 0 2px var(--background);
+  background: var(--foreground) var(--check-mark) center / 10px no-repeat;
 }
 
 * {
