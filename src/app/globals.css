@@ -81,6 +81,27 @@
   }
 }
 
+/* a fresh capture lands in the inbox with the same short beat as the ✓ */
+@keyframes capture-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.capture-in {
+  animation: capture-in 140ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .capture-in {
+    animation: none;
+  }
+}
+
+/* lucide draws at 2px; the app's lines are hairlines — meet in between */
+.lucide {
+  stroke-width: 1.5;
+}
+
 /* OS-drawn control chrome in the house style: selects get a hairline
    chevron in the foreground color, date/time pickers a muted glyph */
 /* unlayered on purpose: it must beat a select's own padding utility so the

@@ -800,7 +800,7 @@ export const CreateRootForm = memo(function CreateRootForm({
           {nlpLabel}
         </span>
       )}
-      <button type="submit" disabled={!value.trim()} className="shrink-0 font-mono text-xs underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-30">
+      <button type="submit" disabled={!value.trim()} className="shrink-0 font-mono text-xs underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-40">
         add task
       </button>
     </form>
@@ -3152,7 +3152,7 @@ function TodoTask() {
             </span>
           )}
         </span>
-        <span className="hidden items-center gap-3 md:flex">
+        <span className="hidden items-center gap-4 text-sm md:flex">
           <button
             onClick={() => goToView("today")}
             className={view === "today" ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}
@@ -3185,7 +3185,7 @@ function TodoTask() {
 
       {/* breadcrumb path — clickable: each segment -> that dir (tree view only) */}
       {view === "tree" && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-xs overflow-x-auto">
+        <div className="flex shrink-0 items-center gap-2 border-b border-foreground/10 bg-foreground/[0.06] px-3 py-1.5 text-xs overflow-x-auto">
         <span className="font-mono flex items-center gap-1 truncate">
           <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
             /

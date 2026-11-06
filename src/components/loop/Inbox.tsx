@@ -126,8 +126,8 @@ function SignalCard({
   };
 
   return (
-    <li className="group border-b border-foreground/10 px-3 py-3 last:border-b-0">
-      <div className="flex items-start gap-3">
+    <li className={`border-b border-foreground/10 px-3 py-3 last:border-b-0 ${now - signal.at < 5000 ? "capture-in" : ""}`}>
+      <div className="flex items-start gap-2">
         <input
           type="checkbox"
           checked={picked}
@@ -150,8 +150,13 @@ function SignalCard({
               </p>
             </div>
             {!editing && (
-              <div className="flex shrink-0 flex-wrap items-center gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
-                <Btn onClick={() => setEditing(true)}>new {type}</Btn>
+              <div className="flex shrink-0 flex-wrap items-center gap-3">
+                <button
+                  onClick={() => setEditing(true)}
+                  className="font-mono text-[11px] underline underline-offset-4 opacity-80 hover:opacity-100"
+                >
+                  new {type}
+                </button>
                 <AttachPicker ctx={ctx} onPick={(itemId) => void ctx.act(ctx.m.attach({ signalId: signal._id, itemId }))} />
                 <button
                   onClick={() => void ctx.act(ctx.m.dismissSignal({ signalId: signal._id }))}

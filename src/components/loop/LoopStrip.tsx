@@ -20,7 +20,7 @@ export function LoopStrip({ nowTs, onOpen }: { nowTs: number; onOpen: () => void
   return (
     <button
       onClick={onOpen}
-      className="w-full shrink-0 border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1.5 text-left font-mono text-[11px] hover:bg-foreground/[0.06]"
+      className="w-full shrink-0 border-b border-foreground/10 bg-foreground/[0.06] px-3 py-1.5 text-left font-mono text-[11px] hover:bg-foreground/10"
     >
       loop · {bits.join(" · ")} →
     </button>

@@ -117,13 +117,12 @@ export function NudgeSettings() {
   }
 
   return (
-    <div className="mt-3 border border-foreground/20 p-3">
+    <div className="pt-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium">daily nudge</p>
       </div>
       <p className="mt-1 text-[11px] leading-snug opacity-60">
-        a fixed-time push each day — skipped automatically on all-clear days, and worded to
-        keep your streak alive. delivered to every signed-in browser.
+        one push a day at this time — skipped on all-clear days. goes to every signed-in browser.
       </p>
       <div className="mt-2 flex items-center gap-2">
         <input
