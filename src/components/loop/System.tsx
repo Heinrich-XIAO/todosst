@@ -114,7 +114,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
 
       {sysProblems.length > 0 && (
         <>
-          <Label>app problems not being worked on</Label>
+          <Label strong>app problems not being worked on</Label>
           <ul>
             {sysProblems.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 border-b border-foreground/10 px-3 py-2 last:border-b-0">
@@ -130,7 +130,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
 
       {sysRuns.length > 0 && (
         <>
-          <Label>changes in progress</Label>
+          <Label strong>changes in progress</Label>
           {sysRuns.map((run) => (
             <div key={run._id} className="border-b border-foreground/10 px-3 py-3">
               <p className="text-sm">{run.title}</p>
