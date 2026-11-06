@@ -32,44 +32,44 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/80 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-background/95 p-4" onClick={onClose}>
       <div
         className="mt-16 w-full max-w-lg border border-foreground bg-background shadow-sm"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-foreground px-3 py-2">
-          <span className="text-[10px] uppercase opacity-40">input grammar</span>
+          <span className="font-mono text-xs">input grammar</span>
           <button onClick={onClose} className="text-xs underline underline-offset-4 hover:opacity-60">
             close
           </button>
         </div>
         {sections.map((section) => (
           <div key={section.label} className="border-b border-foreground/10 py-1 last:border-b-0">
-            <div className="px-3 pt-1 text-[10px] uppercase opacity-40">{section.label}</div>
+            <div className="px-3 pt-1 text-[11px] opacity-60">{section.label}</div>
             {section.entries.map((entry) => (
               <DocRows key={entry.kind === "command" ? entry.name : entry.id} docs={entry.docs} />
             ))}
           </div>
         ))}
-        <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
-          <p className="uppercase opacity-60">drag &amp; drop</p>
-          <p className="mt-0.5">
+        <div className="border-b border-foreground/10 px-3 py-2 text-xs leading-relaxed">
+          <p className="text-[11px] opacity-60">drag &amp; drop</p>
+          <p className="mt-0.5 opacity-80">
             drop a task onto the body of another task to nest it inside (it becomes that task&apos;s
             child); drop near a row&apos;s top or bottom edge to place it above/below instead. hovering
             the body of a collapsed folder opens it so you can drop into its children; drop on empty
             space to move into the current folder. alt (option) forces nesting on any part of a row.
           </p>
         </div>
-        <div className="border-b border-foreground/10 px-3 py-2 text-[10px] leading-relaxed opacity-60">
-          <p className="uppercase opacity-60">reminders</p>
-          <p className="mt-0.5">
+        <div className="border-b border-foreground/10 px-3 py-2 text-xs leading-relaxed">
+          <p className="text-[11px] opacity-60">reminders</p>
+          <p className="mt-0.5 opacity-80">
             tasks with a due date or recurrence get &quot;remind me&quot; (15m/5m before) on by default — toggle it
             off in a task&apos;s details. push notifications are always on — allow them once in your browser (the
             request rides your first click). dateless tasks get one random nudge a day at a time the app
             picks. on iOS, add todosst to the home screen first.
           </p>
         </div>
-        <div className="px-3 py-2 text-[10px] opacity-40">esc to close</div>
+        <div className="px-3 py-2 text-[11px] opacity-60">esc to close</div>
       </div>
     </div>
   );

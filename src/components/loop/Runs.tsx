@@ -30,7 +30,7 @@ export function Runs({ ctx }: { ctx: LoopCtx }) {
   return (
     <div className="pb-6">
       {open.length === 0 ? (
-        <p className="px-3 py-10 text-center font-mono text-xs opacity-50">
+        <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
           no fixes in progress. open a problem and start a run — it will tell you whether the fix actually worked.
         </p>
       ) : (
@@ -59,7 +59,7 @@ export function Runs({ ctx }: { ctx: LoopCtx }) {
 
       {past.length > 0 && (
         <div className="mt-3 border-t border-foreground/10">
-          <button onClick={() => setShowPast((v) => !v)} className="px-3 py-2 font-mono text-[11px] opacity-50 hover:opacity-100">
+          <button onClick={() => setShowPast((v) => !v)} className="px-3 py-2 font-mono text-[11px] opacity-60 hover:opacity-100">
             {showPast ? "hide" : "show"} past runs ({past.length})
           </button>
           {showPast && (
@@ -95,7 +95,7 @@ function RunCard({ run, ctx }: { run: Doc<"runs">; ctx: LoopCtx }) {
         <Tag>{STATUS_LABEL[run.status]}</Tag>
       </div>
       {run.hypothesis && <p className="mt-1 font-mono text-[11px] opacity-60">hypothesis: {run.hypothesis}</p>}
-      <p className="mt-1 flex flex-wrap gap-x-3 font-mono text-[10px] opacity-50">
+      <p className="mt-1 flex flex-wrap gap-x-3 font-mono text-[11px] opacity-60">
         <span>{ctx.workflows[run.workflowKey]?.def.name ?? run.workflowKey}</span>
         <span>started {ago(run.startedAt, now)}</span>
         <span>was {run.baselineRate}/wk</span>
@@ -128,7 +128,7 @@ function RunCard({ run, ctx }: { run: Doc<"runs">; ctx: LoopCtx }) {
               </label>
             </li>
           ))}
-          <li className="pt-1 font-mono text-[10px] opacity-50">
+          <li className="pt-1 font-mono text-[11px] opacity-60">
             {doneSteps}/{run.steps.length} done
             {run.verifyDays > 0 ? ` · then ${run.verifyDays} days quiet to count as fixed` : ""}
           </li>

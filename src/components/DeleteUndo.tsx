@@ -40,9 +40,9 @@ export function DeleteConfirmDialog({
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[420px] border border-foreground bg-background p-6"
       >
-        <p className="font-mono text-[11px] opacity-40">root@vault:~$</p>
+        <p className="font-mono text-[11px] opacity-60">root@vault:~$</p>
         <h2 id="delete-confirm-title" className="mt-1 font-mono text-sm font-medium break-words">
-          <span className="opacity-40">$</span> rm{" "}
+          <span className="opacity-60">$</span> rm{" "}
           <span className="underline decoration-dotted underline-offset-4">
             {`"${node.title.length > 48 ? `${node.title.slice(0, 48)}…` : node.title}"`}
           </span>
@@ -69,7 +69,7 @@ export function DeleteConfirmDialog({
             delete
           </button>
         </div>
-        <p className="mt-3 text-right font-mono text-[11px] opacity-30">&gt; auto-abort in {countdown}s • [esc] cancel</p>
+        <p className="mt-3 text-right font-mono text-[11px] opacity-60">&gt; auto-abort in {countdown}s • [esc] cancel</p>
       </div>
     </div>
   );
@@ -94,7 +94,7 @@ export function UndoToast({
       <button onClick={onUndo} className="border border-foreground px-2 py-0.5 hover:bg-foreground hover:text-background">
         undo
       </button>
-      <span className="font-mono opacity-40">{ttl}s</span>
+      <span className="font-mono opacity-60">{ttl}s</span>
       <button onClick={onDismiss} className="opacity-60 hover:opacity-100" aria-label="dismiss undo">
         ×
       </button>

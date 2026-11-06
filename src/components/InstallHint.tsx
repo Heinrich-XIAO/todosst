@@ -49,7 +49,7 @@ export function InstallHint() {
           } catch {}
           setShow(false);
         }}
-        className="shrink-0 px-1 opacity-40 hover:opacity-100"
+        className="shrink-0 px-1 opacity-60 hover:opacity-100"
         aria-label="dismiss install hint"
       >
         ×

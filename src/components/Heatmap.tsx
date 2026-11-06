@@ -153,7 +153,7 @@ export const Heatmap = memo(function Heatmap({
     <div className="text-[10px]">
       <div className="flex gap-3 overflow-x-auto">
         {/* pt-4 = month-label header height (h-3 12px + mb-1 4px) so rows line up */}
-        <div className="flex shrink-0 flex-col gap-[2px] pt-4 pr-1 opacity-40">
+        <div className="flex shrink-0 flex-col gap-[2px] pt-4 pr-1 opacity-60">
           {[0, 1, 2, 3, 4, 5, 6].map((r) => (
             <span key={r} className="flex h-[10px] items-center leading-[10px]">
               {DOW_LABELS[r] ?? ""}
@@ -165,7 +165,7 @@ export const Heatmap = memo(function Heatmap({
             {grid.monthLabels.map((m) => (
               <span
                 key={`${m.label}-${m.col}`}
-                className="absolute opacity-40"
+                className="absolute opacity-60"
                 // a label on the last column would stick out past the grid's
                 // right edge and stretch the scroll area — right-align it
                 style={m.col === grid.cols.length - 1 ? { right: 0 } : { left: `${m.col * 12}px` }}
@@ -232,7 +232,7 @@ export const Heatmap = memo(function Heatmap({
           </div>
         </div>
       </div>
-      <div className="mt-1 flex items-center justify-end gap-1 opacity-40">
+      <div className="mt-1 flex items-center justify-end gap-1 opacity-60">
         <span>{negative ? "clean" : "less"}</span>
         {LEVELS.map((l, i) => (
           <span key={i} className={`h-[8px] w-[8px] ${l}`} />

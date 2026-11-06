@@ -236,24 +236,24 @@ function TodayRow({
         {ancestors.length > 0 && (
           <button
             onClick={() => onJump(ancestors.map((a) => a.title))}
-            className="shrink-0 max-w-[120px] truncate text-[10px] opacity-40 hover:opacity-100"
+            className="shrink-0 max-w-[120px] truncate text-[11px] opacity-60 hover:opacity-100"
             title={`open ${ancestors.map((a) => a.title).join("/")}`}
           >
             {ancestors.map((a) => a.title).join("/")}
           </button>
         )}
         {openSince && (
-          <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={`still open since ${openSince}`}>
+          <span className="shrink-0 max-w-[40%] truncate text-[11px] opacity-60" title={`still open since ${openSince}`}>
             since {openSince}
           </span>
         )}
         {streakNote && (
-          <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={streakNote}>
+          <span className="shrink-0 max-w-[40%] truncate text-[11px] opacity-60" title={streakNote}>
             {streakNote}
           </span>
         )}
         {missNote && (
-          <span className="shrink-0 max-w-[40%] truncate text-[10px] opacity-50" title={missNote}>
+          <span className="shrink-0 max-w-[40%] truncate text-[11px] opacity-60" title={missNote}>
             {missNote}
           </span>
         )}
@@ -354,7 +354,7 @@ function HoldRow({
             {node.title}
           </button>
           {corrector}
-          <span className="shrink-0 text-[10px] opacity-40">
+          <span className="shrink-0 text-[11px] opacity-60">
             {day} — {slips === 0 ? "clean, confirm" : `${slipWord}, confirm`}
           </span>
         </div>
@@ -443,7 +443,7 @@ function HabitConfirmRow({
             {node.title}
           </button>
           {detail !== null && (
-            <span className="shrink-0 text-[10px] opacity-40">
+            <span className="shrink-0 text-[11px] opacity-60">
               {day} — {detail}, confirm
             </span>
           )}
@@ -850,14 +850,14 @@ export function TodayView({
         {showHabitOffer && (
           <div className="border-b border-foreground/10 px-3 py-2 text-xs">
             <p className="opacity-80">
-              keep a streak without another box? add <span className="font-mono">open todosst ~daily</span> — it checks
+              keep a streak without another box? add <code className="border border-foreground/30 px-1 font-mono">open todosst ~daily</code> — it checks
               itself whenever you reach all clear.
             </p>
             <div className="mt-1 flex gap-3">
               <button onClick={onCreateHabit} className="underline underline-offset-4">
                 add it
               </button>
-              <button onClick={onDismissHabitOffer} className="opacity-40 hover:opacity-100">
+              <button onClick={onDismissHabitOffer} className="opacity-60 hover:opacity-100">
                 no thanks
               </button>
             </div>

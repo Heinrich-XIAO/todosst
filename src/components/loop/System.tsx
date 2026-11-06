@@ -102,7 +102,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
           change it
         </Btn>
       </form>
-      <p className="px-3 pt-1 font-mono text-[10px] opacity-40">
+      <p className="px-3 pt-1 font-mono text-[11px] opacity-60">
         starts a change run. you can also capture friction anywhere with <code>?? text</code>.
       </p>
 
@@ -113,7 +113,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
             {sysProblems.map((p) => (
               <li key={p.id} className="flex items-center justify-between gap-3 border-b border-foreground/10 px-3 py-2">
                 <button onClick={() => ctx.openItem(p.id)} className="min-w-0 truncate text-left text-xs hover:underline">
-                  {p.item.title} <span className="font-mono opacity-50">{p.signals.length}×</span>
+                  {p.item.title} <span className="font-mono opacity-60">{p.signals.length}×</span>
                 </button>
                 <Btn onClick={() => void ctx.act(ctx.m.startSystemChange({ note: "", itemIds: [p.item._id] }))}>change it</Btn>
               </li>
@@ -128,7 +128,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
           {sysRuns.map((run) => (
             <div key={run._id} className="border-b border-foreground/10 px-3 py-3">
               <p className="text-sm">{run.title}</p>
-              <p className="font-mono text-[10px] opacity-50">
+              <p className="font-mono text-[11px] opacity-60">
                 {run.steps.filter((s) => s.done).length}/{run.steps.length} steps · applying a draft finishes them and starts the verify window
               </p>
               <div className="mt-2">
@@ -167,13 +167,13 @@ function DraftCard({ draft, ctx }: { draft: Doc<"defs">; ctx: LoopCtx }) {
       </p>
       <div className="grid gap-2 md:grid-cols-2">
         <div>
-          <p className="font-mono text-[10px] opacity-40">now</p>
+          <p className="font-mono text-[11px] opacity-60">now</p>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border border-foreground/20 p-1.5 font-mono text-[10px]">
             {before ?? "(new)"}
           </pre>
         </div>
         <div>
-          <p className="font-mono text-[10px] opacity-40">draft</p>
+          <p className="font-mono text-[11px] opacity-60">draft</p>
           <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border border-foreground/20 p-1.5 font-mono text-[10px]">
             {pretty(draft.body)}
           </pre>
@@ -270,9 +270,9 @@ function DefSection({
             <li key={key} className="border-b border-foreground/10 px-3 py-2">
               <div className="flex items-center justify-between gap-3">
                 <span className="min-w-0 truncate text-sm">
-                  {name} <span className="font-mono text-[10px] opacity-50">{key} · {active ? `v${active.version}` : "built-in"}</span>
+                  {name} <span className="font-mono text-[11px] opacity-60">{key} · {active ? `v${active.version}` : "built-in"}</span>
                   {record[key] && (
-                    <span className="ml-2 font-mono text-[10px] opacity-50">
+                    <span className="ml-2 font-mono text-[11px] opacity-60">
                       held {record[key].held}/{record[key].held + record[key].reopened}
                     </span>
                   )}
@@ -457,7 +457,7 @@ function DefEditor({
             </label>
             <label className="flex items-center gap-2">
               <input type="radio" name="target" checked={target === "direct"} onChange={() => setTarget("direct")} className="accent-foreground" />
-              <span>save directly <span className="opacity-50">(skips the run and the verify window)</span></span>
+              <span>save directly <span className="opacity-60">(skips the run and the verify window)</span></span>
             </label>
           </div>
           {target === "new" && (

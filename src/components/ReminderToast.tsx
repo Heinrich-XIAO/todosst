@@ -58,7 +58,7 @@ export function ReminderToast({
           </li>
         ))}
       </ul>
-      {lines.length > 12 ? <p className="mt-0.5 text-[10px] opacity-40">and {lines.length - 12} more…</p> : null}
+      {lines.length > 12 ? <p className="mt-0.5 text-[11px] opacity-60">and {lines.length - 12} more…</p> : null}
     </div>
   );
 }

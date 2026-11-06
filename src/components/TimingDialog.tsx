@@ -55,7 +55,7 @@ export function TimingDialog({
         <p className="mt-1 truncate text-xs opacity-60" title={taskTitle}>
           “{taskTitle}”
         </p>
-        <p className="mt-1 text-[11px] leading-tight opacity-40">
+        <p className="mt-1 text-[11px] leading-tight opacity-60">
           teaches your nudges when tasks like this one land best. saved on this device only.
         </p>
         <div className="mt-3 flex items-center gap-2">

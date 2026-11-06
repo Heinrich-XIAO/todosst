@@ -37,7 +37,7 @@ export function Inbox({ ctx }: { ctx: LoopCtx }) {
   return (
     <div className="pb-6">
       {model.inbox.length === 0 ? (
-        <p className="px-3 py-10 text-center font-mono text-xs opacity-50">
+        <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
           inbox empty. when something annoys you, type <code>? what happened</code> or tap the mic.
         </p>
       ) : (
@@ -69,7 +69,7 @@ export function Inbox({ ctx }: { ctx: LoopCtx }) {
         <div className="mt-4 border-t border-foreground/10">
           <button
             onClick={() => setShowDismissed((v) => !v)}
-            className="px-3 py-2 font-mono text-[11px] opacity-50 hover:opacity-100"
+            className="px-3 py-2 font-mono text-[11px] opacity-60 hover:opacity-100"
           >
             {showDismissed ? "hide" : "show"} dismissed ({model.dismissed.length})
           </button>
@@ -128,11 +128,11 @@ function SignalCard({
           checked={picked}
           onChange={onPick}
           aria-label="select to combine"
-          className="mt-1 h-4 w-4 shrink-0 accent-foreground"
+          className="check mt-1"
         />
         <div className="min-w-0 flex-1">
           <p className="break-words text-sm leading-snug">{signal.text}</p>
-          <p className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[10px] opacity-50">
+          <p className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] opacity-60">
             <span>{ago(signal.at, now)}</span>
             {signal.source !== "typed" && <Tag>{signal.source}</Tag>}
             {signal.system && <Tag>app</Tag>}
@@ -141,7 +141,7 @@ function SignalCard({
 
           {suggestions.length > 0 && !editing && (
             <div className="mt-2 flex flex-col gap-1">
-              <p className="font-mono text-[10px] opacity-40">looks like</p>
+              <p className="font-mono text-[11px] opacity-60">looks like</p>
               {suggestions.map(({ item }) => (
                 <button
                   key={item.id}
@@ -185,7 +185,7 @@ function SignalCard({
               <AttachPicker ctx={ctx} onPick={(itemId) => void ctx.act(ctx.m.attach({ signalId: signal._id, itemId }))} />
               <button
                 onClick={() => void ctx.act(ctx.m.dismissSignal({ signalId: signal._id }))}
-                className="font-mono text-[11px] underline underline-offset-4 opacity-50 hover:opacity-100"
+                className="font-mono text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
               >
                 dismiss
               </button>
@@ -250,7 +250,7 @@ function Combine({ signals, ctx, onDone }: { signals: Doc<"signals">[]; ctx: Loo
           </Btn>
           <Btn onClick={onDone}>clear</Btn>
         </div>
-        <p className="font-mono text-[10px] opacity-50">each capture still counts as its own occurrence</p>
+        <p className="font-mono text-[11px] opacity-60">each capture still counts as its own occurrence</p>
       </div>
     </div>
   );

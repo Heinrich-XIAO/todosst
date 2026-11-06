@@ -26,7 +26,7 @@ export function Btn({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`border border-foreground px-2.5 py-1 font-mono text-xs disabled:opacity-30 ${
+      className={`border border-foreground px-2.5 py-1 font-mono text-xs disabled:bg-transparent disabled:text-foreground disabled:opacity-40 ${
         solid ? "bg-foreground text-background hover:opacity-90" : "hover:bg-foreground hover:text-background"
       }`}
     >
@@ -50,11 +50,11 @@ export function Chip({ children, on, onClick }: { children: ReactNode; on?: bool
 }
 
 export function Tag({ children }: { children: ReactNode }) {
-  return <span className="border border-foreground/30 px-1.5 py-px font-mono text-[10px] opacity-70">{children}</span>;
+  return <span className="border border-foreground/40 px-1.5 py-px font-mono text-[10px]">{children}</span>;
 }
 
 export function Label({ children }: { children: ReactNode }) {
-  return <p className="px-3 pb-1 pt-3 font-mono text-[10px] uppercase tracking-wide opacity-40">{children}</p>;
+  return <p className="px-3 pb-1 pt-3 font-mono text-[11px] opacity-60">{children}</p>;
 }
 
 /** Tiny weekly bar chart: height = count, the newest week is rightmost. */

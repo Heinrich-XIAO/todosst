@@ -69,7 +69,7 @@ export function ThemeToggle() {
       onClick={cycle}
       aria-label={`Color theme: ${theme}`}
       title={`theme: ${theme}`}
-      className="opacity-60 hover:opacity-100"
+      className="-m-2 p-2 opacity-60 hover:opacity-100"
     >
       <Icon className="h-[18px] w-[18px]" aria-hidden />
     </button>

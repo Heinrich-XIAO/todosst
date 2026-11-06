@@ -160,7 +160,6 @@ export function MetadataPanel({
       <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
         <RecurrenceField metadata={node.metadata as PlainNode["metadata"]} anchorTs={node._creationTime} onPatch={onPatch} />
         <CompletionStyleField metadata={node.metadata as PlainNode["metadata"]} onPatch={onPatch} />
-        <PayloadField payloadLen={payloadLen} />
         <HeatmapField metadata={node.metadata as PlainNode["metadata"]} counts={historyCounts ?? new Map<number, number>()} nowTs={nowTs} />
         <DescriptionField
           metadata={node.metadata as PlainNode["metadata"]}
@@ -184,6 +183,7 @@ export function MetadataPanel({
             pendingRef.current.tags = undefined;
           }}
         />
+        <PayloadField payloadLen={payloadLen} />
       </div>
     </div>
   );

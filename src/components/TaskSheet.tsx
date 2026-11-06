@@ -223,7 +223,7 @@ export function TaskSheet({
               disabled={!online}
             />
             {!online && (
-              <p className="text-[10px] opacity-50">offline — captures keep title, directory and preset recurrence only</p>
+              <p className="text-[11px] opacity-60">offline — captures keep title, directory and preset recurrence only</p>
             )}
           </div>
 

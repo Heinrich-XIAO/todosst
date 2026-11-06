@@ -120,9 +120,8 @@ export function NudgeSettings() {
     <div className="mt-3 border border-foreground/20 p-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium">daily nudge</p>
-        {pref && <span className="text-[11px] opacity-40">{pref.enabled ? "on" : "off"}</span>}
       </div>
-      <p className="mt-1 text-[11px] leading-tight opacity-40">
+      <p className="mt-1 text-[11px] leading-snug opacity-60">
         a fixed-time push each day — skipped automatically on all-clear days, and worded to
         keep your streak alive. delivered to every signed-in browser.
       </p>

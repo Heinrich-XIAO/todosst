@@ -25,7 +25,7 @@ export function NoticeDialog({ message, onClose }: { message: string; onClose: (
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[420px] border border-foreground bg-background p-6"
       >
-        <p className="font-mono text-[11px] opacity-40">root@vault:~$</p>
+        <p className="font-mono text-[11px] opacity-60">root@vault:~$</p>
         <p id="notice-message" className="mt-1 font-mono text-sm leading-relaxed break-words">
           {message}
         </p>

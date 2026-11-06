@@ -74,7 +74,7 @@ export function Items({ ctx }: { ctx: LoopCtx }) {
       </div>
 
       {live.length === 0 && finished.length === 0 ? (
-        <p className="px-3 py-10 text-center font-mono text-xs opacity-50">
+        <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
           {model.items.size === 0
             ? "nothing tracked yet. triage something from the inbox."
             : "nothing matches."}
@@ -89,7 +89,7 @@ export function Items({ ctx }: { ctx: LoopCtx }) {
 
       {finished.length > 0 && (
         <div className="mt-2 border-t border-foreground/10">
-          <button onClick={() => setShowDone((v) => !v)} className="px-3 py-2 font-mono text-[11px] opacity-50 hover:opacity-100">
+          <button onClick={() => setShowDone((v) => !v)} className="px-3 py-2 font-mono text-[11px] opacity-60 hover:opacity-100">
             {showDone ? "hide" : "show"} resolved &amp; dismissed ({finished.length})
           </button>
           {showDone && (
@@ -125,7 +125,7 @@ function Row({ row, ctx }: { row: ItemModel; ctx: LoopCtx }) {
           <span className="block">
             {rateLabel(row.rate)} {row.rate > 0 || row.trend !== "quiet" ? TREND_MARK[row.trend] : ""}
           </span>
-          <span className="block opacity-50">{row.signals.length}×</span>
+          <span className="block opacity-60">{row.signals.length}×</span>
         </span>
       </button>
     </li>
@@ -227,7 +227,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
                 {rateLabel(row.rate)} {TREND_MARK[row.trend]}
               </span>
               <Bars values={weeklyBuckets(row.signals.map((s) => s.at), now)} label="occurrences per week, last 8 weeks" />
-              <span className="opacity-50">{row.signals.length} total</span>
+              <span className="opacity-60">{row.signals.length} total</span>
             </div>
           </div>
 
@@ -257,7 +257,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
           {row.activeRun ? (
             <p className="px-3 font-mono text-xs">
               {row.activeRun.status === "verifying" ? "verifying: " : "in progress: "}
-              {row.activeRun.title} <span className="opacity-50">(see runs)</span>
+              {row.activeRun.title} <span className="opacity-60">(see runs)</span>
             </p>
           ) : live ? (
             <div className="flex flex-wrap items-center gap-2 px-3">
@@ -278,7 +278,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
               </Btn>
             </div>
           ) : (
-            <p className="px-3 font-mono text-xs opacity-50">{row.role === "done" ? "resolved — it reopens itself if it happens again" : "dismissed"}</p>
+            <p className="px-3 font-mono text-xs opacity-60">{row.role === "done" ? "resolved — it reopens itself if it happens again" : "dismissed"}</p>
           )}
 
           {/* occurrences */}
@@ -288,11 +288,11 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
               <li key={s._id} className="flex items-start justify-between gap-3 px-3 py-1.5 text-xs">
                 <span className="min-w-0 break-words">
                   {s.text}
-                  <span className="ml-2 font-mono text-[10px] opacity-40">{ago(s.at, now)}</span>
+                  <span className="ml-2 font-mono text-[11px] opacity-60">{ago(s.at, now)}</span>
                 </span>
                 <button
                   onClick={() => void ctx.act(ctx.m.detach({ signalId: s._id }))}
-                  className="shrink-0 font-mono text-[10px] underline underline-offset-4 opacity-50 hover:opacity-100"
+                  className="shrink-0 font-mono text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
                   title="send back to the inbox"
                 >
                   unfile
@@ -331,11 +331,11 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
               return (
                 <li key={l._id} className="flex items-center justify-between gap-3 px-3 py-1.5 text-xs">
                   <span className="min-w-0 truncate">
-                    <span className="font-mono opacity-50">{LINK_LABEL[l.kind]?.[outgoing ? 0 : 1] ?? l.kind}</span> {other}
+                    <span className="font-mono opacity-60">{LINK_LABEL[l.kind]?.[outgoing ? 0 : 1] ?? l.kind}</span> {other}
                   </span>
                   <button
                     onClick={() => void ctx.act(ctx.m.unlinkItems({ linkId: l._id }))}
-                    className="shrink-0 font-mono text-[10px] underline underline-offset-4 opacity-50 hover:opacity-100"
+                    className="shrink-0 font-mono text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
                   >
                     remove
                   </button>
@@ -410,7 +410,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
                   merge
                 </Btn>
               </div>
-              <p className="px-3 pt-1 font-mono text-[10px] opacity-40">non-destructive — you can split it back out from the survivor</p>
+              <p className="px-3 pt-1 font-mono text-[11px] opacity-60">non-destructive — you can split it back out from the survivor</p>
             </>
           )}
 
@@ -421,7 +421,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
               <ul>
                 {runsHere.map((r) => (
                   <li key={r._id} className="px-3 py-1.5 font-mono text-xs">
-                    {r.title} <span className="opacity-50">— {r.status}</span>
+                    {r.title} <span className="opacity-60">— {r.status}</span>
                   </li>
                 ))}
               </ul>
@@ -437,7 +437,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
                 {e.data ? ` ${summarize(e.data)}` : ""}
               </li>
             ))}
-            {events === undefined && <li className="px-3 py-1 font-mono text-[10px] opacity-40">loading…</li>}
+            {events === undefined && <li className="px-3 py-1 font-mono text-[11px] opacity-60">loading…</li>}
           </ul>
         </div>
       </div>
@@ -468,7 +468,7 @@ function FieldInput({
   onSave: (v: string | number | boolean | undefined) => void;
 }) {
   const [text, setText] = useState(value === undefined ? "" : String(value));
-  const label = <span className="mb-0.5 block font-mono text-[10px] opacity-50">{field.label}</span>;
+  const label = <span className="mb-0.5 block font-mono text-[11px] opacity-60">{field.label}</span>;
   if (field.kind === "bool") {
     return (
       <label className="flex items-center gap-2 font-mono text-xs">

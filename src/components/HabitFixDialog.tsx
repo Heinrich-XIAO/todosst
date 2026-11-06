@@ -84,7 +84,7 @@ export function HabitFixDialog({
           </div>
         ) : (
           <>
-            {goal !== null && <p className="mt-1 text-[11px] opacity-40">{goal}</p>}
+            {goal !== null && <p className="mt-1 text-[11px] opacity-60">{goal}</p>}
 
             <div className="mt-4 flex items-center justify-center">
               <div className="flex items-stretch border border-foreground text-sm leading-none">

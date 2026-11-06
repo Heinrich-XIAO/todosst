@@ -95,6 +95,22 @@ import { MetadataPanel } from "./MetadataPanel";
 import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
 import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
 import { NoticeDialog } from "./NoticeDialog";
+import { ChevronRight, Plus, X } from "lucide-react";
+
+// "today" / "tomorrow" / "nov 6" — short enough that a due date never
+// truncates a title on a phone, lowercase like the rest of the voice.
+function shortDue(ts: number): string {
+  const d = new Date(ts);
+  const day = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(d) - day(new Date())) / 86_400_000);
+  if (diff === 0) return "today";
+  if (diff === 1) return "tomorrow";
+  if (diff === -1) return "yesterday";
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  return d
+    .toLocaleDateString(undefined, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" })
+    .toLowerCase();
+}
 
 type Filter = "all" | "active" | "completed";
 
@@ -371,14 +387,14 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         setDragId(null);
         setDropHint(null);
       }}
-      className={`border-b border-foreground/10 last:border-b-0 transition-opacity ${isFading ? "duration-[3000ms] ease-out" : "duration-1000"} ${isFading && fadeToZero ? "fade-away" : ""} ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${
+      className={`transition-opacity ${isFading ? "duration-[3000ms] ease-out" : "duration-1000"} ${isFading && fadeToZero ? "fade-away" : ""} ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${
         isFading ? (fadeToZero ? "opacity-0" : "opacity-20") : node.isCompleted ? "opacity-20" : "opacity-100"
       }`}
-      style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
     >
       <div
         data-drop-row
-        className={`flex items-center gap-2 py-2 pr-3 text-sm ${
+        style={{ paddingLeft: `${(node.depth - currentDirDepth - 1) * 16 + 12}px` }}
+        className={`group flex items-center gap-2 border-b border-foreground/10 py-2 pr-3 text-sm ${
           dropHint?.id === node._id
             ? dropHint.pos === "child"
               ? // nest-as-child needs a louder cue than a line: fill + inset outline
@@ -394,10 +410,13 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
       >
         <button
           onClick={() => hasChildren && toggleExpanded(node._id)}
-          className={`h-4 w-4 shrink-0 flex items-center justify-center text-[10px] ${hasChildren ? "opacity-60 hover:opacity-100" : "opacity-0"}`}
-          aria-label="toggle children"
+          className={`-ml-1 h-6 w-6 shrink-0 flex items-center justify-center text-xs ${hasChildren ? "opacity-60 hover:opacity-100" : "pointer-events-none opacity-0"}`}
+          aria-label={isExpanded ? "collapse" : "expand"}
+          aria-expanded={hasChildren ? isExpanded : undefined}
+          tabIndex={hasChildren ? 0 : -1}
+          aria-hidden={hasChildren ? undefined : true}
         >
-          {hasChildren ? (isExpanded ? "▾" : "▸") : "•"}
+          {hasChildren ? <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden /> : null}
         </button>
 
         {isNegative(meta) ? (
@@ -456,46 +475,56 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             className={`min-w-0 flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
             title={node.title}
           >
-            <span className="mr-1 opacity-40">{node.children.length ? `[${node.children.length}]` : ""}</span>
+            {node.children.length ? <span className="mr-1 font-mono text-xs opacity-60">[{node.children.length}]</span> : null}
             {node.title}
-            {node.metadata.priority ? <span className="ml-2 text-[10px] border border-foreground/20 px-1">{node.metadata.priority}</span> : null}
+            {node.metadata.priority ? <span className="ml-2 border border-foreground/40 px-1 text-[11px]">{node.metadata.priority}</span> : null}
             {node.metadata.dueAt ? (
-              <span className="ml-1 text-[10px] opacity-60">
-                {new Date(normalizeDueAt(node.metadata.dueAt)).toLocaleDateString()}
-              </span>
+              <span className="ml-2 font-mono text-[11px] opacity-60">{shortDue(normalizeDueAt(node.metadata.dueAt))}</span>
             ) : null}
           </button>
         )}
 
-        <span className="flex gap-2 text-xs shrink-0 items-center">
+        {/* desktop: actions surface on hover/focus so titles stay the loudest
+            thing on the row; touch has no hover, so they stay, as icons */}
+        <span
+          className={`flex shrink-0 items-center text-xs transition-opacity md:gap-3 ${
+            isSelected || confirmDeleteId === node._id
+              ? ""
+              : "md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
+          }`}
+        >
           <button
             onClick={() =>
               isTouch
                 ? openChildComposer(node._id, node.title)
                 : setAddChildParent(node._id)
             }
-            className="opacity-40 hover:opacity-100"
+            className="flex h-8 w-8 items-center justify-center opacity-40 hover:opacity-100 md:h-auto md:w-auto md:opacity-60"
+            aria-label={`add a sub-task to ${node.title}`}
           >
-            +child
+            <Plus className="h-4 w-4 md:hidden" aria-hidden />
+            <span className="hidden md:inline">+child</span>
           </button>
-          <button onClick={() => setSelectedId(node._id)} className="opacity-40 hover:opacity-100 hidden md:inline">
+          <button onClick={() => setSelectedId(node._id)} className="hidden opacity-60 hover:opacity-100 md:inline">
             edit
           </button>
           {confirmDeleteId === node._id ? (
-            <span className="font-mono opacity-100 underline underline-offset-4">confirm?</span>
+            <span className="font-mono underline underline-offset-4">confirm?</span>
           ) : (
             <button
               onClick={() => setConfirmDeleteId(node._id)}
-              className="opacity-40 hover:opacity-100"
+              className="flex h-8 w-8 items-center justify-center opacity-40 hover:opacity-100 md:h-auto md:w-auto md:opacity-60"
+              aria-label={`delete ${node.title}`}
             >
-              delete
+              <X className="h-4 w-4 md:hidden" aria-hidden />
+              <span className="hidden md:inline">delete</span>
             </button>
           )}
         </span>
       </div>
 
       {addChildParent === node._id && (
-        <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 16 + 28}px` }}>
+        <div className="flex gap-2 py-2 pr-3" style={{ paddingLeft: `${(node.depth - currentDirDepth) * 16 + 36}px` }}>
           <input
             autoFocus
             value={addChildTitle}
@@ -730,7 +759,7 @@ export const CreateRootForm = memo(function CreateRootForm({
         )}
         {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
           <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
-            <div className="px-2 py-1 text-[10px] opacity-40 border-b border-foreground/10">
+            <div className="px-2 py-1 text-[11px] opacity-60 border-b border-foreground/10">
               {slashComplete.mode === "cd" ? "cd " : ""}
               {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
             </div>
@@ -759,7 +788,7 @@ export const CreateRootForm = memo(function CreateRootForm({
                       <span className="font-medium">{s.title}</span>
                     )}
                   </span>
-                  <span className={`ml-auto shrink-0 text-[10px] ${isActive ? "opacity-60" : "opacity-30"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
+                  <span className={`ml-auto shrink-0 text-[11px] ${isActive ? "opacity-60" : "opacity-60"}`}>{s.children.length ? `${s.children.length} child${s.children.length !== 1 ? "ren" : ""}` : "leaf"}</span>
                 </button>
               );
             })}
@@ -767,11 +796,11 @@ export const CreateRootForm = memo(function CreateRootForm({
         )}
       </div>
       {nlpLabel && (
-        <span title={nlp.cleanTitle ? `title: “${nlp.cleanTitle}”` : undefined} className="shrink-0 border border-amber-500/40 bg-amber-300/15 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-300">
-          📅 {nlpLabel}
+        <span title={nlp.cleanTitle ? `title: “${nlp.cleanTitle}”` : undefined} className="shrink-0 border border-foreground/40 px-1.5 py-0.5 font-mono text-[11px]">
+          {nlpLabel}
         </span>
       )}
-      <button type="submit" disabled={!value.trim()} className="text-sm underline underline-offset-4 hover:opacity-60 disabled:opacity-20 shrink-0">
+      <button type="submit" disabled={!value.trim()} className="shrink-0 text-sm underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-40">
         add task
       </button>
     </form>
@@ -3116,9 +3145,9 @@ function TodoTask() {
         className={`${!online || pendingCaptures.length > 0 ? "flex" : "hidden"} shrink-0 items-center justify-between border-b border-foreground px-3 py-2 text-xs md:flex`}
       >
         <span className="flex flex-1 items-center gap-2">
-          {!online && <span className="opacity-40">· offline</span>}
+          {!online && <span className="opacity-60">· offline</span>}
           {pendingCaptures.length > 0 && (
-            <span className="opacity-40" title="captured offline — syncs when you're back online">
+            <span className="opacity-60" title="captured offline — syncs when you're back online">
               · {pendingCaptures.length} offline capture{pendingCaptures.length !== 1 ? "s" : ""}
             </span>
           )}
@@ -3174,7 +3203,7 @@ function TodoTask() {
             </span>
           ))}
         </span>
-        {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-40 shrink-0">(not found)</span>}
+        {!currentDirInfo.exists && decodedPath !== "/" && <span className="opacity-60 shrink-0">(not found)</span>}
         </div>
       )}
 
@@ -3284,7 +3313,11 @@ function TodoTask() {
           <p className="px-3 py-8 text-sm opacity-60">directory not found.</p>
         ) : visibleRoots.length === 0 ? (
           <div className="px-3 py-8 text-sm opacity-60">
-            {currentDirInfo.id === null ? "no matching tasks." : "empty — add a task in this directory."}
+            {search.trim() || filter !== "active"
+              ? "no matching tasks."
+              : currentDirInfo.id === null
+                ? <>nothing here yet — type a task above. <span className="font-mono">!help</span> shows the grammar.</>
+                : "empty — add a task in this directory."}
           </div>
         ) : readError ? (
           <div className="border-b border-foreground bg-background px-3 py-2 text-xs">{readError}</div>
@@ -3397,12 +3430,13 @@ function BottomNav({
     { id: "loop" as const, label: "loop" },
   ];
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-foreground bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
-      {tabs.slice(0, 1).map((t) => (
+    <nav className="fixed bottom-0 left-0 right-0 z-40 flex divide-x divide-foreground/10 border-t border-foreground bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
+      {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => goToView(t.id)}
-          className={`flex-1 py-3 text-xs ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
+          aria-current={view === t.id ? "page" : undefined}
+          className={`flex-1 py-3.5 text-sm ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
         >
           {t.label}
         </button>
@@ -3410,19 +3444,10 @@ function BottomNav({
       <button
         onClick={onAdd}
         aria-label={view === "loop" ? "capture" : "new task"}
-        className="border-x border-foreground/10 px-8 py-3 text-base leading-none hover:opacity-80"
+        className="flex flex-1 items-center justify-center bg-foreground py-3.5 text-background active:opacity-80"
       >
-        +
+        <Plus className="h-5 w-5" aria-hidden />
       </button>
-      {tabs.slice(1).map((t) => (
-        <button
-          key={t.id}
-          onClick={() => goToView(t.id)}
-          className={`flex-1 py-3 text-xs ${view === t.id ? "underline underline-offset-4" : "opacity-60"}`}
-        >
-          {t.label}
-        </button>
-      ))}
     </nav>
   );
 }

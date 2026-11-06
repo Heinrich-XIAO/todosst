@@ -395,7 +395,7 @@ export function RruleEditor({
           href="https://github.com/jakubroztocil/rrule"
           target="_blank"
           rel="noreferrer"
-          className="ml-auto text-[10px] opacity-40 underline underline-offset-2 hover:opacity-100"
+          className="ml-auto text-[11px] opacity-60 underline underline-offset-2 hover:opacity-100"
         >
           rrule (RFC 5545) ↗
         </a>
@@ -563,7 +563,7 @@ export function RruleEditor({
                 </label>
               ))}
             </div>
-            <p className="mt-1 text-[10px] opacity-40">negative values count from the end. byhour/minute/second affect window open time.</p>
+            <p className="mt-1 text-[11px] opacity-60">negative values count from the end. byhour/minute/second affect window open time.</p>
           </details>
 
           {built?.error ? (
@@ -575,7 +575,7 @@ export function RruleEditor({
                   next: {preview.map((d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" })).join(", ")}{built?.rule ? " …" : ""}
                 </p>
               )}
-              {built?.rule && <p className="truncate font-mono opacity-40" title={built.rule.toString()}>{built.rule.toString()}</p>}
+              {built?.rule && <p className="truncate font-mono opacity-60" title={built.rule.toString()}>{built.rule.toString()}</p>}
             </div>
           )}
         </div>
@@ -589,7 +589,7 @@ export function RruleEditor({
             placeholder={"DTSTART:20260101T000000\nFREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH"}
             className="w-full border border-foreground/20 bg-transparent p-2 font-mono text-xs focus:outline-none"
           />
-          <p className="text-[10px] opacity-40">
+          <p className="text-[11px] opacity-60">
             {normalizeRruleString(text).trim() === ""
               ? "empty"
               : textValid

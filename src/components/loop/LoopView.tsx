@@ -320,12 +320,12 @@ function CaptureBar({
         <button
           type="submit"
           disabled={!text.trim() || busy}
-          className="h-9 shrink-0 border border-foreground bg-foreground px-3 font-mono text-xs text-background disabled:opacity-30"
+          className="h-9 shrink-0 border border-foreground bg-foreground px-3 font-mono text-xs text-background disabled:bg-transparent disabled:text-foreground disabled:opacity-40"
         >
           capture
         </button>
       </form>
-      <p className="mt-1.5 font-mono text-[10px] opacity-40">
+      <p className="mt-1.5 font-mono text-[11px] opacity-60">
         no folder, no decision — sort it later. <code>??</code> = about this app, <code>%</code> = idea
       </p>
     </div>

@@ -129,7 +129,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-background/80 p-4 py-10" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-auto bg-background/95 p-4 py-10" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
@@ -148,7 +148,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="mt-3 border border-foreground/20 p-3">
           <p className="text-xs font-medium">integration key</p>
-          <p className="mt-1 text-[11px] leading-tight opacity-40">
+          <p className="mt-1 text-[11px] leading-snug opacity-60">
             paste one key into the stopscrll android app — finishing a task there unblocks the
             phone. keys act as your account for the unlock api only.
           </p>
@@ -230,7 +230,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="mt-3 border border-foreground/20 p-3">
           <p className="text-xs font-medium">export / import</p>
-          <p className="mt-1 text-[11px] leading-tight opacity-40">
+          <p className="mt-1 text-[11px] leading-snug opacity-60">
             passphrase-protected backup file, portable to any account. importing adds the backup
             tasks alongside existing ones.
           </p>
@@ -249,6 +249,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 maxLength={128}
                 value={exportPass}
                 onChange={(e) => setExportPass(e.target.value)}
+                placeholder="at least 8 characters"
                 className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
               />
             </label>
@@ -261,6 +262,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 maxLength={128}
                 value={exportPass2}
                 onChange={(e) => setExportPass2(e.target.value)}
+                placeholder="repeat it"
                 className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
               />
             </label>
@@ -275,12 +277,20 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
           <div className="mt-3 border-t border-foreground/10 pt-2">
             <p className="text-[11px] opacity-60">import (restore or merge into this account)</p>
-            <input
-              type="file"
-              accept="application/json,.json"
-              onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
-              className="mt-1 block w-full text-[11px] file:mr-2 file:border file:border-foreground file:bg-transparent file:px-2 file:py-0.5 file:text-[11px]"
-            />
+            {/* the native file input speaks Title Case in its own font; hide it
+                behind a label styled like every other button here */}
+            <label className="mt-1 flex cursor-pointer items-center gap-2 text-[11px]">
+              <input
+                type="file"
+                accept="application/json,.json"
+                onChange={(e) => setImportFile(e.target.files?.[0] ?? null)}
+                className="peer sr-only"
+              />
+              <span className="border border-foreground px-2 py-1 hover:bg-foreground/10 peer-focus-visible:outline peer-focus-visible:outline-1 peer-focus-visible:outline-offset-2">
+                choose file
+              </span>
+              <span className="min-w-0 truncate font-mono opacity-60">{importFile ? importFile.name : "no file chosen"}</span>
+            </label>
             <label className="mt-2 block">
               <span className="text-xs opacity-60">file passphrase</span>
               <input
@@ -288,6 +298,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 autoComplete="off"
                 value={importPass}
                 onChange={(e) => setImportPass(e.target.value)}
+                placeholder="the passphrase the file was made with"
                 className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
               />
             </label>

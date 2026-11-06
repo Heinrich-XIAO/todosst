@@ -46,7 +46,7 @@ export function RecurrenceField({
         )}
       </div>
       {!showRuleEditor && metadata.recur ? <p className="mt-1 break-all font-mono text-[10px] opacity-60">{metadata.recur}</p> : null}
-      {!showRuleEditor && !metadata.recur ? <p className="mt-1 text-[10px] opacity-40">one-off task — no schedule</p> : null}
+      {!showRuleEditor && !metadata.recur ? <p className="mt-1 text-[11px] opacity-60">one-off task — no schedule</p> : null}
       {showRuleEditor && (
         <div className="mt-2">
           <RruleEditor
@@ -176,15 +176,15 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
       </div>
       {negRaw ? (
         neg ? (
-          <p className="text-[10px] opacity-40 leading-tight">
+          <p className="text-[11px] opacity-60 leading-tight">
             negative task — you log slips, never completions. a window is held when it ends within tolerance; the
             today view asks you to confirm held windows.
           </p>
         ) : (
-          <p className="text-[10px] opacity-40 leading-tight">avoid tasks need to be repeating — add a schedule under recurrence above.</p>
+          <p className="text-[11px] opacity-60 leading-tight">avoid tasks need to be repeating — add a schedule under recurrence above.</p>
         )
       ) : metadata.recur ? (
-        <p className="text-[10px] opacity-40 leading-tight">
+        <p className="text-[11px] opacity-60 leading-tight">
           recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
         </p>
       ) : null}
@@ -352,7 +352,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
 
 export function RemindersField({ metadata, onPatch }: { metadata: Metadata; onPatch: OnPatch }) {
   if (!metadata.dueAt) {
-    return <p className="text-[10px] opacity-40">reminders need a due date</p>;
+    return <p className="text-[11px] opacity-60">reminders need a due date</p>;
   }
   const cfg = normalizeCfg(metadata.reminder);
   const setOffset = (min: number, on: boolean) => {
@@ -375,16 +375,16 @@ export function RemindersField({ metadata, onPatch }: { metadata: Metadata; onPa
       {cfg.enabled ? (
         <div className="mt-1 flex gap-3">
           {DEFAULT_OFFSETS_MIN.map((min) => (
-            <label key={min} className="flex items-center gap-1">
-              <input type="checkbox" checked={cfg.offsetsMin.includes(min)} onChange={(e) => setOffset(min, e.target.checked)} />
+            <label key={min} className="flex cursor-pointer items-center gap-1.5">
+              <input type="checkbox" className="check" checked={cfg.offsetsMin.includes(min)} onChange={(e) => setOffset(min, e.target.checked)} />
               <span>{min}m before</span>
             </label>
           ))}
-          {cfg.offsetsMin.length === 0 ? <span className="text-[10px] opacity-40">no offsets selected</span> : null}
+          {cfg.offsetsMin.length === 0 ? <span className="text-[11px] opacity-60">no offsets selected</span> : null}
         </div>
       ) : null}
       {cfg.enabled && metadata.dueTimeMin === undefined ? (
-        <p className="mt-1 text-[10px] opacity-40 leading-tight">
+        <p className="mt-1 text-[11px] opacity-60 leading-tight">
           no time set — offsets count from midnight, i.e. the evening before
         </p>
       ) : null}
@@ -397,10 +397,10 @@ const PAYLOAD_LIMIT = 8192;
 
 export function PayloadField({ payloadLen }: { payloadLen: number }) {
   return (
-    <div className="border border-foreground/20 p-2">
-      <div className="flex items-center justify-between text-[10px]">
-        <span className="opacity-60">encrypted payload</span>
-        <span className="font-mono opacity-70">
+    <div className="pt-1">
+      <div className="flex items-center justify-between text-[11px] opacity-60">
+        <span>encrypted storage</span>
+        <span className="font-mono">
           {payloadLen}/{PAYLOAD_LIMIT}
         </span>
       </div>
