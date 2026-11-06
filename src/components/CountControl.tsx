@@ -62,7 +62,7 @@ export function CountControl({
   if (mode !== "check") {
     return (
       <>
-        <div className={`flex h-5 shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-[5.5rem]" : "w-[4.5rem]"}`}>
+        <div className="flex h-5 w-[5.5rem] shrink-0 items-stretch border border-foreground">
           <button
             onClick={onCountDown}
             disabled={count <= 0}
