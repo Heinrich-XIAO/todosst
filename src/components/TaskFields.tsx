@@ -36,7 +36,7 @@ export function RecurrenceField({
 }) {
   const [showRuleEditor, setShowRuleEditor] = useState(false);
   return (
-    <div className="border-t border-foreground/20 pt-2">
+    <div className="border-y border-foreground/20 py-2">
       <div className="flex items-center justify-between">
         <span className="opacity-60">recurrence</span>
         {!showRuleEditor && (
@@ -362,7 +362,7 @@ export function RemindersField({ metadata, onPatch }: { metadata: Metadata; onPa
     onPatch({ reminder: { enabled: true, offsetsMin: Array.from(offs).sort((a, b) => b - a) } });
   };
   return (
-    <div className="border-t border-foreground/20 pt-2">
+    <div className="border-y border-foreground/20 py-2">
       <div className="flex items-center justify-between">
         <span className="opacity-60">remind me</span>
         <button

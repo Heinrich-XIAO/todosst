@@ -87,6 +87,34 @@ export type TodayItem = {
 
 const GROUP_LABELS = ["overdue", "today", "still open"] as const;
 
+/** A hairline that fills as today's rows close — the day's progress at a
+ * glance, so every check moves something toward all clear. */
+function DayProgress({ items }: { items: TodayItem[] }) {
+  const today = items.filter((i) => i.group === 1);
+  if (today.length === 0) return null;
+  const done = today.filter((i) => !rowIsOpen(i)).length;
+  return (
+    <div className="flex items-center gap-3 border-b border-foreground/10 px-3 py-2 font-mono text-[11px]">
+      <span className="shrink-0 tabular-nums opacity-60">
+        {done}/{today.length} done
+      </span>
+      <div
+        role="progressbar"
+        aria-label="done today"
+        aria-valuemin={0}
+        aria-valuemax={today.length}
+        aria-valuenow={done}
+        className="h-px flex-1 bg-foreground/20"
+      >
+        <div
+          className="h-full bg-foreground transition-[width] duration-300 ease-out motion-reduce:transition-none"
+          style={{ width: `${(done / today.length) * 100}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /** One 11px section band — shared by habits / tasks / battles headers and the
  * overdue / still-open sub-labels, so every section reads the same. */
 function SectionHead({ children, count }: { children: string; count?: number }) {
@@ -853,6 +881,7 @@ export function TodayView({
           aria-hidden
           className={`pointer-events-none sticky top-0 z-10 -mb-6 h-6 bg-gradient-to-b from-background to-transparent transition-opacity duration-150 md:hidden ${scrolled ? "opacity-100" : "opacity-0"}`}
         />
+        {open > 0 && <DayProgress items={items} />}
         {showHabitOffer && (
           <div className="border-b border-foreground/10 px-3 py-2 text-xs">
             <p className="opacity-80">
