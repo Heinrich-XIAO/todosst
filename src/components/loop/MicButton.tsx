@@ -35,7 +35,7 @@ export function MicButton({
   onProblem,
   autoStart,
 }: {
-  /** the finished transcript, once per utterance */
+  /** everything heard, once the user taps stop */
   onFinal: (text: string) => void;
   /** live partial transcript while speaking ("" when it ends) */
   onInterim?: (text: string) => void;
@@ -51,6 +51,10 @@ export function MicButton({
   );
   const [listening, setListening] = useState(false);
   const recRef = useRef<Recognition | null>(null);
+  // listening lasts until the user taps stop: the browser ends a session at
+  // every pause, so each ended session banks what it heard and a new one starts
+  const wantRef = useRef(false);
+  const keptRef = useRef("");
   const heardRef = useRef("");
   // keep the latest callbacks without restarting an in-flight recognition
   const cb = useRef({ onFinal, onInterim, onProblem });
@@ -58,48 +62,87 @@ export function MicButton({
     cb.current = { onFinal, onInterim, onProblem };
   });
 
-  useEffect(() => () => recRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      wantRef.current = false;
+      recRef.current?.abort();
+    },
+    [],
+  );
 
-  const start = useCallback(() => {
-    const Ctor = recognitionCtor();
-    if (!Ctor || recRef.current) return;
-    const rec = new Ctor();
-    rec.lang = navigator.language || "en-US";
-    rec.interimResults = true;
-    rec.continuous = false;
+  const heardSoFar = () => [keptRef.current, heardRef.current].filter(Boolean).join(" ");
+
+  const finish = useCallback(() => {
+    const text = heardSoFar();
+    wantRef.current = false;
+    keptRef.current = "";
     heardRef.current = "";
-    rec.onresult = (e) => {
-      let text = "";
-      for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
-      heardRef.current = text.trim();
-      cb.current.onInterim?.(heardRef.current);
-    };
-    rec.onerror = (e) => {
-      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
-        cb.current.onProblem?.("microphone permission is blocked — allow it for this site, or use your keyboard's mic key");
-      } else if (e.error === "network") {
-        cb.current.onProblem?.("speech recognition needs a connection");
-      } else if (e.error !== "no-speech" && e.error !== "aborted") {
-        cb.current.onProblem?.(`voice capture failed (${e.error})`);
+    recRef.current = null;
+    setListening(false);
+    cb.current.onInterim?.("");
+    if (text) cb.current.onFinal(text);
+  }, []);
+
+  const listen = useCallback(() => {
+    const session = () => {
+      const Ctor = recognitionCtor();
+      if (!Ctor) return finish();
+      const rec = new Ctor();
+      rec.lang = navigator.language || "en-US";
+      rec.interimResults = true;
+      // one utterance per session, restarted on end — continuous mode repeats
+      // results on Android Chrome and still ends on silence there
+      rec.continuous = false;
+      heardRef.current = "";
+      rec.onresult = (e) => {
+        let text = "";
+        for (let i = 0; i < e.results.length; i++) text += e.results[i][0].transcript;
+        heardRef.current = text.trim();
+        cb.current.onInterim?.(heardSoFar());
+      };
+      rec.onerror = (e) => {
+        if (e.error === "no-speech" || e.error === "aborted") return;
+        wantRef.current = false;
+        if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+          cb.current.onProblem?.("microphone permission is blocked — allow it for this site, or use your keyboard's mic key");
+        } else if (e.error === "network") {
+          cb.current.onProblem?.("speech recognition needs a connection");
+        } else if (e.error === "audio-capture") {
+          cb.current.onProblem?.("no microphone available — another app may be using it");
+        } else {
+          cb.current.onProblem?.(`voice capture failed (${e.error})`);
+        }
+      };
+      rec.onend = () => {
+        if (recRef.current !== rec) return;
+        if (!wantRef.current) return finish();
+        keptRef.current = heardSoFar();
+        heardRef.current = "";
+        session();
+      };
+      recRef.current = rec;
+      try {
+        rec.start();
+        setListening(true);
+      } catch {
+        finish();
       }
     };
-    rec.onend = () => {
-      const text = heardRef.current;
-      heardRef.current = "";
-      recRef.current = null;
-      setListening(false);
-      cb.current.onInterim?.("");
-      if (text) cb.current.onFinal(text);
-    };
-    recRef.current = rec;
-    try {
-      rec.start();
-      setListening(true);
-    } catch {
-      recRef.current = null;
-      setListening(false);
-    }
-  }, []);
+    session();
+  }, [finish]);
+
+  const start = useCallback(() => {
+    if (!recognitionCtor() || wantRef.current) return;
+    wantRef.current = true;
+    keptRef.current = "";
+    listen();
+  }, [listen]);
+
+  const stop = () => {
+    wantRef.current = false;
+    if (recRef.current) recRef.current.stop();
+    else finish();
+  };
 
   const startedAuto = useRef(false);
   useEffect(() => {
@@ -113,7 +156,7 @@ export function MicButton({
   return (
     <button
       type="button"
-      onClick={() => (listening ? recRef.current?.stop() : start())}
+      onClick={() => (listening ? stop() : start())}
       aria-label={listening ? "stop listening" : "capture by voice"}
       title={listening ? "stop — what you said is captured" : "capture by voice"}
       className={`flex h-9 w-9 shrink-0 items-center justify-center border border-foreground ${
