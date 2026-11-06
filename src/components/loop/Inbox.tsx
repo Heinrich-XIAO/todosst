@@ -37,7 +37,7 @@ export function Inbox({ ctx }: { ctx: LoopCtx }) {
   return (
     <div className={pickedSignals.length >= 2 ? "pb-6" : ""}>
       {model.inbox.length === 0 ? (
-        <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
+        <p className="px-3 py-10 text-center text-pretty font-mono text-xs opacity-60">
           inbox empty. when something annoys you, type <code>? what happened</code> or tap the mic.
         </p>
       ) : (
@@ -225,7 +225,7 @@ function AttachPicker({ ctx, onPick }: { ctx: LoopCtx; onPick: (itemId: Id<"item
     <select
       value=""
       onChange={(e) => e.target.value && onPick(e.target.value as Id<"items">)}
-      className="max-w-[9rem] cursor-pointer bg-transparent py-0.5 font-mono text-[11px] underline underline-offset-4 opacity-80 hover:opacity-100"
+      className="w-auto max-w-[12rem] cursor-pointer border-b border-foreground/60 bg-transparent py-0.5 font-mono text-[11px] opacity-80 [field-sizing:content] hover:opacity-100"
       aria-label="same as an existing item"
     >
       <option value="">same as…</option>

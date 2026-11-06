@@ -24,7 +24,7 @@ export function StatusSquare({ done }: { done: boolean }) {
     <span
       aria-hidden
       className={`flex h-4 w-4 shrink-0 items-center justify-center border ${
-        done ? "border-foreground bg-foreground text-background" : "border-foreground/30"
+        done ? "border-foreground bg-foreground text-background" : "border-dashed border-foreground/60"
       }`}
     >
       {done && (

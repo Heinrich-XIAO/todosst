@@ -962,7 +962,7 @@ export function TodayView({
         {sectionRows("habits", items.filter((i) => i.rs?.isRecurring), habitConfirms ?? [])}
         {holdRows.length > 0 && (
           <div>
-            <SectionHead>battles</SectionHead>
+            <SectionHead count={holdRows.length}>battles</SectionHead>
             <ul>
               {holdRows.map((h) => (
                 <HoldRow key={`${h.node._id}:${h.windowDay}`} item={h} onSlip={onSlip} onUndoSlip={onUndoSlip} onConfirmHold={onConfirmHold} onSelect={onSelect} />

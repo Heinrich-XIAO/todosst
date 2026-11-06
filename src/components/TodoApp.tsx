@@ -471,25 +471,6 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           </button>
         )}
 
-        {isNegative(meta) ? (
-          <SlipControl
-            slips={count}
-            onSlip={() => void handleCountUp(node)}
-            onUndo={() => void handleCountDown(node)}
-          />
-        ) : mode !== "check" ? (
-          <CountControl
-            mode={mode}
-            count={count}
-            threshold={threshold}
-            checked={checked}
-            meta={meta}
-            onToggle={() => handleToggle(node)}
-            onCountUp={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
-            onCountDown={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
-          />
-        ) : null}
-
         {/* desktop: actions surface on hover/focus so titles stay the loudest
             thing on the row; touch has no hover, so they stay, as icons */}
         <span
@@ -527,6 +508,24 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             </button>
           )}
         </span>
+        {isNegative(meta) ? (
+          <SlipControl
+            slips={count}
+            onSlip={() => void handleCountUp(node)}
+            onUndo={() => void handleCountDown(node)}
+          />
+        ) : mode !== "check" ? (
+          <CountControl
+            mode={mode}
+            count={count}
+            threshold={threshold}
+            checked={checked}
+            meta={meta}
+            onToggle={() => handleToggle(node)}
+            onCountUp={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
+            onCountDown={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
+          />
+        ) : null}
       </div>
 
       {addChildParent === node._id && (

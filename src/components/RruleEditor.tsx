@@ -453,7 +453,7 @@ export function RruleEditor({
 
           <div className="flex gap-2">
             <label className={`${labelCls} flex-1`}>
-              <span className="opacity-60">count (max occurrences)</span>
+              <span className="opacity-60">ends after (times)</span>
               <input
                 type="number"
                 min={1}
@@ -572,11 +572,10 @@ export function RruleEditor({
           ) : (
             <div className="space-y-1 text-[11px]">
               {preview && preview.length > 0 && (
-                <p className="opacity-60">
+                <p className="opacity-60" title={built?.rule ? built.rule.toString() : undefined}>
                   next: {preview.map((d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toLowerCase()).join(", ")}{built?.rule ? " …" : ""}
                 </p>
               )}
-              {built?.rule && <p className="truncate font-mono opacity-60" title={built.rule.toString()}>{built.rule.toString()}</p>}
             </div>
           )}
         </div>

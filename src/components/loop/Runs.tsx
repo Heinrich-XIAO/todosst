@@ -30,7 +30,7 @@ export function Runs({ ctx }: { ctx: LoopCtx }) {
   return (
     <div className="pb-6">
       {open.length === 0 ? (
-        <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
+        <p className="px-3 py-10 text-center text-pretty font-mono text-xs opacity-60">
           no fixes in progress. open a problem and start a run — it will tell you whether the fix actually worked.
         </p>
       ) : (

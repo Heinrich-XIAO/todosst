@@ -75,7 +75,7 @@ export function Items({ ctx }: { ctx: LoopCtx }) {
       </div>
 
       {live.length === 0 && finished.length === 0 ? (
-        <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
+        <p className="px-3 py-10 text-center text-pretty font-mono text-xs opacity-60">
           {model.items.size === 0
             ? "nothing tracked yet. triage something from the inbox."
             : "nothing matches."}
@@ -111,9 +111,9 @@ function Row({ row, ctx }: { row: ItemModel; ctx: LoopCtx }) {
     <li className="border-b border-foreground/10 last:border-b-0">
       <button
         onClick={() => ctx.openItem(row.id)}
-        className="group flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-foreground/[0.06]"
+        className="group flex w-full items-start gap-3 px-3 py-3 text-left hover:bg-foreground/[0.06]"
       >
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block break-words text-sm leading-snug">{row.item.title}</span>
           <span className="mt-1 flex flex-wrap items-center gap-1.5">
             <Tag>{row.item.type}</Tag>
@@ -129,7 +129,7 @@ function Row({ row, ctx }: { row: ItemModel; ctx: LoopCtx }) {
           </span>
           <span className="block opacity-60">{row.signals.length}×</span>
         </span>
-        <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 self-center opacity-40 group-hover:opacity-100" aria-hidden />
+        <ChevronRight className="h-3.5 w-3.5 shrink-0 self-center opacity-60 group-hover:opacity-100" aria-hidden />
       </button>
     </li>
   );

@@ -47,7 +47,7 @@ export function DeleteConfirmDialog({
             {`"${node.title.length > 48 ? `${node.title.slice(0, 48)}…` : node.title}"`}
           </span>
         </h2>
-        <p className="mt-3 font-mono text-xs leading-relaxed opacity-70">
+        <p className="mt-3 text-pretty font-mono text-xs leading-relaxed opacity-70">
           {nestedCount > 1
             ? `// ${nestedCount - 1} nested node${nestedCount - 1 === 1 ? "" : "s"} terminated alongside it`
             : "// removed from the tree"}
