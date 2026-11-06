@@ -18,7 +18,7 @@ import { HabitFixDialog } from "./HabitFixDialog";
 import { missCopy } from "@/lib/ritual";
 import { normalizeDueAt } from "@/lib/due";
 import { getAncestors, type DecryptedNode, type TreeNode } from "@/lib/tree";
-import { CountControl } from "./CountControl";
+import { CountControl, StatusSquare } from "./CountControl";
 import { Heatmap } from "./Heatmap";
 import { SlipControl } from "./SlipControl";
 
@@ -248,16 +248,22 @@ function TodayRow({
   return (
     <li className="border-b border-foreground/10 last:border-b-0">
       <div className={`flex items-center gap-2 px-3 py-2 text-sm ${checked ? "opacity-40" : ""}`}>
-        <CountControl
-          mode={mode}
-          count={count}
-          threshold={threshold}
-          checked={checked}
-          meta={meta}
-          onToggle={() => onToggle(node)}
-          onCountUp={() => onCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
-          onCountDown={() => onCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
-        />
+        {/* checkboxes lead; tally/time rows keep a status square in the
+            checkbox column and carry their stepper at the row's end */}
+        {mode === "check" ? (
+          <CountControl
+            mode={mode}
+            count={count}
+            threshold={threshold}
+            checked={checked}
+            meta={meta}
+            onToggle={() => onToggle(node)}
+            onCountUp={() => onCountUp(node)}
+            onCountDown={() => onCountDown(node)}
+          />
+        ) : (
+          <StatusSquare done={checked} />
+        )}
         <button
           onClick={() => onSelect(node)}
           className="min-w-0 flex-1 text-left"
@@ -290,6 +296,18 @@ function TodayRow({
           <span className="shrink-0 max-w-[40%] truncate text-[11px] opacity-60" title={missNote}>
             {missNote}
           </span>
+        )}
+        {mode !== "check" && (
+          <CountControl
+            mode={mode}
+            count={count}
+            threshold={threshold}
+            checked={checked}
+            meta={meta}
+            onToggle={() => onToggle(node)}
+            onCountUp={() => onCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
+            onCountDown={() => onCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
+          />
         )}
       </div>
     </li>
@@ -334,7 +352,7 @@ function HoldRow({
   const slipWord = slips === 1 ? "1 slip" : `${slips} slips`;
   const [correcting, setCorrecting] = useState(false);
   const corrector = correcting ? (
-    <span className="flex h-[18px] shrink-0 items-stretch border border-foreground text-[10px] leading-none">
+    <span className="flex h-5 shrink-0 items-stretch border border-foreground text-[11px] leading-none">
       <button
         onClick={() => onUndoSlip(node, windowDay)}
         disabled={slips <= 0}
@@ -355,7 +373,7 @@ function HoldRow({
   ) : (
     <button
       onClick={() => setCorrecting(true)}
-      className="shrink-0 text-[10px] underline underline-offset-4 opacity-60 hover:opacity-100"
+      className="shrink-0 text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
       aria-label={`log slips for ${node.title}`}
     >
       slipped?
@@ -365,10 +383,11 @@ function HoldRow({
     return (
       <li className="border-b border-foreground/10 last:border-b-0">
         <div className="flex items-center gap-2 px-3 py-2 text-sm">
-          <SlipControl slips={slips} onSlip={() => onSlip(node)} onUndo={() => onUndoSlip(node)} />
+          <StatusSquare done={false} />
           <button onClick={() => onSelect(node)} className="min-w-0 flex-1 text-left truncate" title={node.title}>
             {node.title}
           </button>
+          <SlipControl slips={slips} onSlip={() => onSlip(node)} onUndo={() => onUndoSlip(node)} />
         </div>
       </li>
     );
@@ -379,7 +398,7 @@ function HoldRow({
         <div className="flex items-center gap-2 px-3 py-2 text-sm">
           <button
             onClick={() => onConfirmHold(node, windowDay)}
-            className="h-[18px] w-16 shrink-0 border border-foreground text-[10px] leading-none hover:bg-foreground hover:text-background"
+            className="h-5 w-[4.5rem] shrink-0 border border-foreground text-[11px] leading-none hover:bg-foreground hover:text-background"
             aria-label={`confirm ${node.title} held`}
           >
             ✓ held?
@@ -400,7 +419,7 @@ function HoldRow({
       <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-60">
         <button
           onClick={() => onConfirmHold(node, windowDay)}
-          className="flex h-[18px] w-16 shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[10px] leading-none text-background hover:border-foreground"
+          className="flex h-5 w-[4.5rem] shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[11px] leading-none text-background hover:border-foreground"
           aria-label={`seal ${node.title} failed`}
         >
           ✕ seal?
@@ -409,7 +428,7 @@ function HoldRow({
           {node.title}
         </button>
         {corrector}
-        <span className="shrink-0 text-[10px] opacity-60">
+        <span className="shrink-0 text-[11px] opacity-60">
           {day} — {slipWord}
           {tol > 0 ? ` (tolerated ${tol})` : ""}
         </span>
@@ -468,7 +487,7 @@ function HabitConfirmRow({
         <div className="flex items-center gap-2 px-3 py-2 text-sm">
           <button
             onClick={() => onConfirm(node, windowDay)}
-            className="h-[18px] w-16 shrink-0 border border-foreground text-[10px] leading-none hover:bg-foreground hover:text-background"
+            className="h-5 w-[4.5rem] shrink-0 border border-foreground text-[11px] leading-none hover:bg-foreground hover:text-background"
             aria-label={`confirm ${node.title} did it`}
           >
             ✓ did it?
@@ -490,7 +509,7 @@ function HabitConfirmRow({
       <div className="flex items-center gap-2 px-3 py-2 text-sm opacity-60">
         <button
           onClick={() => onConfirm(node, windowDay)}
-          className="flex h-[18px] w-16 shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[10px] leading-none text-background hover:border-foreground"
+          className="flex h-5 w-[4.5rem] shrink-0 items-center justify-center border border-foreground/40 bg-foreground text-[11px] leading-none text-background hover:border-foreground"
           aria-label={`confirm ${node.title} missed`}
         >
           ✕ missed?
@@ -500,12 +519,12 @@ function HabitConfirmRow({
         </button>
         <button
           onClick={() => (isTouch ? setFixOpen(true) : onFixConfirm(node, windowDay, Number.isFinite(threshold) ? threshold : 1))}
-          className="shrink-0 text-[10px] underline underline-offset-4 opacity-60 hover:opacity-100"
+          className="shrink-0 text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
           aria-label={`correct ${node.title} for ${day}`}
         >
           But I did
         </button>
-        <span className="shrink-0 text-[10px] opacity-60">{detail === null ? day : `${day} — ${detail}`}</span>
+        <span className="shrink-0 text-[11px] opacity-60">{detail === null ? day : `${day} — ${detail}`}</span>
       </div>
       {fixOpen && (
         <HabitFixDialog
@@ -802,7 +821,7 @@ export function TodayView({
     return n !== undefined ? `${n} day streak` : null;
   };
 
-  if (!items) return <p className="px-3 py-8 text-sm opacity-60">loading…</p>;
+  if (!items) return <p className="px-3 py-8 font-mono text-xs opacity-60">loading…</p>;
 
   const holdRows = holds ?? [];
 
@@ -871,7 +890,7 @@ export function TodayView({
   // the region carries the surface's one visible scrollbar (.today-scroll).
   // Desktop keeps the plain document flow (md: overrides).
   return (
-    <div className="flex min-h-0 flex-1 flex-col pb-2 md:block">
+    <div className={`flex min-h-0 flex-1 flex-col md:block ${open > 0 ? "pb-2" : ""}`}>
       {slides.length > 0 && <PastYearCarousel slides={slides} nowTs={nowTs} />}
       <div
         className="today-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain md:overflow-visible"

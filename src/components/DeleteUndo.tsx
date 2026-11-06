@@ -50,7 +50,7 @@ export function DeleteConfirmDialog({
         <p className="mt-3 font-mono text-xs leading-relaxed opacity-70">
           {nestedCount > 1
             ? `// ${nestedCount - 1} nested node${nestedCount - 1 === 1 ? "" : "s"} terminated alongside it`
-            : "// task will be purged"}
+            : "// removed from the tree"}
           {" — recoverable for "}
           {UNDO_TTL_SECONDS}s via undo.
         </p>
@@ -69,7 +69,7 @@ export function DeleteConfirmDialog({
             delete
           </button>
         </div>
-        <p className="mt-3 text-right font-mono text-[11px] opacity-60">&gt; auto-abort in {countdown}s • [esc] cancel</p>
+        <p className="mt-3 text-right font-mono text-[11px] opacity-60">&gt; auto-abort in {countdown}s · [esc] cancel</p>
       </div>
     </div>
   );

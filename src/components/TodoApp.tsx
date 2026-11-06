@@ -50,7 +50,7 @@ import { defaultDueTimeMin, dueInstant, normalizeDueAt } from "@/lib/due";
 import { HelpPanel } from "./HelpPanel";
 import { TaskSheet, type TaskDraft, type TaskSheetMode } from "./TaskSheet";
 import { ReminderToast } from "./ReminderToast";
-import { CountControl } from "./CountControl";
+import { CountControl, StatusSquare } from "./CountControl";
 import { SlipControl } from "./SlipControl";
 import { buildTodayItems, openCountOf, rowIsOpen, TodayView, type PastYearSlide } from "./TodayView";
 import { confettiBurst, confettiCelebrate } from "@/lib/confetti";
@@ -419,24 +419,9 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
           {hasChildren ? <ChevronRight className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-90" : ""}`} aria-hidden /> : null}
         </button>
 
-        {isNegative(meta) ? (
-          <SlipControl
-            slips={count}
-            onSlip={() => void handleCountUp(node)}
-            onUndo={() => void handleCountDown(node)}
-          />
-        ) : mode !== "check" ? (
-          <CountControl
-            mode={mode}
-            count={count}
-            threshold={threshold}
-            checked={checked}
-            meta={meta}
-            onToggle={() => handleToggle(node)}
-            onCountUp={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
-            onCountDown={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
-          />
-        ) : (
+        {/* the left column is always a 16px square so titles line up; tally,
+            time and avoid rows carry their stepper on the right instead */}
+        {mode === "check" && !isNegative(meta) ? (
           <CountControl
             mode={mode}
             count={count}
@@ -447,6 +432,8 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             onCountUp={() => handleCountUp(node)}
             onCountDown={() => handleCountDown(node)}
           />
+        ) : (
+          <StatusSquare done={!isNegative(meta) && checked} />
         )}
 
         {isEditing ? (
@@ -483,6 +470,25 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             ) : null}
           </button>
         )}
+
+        {isNegative(meta) ? (
+          <SlipControl
+            slips={count}
+            onSlip={() => void handleCountUp(node)}
+            onUndo={() => void handleCountDown(node)}
+          />
+        ) : mode !== "check" ? (
+          <CountControl
+            mode={mode}
+            count={count}
+            threshold={threshold}
+            checked={checked}
+            meta={meta}
+            onToggle={() => handleToggle(node)}
+            onCountUp={() => handleCountUp(node, mode === "time" ? stepOf(meta) : undefined)}
+            onCountDown={() => handleCountDown(node, mode === "time" ? stepOf(meta) : undefined)}
+          />
+        ) : null}
 
         {/* desktop: actions surface on hover/focus so titles stay the loudest
             thing on the row; touch has no hover, so they stay, as icons */}
@@ -3305,7 +3311,7 @@ function TodoTask() {
         }}
       >
         {isLoading || isParsing ? (
-          <p className="px-3 py-8 text-sm opacity-60">loading…</p>
+          <p className="px-3 py-8 font-mono text-xs opacity-60">loading…</p>
         ) : listFlat.length === 0 ? (
           <div className="px-3 py-12 text-sm">
             <p>no tasks. add a top-level task.</p>
@@ -3337,6 +3343,10 @@ function TodoTask() {
       </div>
       {selectedNode && (
       <div className="contents md:block md:w-[360px] md:shrink-0 md:sticky md:top-4 md:border-l md:border-foreground">
+        {/* the today overlay sheet dims what's behind it, like the new-task sheet */}
+        {view === "today" && (
+          <div aria-hidden className="fixed inset-0 z-10 bg-background/80 md:hidden" onClick={() => setSelectedId(null)} />
+        )}
         <MetadataPanel
           key={selectedNode._id}
           node={selectedNode}
@@ -3453,6 +3463,21 @@ function BottomNav({
   );
 }
 
+/** The card's own frame while auth resolves — the tabs and composer rows sit
+ * where they will land, so nothing jumps when the data arrives, and the wait
+ * speaks in the input's typewriter voice. */
+function LoadingCard() {
+  return (
+    <div className="w-full max-w-[720px] md:border md:border-foreground" aria-busy="true">
+      <div className="hidden h-[37px] border-b border-foreground md:block" />
+      <div className="flex h-[53px] items-center border-b border-foreground px-3 font-mono text-xs">
+        <span className="opacity-60">loading</span>
+        <span aria-hidden className="all-clear-caret ml-0.5 inline-block h-[1.05em] w-[0.55em] bg-current opacity-60" />
+      </div>
+    </div>
+  );
+}
+
 export function TodoApp() {
   const online = useOnline();
   const [offlineBootstrapped, setOfflineBootstrapped] = useState(false);
@@ -3484,7 +3509,7 @@ export function TodoApp() {
   return (
     <>
       <AuthLoading>
-        <p className="text-sm opacity-60">loading…</p>
+        <LoadingCard />
       </AuthLoading>
       <Unauthenticated>
         <AuthForm />

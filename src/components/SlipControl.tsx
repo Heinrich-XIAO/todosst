@@ -22,13 +22,13 @@ export function SlipControl({
   const { holdProps, pill } = useHoldConfirm(onSlip);
   return (
     <>
-      <div className="flex h-[18px] w-16 shrink-0 touch-none select-none items-stretch border border-foreground">
-        <button onClick={onUndo} disabled={slips <= 0} className="w-4 text-[10px] leading-none disabled:opacity-30" aria-label="take back a slip">
+      <div className="flex h-5 w-[4.5rem] shrink-0 touch-none select-none items-stretch border border-foreground">
+        <button onClick={onUndo} disabled={slips <= 0} className="relative w-5 text-[11px] leading-none after:absolute after:-inset-2 after:content-[''] disabled:opacity-40" aria-label="take back a slip">
           −
         </button>
         <button
           {...holdProps}
-          className={`flex flex-1 touch-none items-center justify-center border-l border-foreground text-[10px] leading-none ${
+          className={`flex flex-1 touch-none items-center justify-center border-l border-foreground font-mono text-[11px] tabular-nums leading-none ${
             slips > 0 ? "bg-foreground text-background" : "bg-background"
           }`}
           aria-label={`log a slip (${slips} so far)`}

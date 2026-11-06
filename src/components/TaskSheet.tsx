@@ -160,12 +160,12 @@ export function TaskSheet({
                 className="w-full border-b border-foreground bg-transparent py-1 text-base placeholder:text-foreground/60 focus:outline-none"
               />
             </label>
-            <button onClick={onClose} className="shrink-0 p-1 opacity-60 hover:opacity-100" aria-label="close">
-              ✕
+            <button onClick={onClose} className="shrink-0 text-xs underline underline-offset-4 hover:opacity-60">
+              close
             </button>
           </div>
           {mode.kind === "create-child" && (
-            <div className="border-b border-foreground/10 px-4 py-1 font-mono text-[10px] opacity-60">
+            <div className="border-b border-foreground/10 px-4 py-1 font-mono text-[11px] opacity-60">
               new sub-task — under {mode.parentTitle}
             </div>
           )}
@@ -231,7 +231,7 @@ export function TaskSheet({
             <button
               type="submit"
               disabled={!title.trim() || busy}
-              className="w-full border border-foreground bg-foreground py-2 text-sm text-background hover:opacity-90 disabled:opacity-20"
+              className="w-full border border-foreground bg-foreground py-2 text-sm text-background hover:opacity-90 disabled:bg-transparent disabled:text-foreground disabled:opacity-40"
             >
               {busy ? "adding…" : mode.kind === "create-child" ? "add sub-task" : "add task"}
             </button>

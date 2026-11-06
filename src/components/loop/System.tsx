@@ -58,6 +58,12 @@ const TEMPLATES: Record<DefKind, { key: string; body: unknown }> = {
 };
 
 const KIND_LABEL: Record<DefKind, string> = { type: "types", workflow: "workflows", view: "views", rule: "rules" };
+const KIND_HINT: Record<DefKind, string> = {
+  type: "what a capture can become, with its fields and states",
+  workflow: "the steps a fix run follows before its verify window",
+  view: "saved filters for the problems tab",
+  rule: "automatic moves, e.g. 3+ in 7 days → start a workflow",
+};
 const pretty = (v: unknown) => JSON.stringify(typeof v === "string" ? JSON.parse(v) : v, null, 2);
 
 function currentBody(ctx: LoopCtx, kind: DefKind, key: string): string | null {
@@ -258,6 +264,7 @@ function DefSection({
   return (
     <>
       <Label>{KIND_LABEL[kind]}</Label>
+      <p className="px-3 pb-1 text-pretty font-mono text-[11px] opacity-60">{KIND_HINT[kind]}</p>
       <ul>
         {keys.map((key) => {
           const versions = ctx.defs.filter((d) => d.kind === kind && d.key === key && d.status !== "draft").sort((a, b) => b.version - a.version);
@@ -270,7 +277,11 @@ function DefSection({
             <li key={key} className="border-b border-foreground/10 px-3 py-2">
               <div className="flex items-center justify-between gap-3">
                 <span className="min-w-0 truncate text-sm">
-                  {name} <span className="font-mono text-[11px] opacity-60">{key} · {active ? `v${active.version}` : "built-in"}</span>
+                  {name}{" "}
+                  <span className="font-mono text-[11px] opacity-60">
+                    {key === name.toLowerCase() ? "" : `${key} · `}
+                    {active ? `v${active.version}` : "built-in"}
+                  </span>
                   {record[key] && (
                     <span className="ml-2 font-mono text-[11px] opacity-60">
                       held {record[key].held}/{record[key].held + record[key].reopened}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { PlainNode } from "@/lib/crypto";
-import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, modeOf, stepOf, thresholdOf } from "@/lib/recur";
+import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, loadRrule, modeOf, stepOf, thresholdOf } from "@/lib/recur";
 import { isNegative, toleranceOf } from "@/lib/negative";
 import {
   defaultDueTimeMin,
@@ -24,6 +24,28 @@ import { Heatmap } from "./Heatmap";
 type Metadata = PlainNode["metadata"];
 type OnPatch = (patch: Partial<Metadata>) => void;
 
+/** "every day", "every week on monday, thursday" — the rule in words (rrule's
+ * toText, lowercased); null until rrule loads or when it can't phrase it. */
+function useRuleText(recur: string | undefined): string | null {
+  const [text, setText] = useState<{ rule: string; text: string } | null>(null);
+  useEffect(() => {
+    if (!recur) return;
+    let live = true;
+    void loadRrule().then(({ rrulestr }) => {
+      try {
+        const t = rrulestr(recur).toText();
+        if (live) setText({ rule: recur, text: t.toLowerCase() });
+      } catch {
+        /* unphraseable rule: the raw rule stays */
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [recur]);
+  return text && text.rule === recur ? text.text : null;
+}
+
 export function RecurrenceField({
   metadata,
   anchorTs,
@@ -35,6 +57,7 @@ export function RecurrenceField({
   onPatch: OnPatch;
 }) {
   const [showRuleEditor, setShowRuleEditor] = useState(false);
+  const ruleText = useRuleText(metadata.recur);
   return (
     <div className="border-y border-foreground/20 py-2">
       <div className="flex items-center justify-between">
@@ -45,7 +68,11 @@ export function RecurrenceField({
           </button>
         )}
       </div>
-      {!showRuleEditor && metadata.recur ? <p className="mt-1 break-all font-mono text-[10px] opacity-60">{metadata.recur}</p> : null}
+      {!showRuleEditor && metadata.recur ? (
+        <p className="mt-1 break-all font-mono text-[11px] opacity-60" title={metadata.recur}>
+          {ruleText ?? metadata.recur}
+        </p>
+      ) : null}
       {!showRuleEditor && !metadata.recur ? <p className="mt-1 text-[11px] opacity-60">one-off task — no schedule</p> : null}
       {showRuleEditor && (
         <div className="mt-2">
@@ -70,7 +97,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
   return (
     <>
       <div className="flex flex-wrap gap-2">
-        <label className="flex-1 block">
+        <label className="block min-w-[8rem] flex-1">
           <span className="opacity-60">completion style</span>
           <select
             value={negRaw ? "avoid" : mode}
@@ -82,7 +109,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                 onPatch({ neg: undefined, mode: v === "count" || v === "time" ? v : "check" });
               }
             }}
-            className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+            className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
           >
             <option value="check">checkbox</option>
             <option value="count">tally count</option>
@@ -91,7 +118,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
           </select>
         </label>
         {negRaw && (
-          <label className="flex-1 block">
+          <label className="block min-w-[8rem] flex-1">
             <span className="opacity-60">slips tolerated</span>
             <input
               type="number"
@@ -99,12 +126,12 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
               max={999}
               value={toleranceOf(metadata)}
               onChange={(e) => onPatch({ tol: Math.min(999, Math.max(0, Math.floor(Number(e.target.value) || 0))) })}
-              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+              className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
             />
           </label>
         )}
         {!negRaw && mode === "check" && (
-          <label className="flex-1 block">
+          <label className="block min-w-[8rem] flex-1">
             <span className="opacity-60">checks to finish</span>
             <input
               type="number"
@@ -112,12 +139,12 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
               max={999}
               value={thresholdOf(metadata)}
               onChange={(e) => onPatch({ threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
-              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+              className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
             />
           </label>
         )}
         {!neg && mode === "count" && (
-          <label className="flex-1 block">
+          <label className="block min-w-[8rem] flex-1">
             <span className="opacity-60">goal (optional)</span>
             <input
               type="number"
@@ -130,13 +157,13 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                   threshold: e.target.value === "" ? undefined : Math.min(999, Math.max(1, Math.floor(Number(e.target.value) || 1))),
                 })
               }
-              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+              className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
             />
           </label>
         )}
         {!neg && mode === "time" && (
           <>
-            <label className="flex-1 block">
+            <label className="block min-w-[8rem] flex-1">
               <span className="opacity-60">goal (minutes)</span>
               <input
                 type="number"
@@ -144,10 +171,10 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                 max={999}
                 value={thresholdOf(metadata)}
                 onChange={(e) => onPatch({ threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
-                className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+                className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
               />
             </label>
-            <label className="flex-1 block">
+            <label className="block min-w-[8rem] flex-1">
               <span className="opacity-60">step (minutes)</span>
               <input
                 type="number"
@@ -155,13 +182,13 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                 max={TIME_STEP_MAX}
                 value={stepOf(metadata)}
                 onChange={(e) => onPatch({ stepMin: Math.min(TIME_STEP_MAX, Math.max(1, Number(e.target.value) || 1)) })}
-                className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+                className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
               />
             </label>
           </>
         )}
         {metadata.recur && (
-          <label className="flex-1 block">
+          <label className="block min-w-[8rem] flex-1">
             <span className="opacity-60">grace hours</span>
             <input
               type="number"
@@ -169,7 +196,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
               max={48}
               value={metadata.graceHours ?? DEFAULT_GRACE_HOURS}
               onChange={(e) => onPatch({ graceHours: Math.min(48, Math.max(0, Number(e.target.value) || 0)) })}
-              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+              className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
             />
           </label>
         )}
@@ -292,7 +319,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
   }
   return (
     <div className="flex flex-wrap gap-2">
-      <label className="flex-1 block">
+      <label className="block min-w-0 flex-1">
         <span className="opacity-60">priority</span>
         <select
           value={metadata.priority ?? ""}
@@ -300,7 +327,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
             const v = e.target.value as Metadata["priority"];
             onPatch({ priority: v || null });
           }}
-          className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+          className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
         >
           <option value="">none</option>
           <option value="low">low</option>
@@ -308,7 +335,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
           <option value="high">high</option>
         </select>
       </label>
-      <label className="flex-1 block">
+      <label className="block min-w-0 flex-1">
         <span className="opacity-60">due</span>
         <input
           type="date"
@@ -329,11 +356,11 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
               dueTimeMin: metadata.dueAt ? metadata.dueTimeMin : defaultDueTimeMin(Date.now()),
             });
           }}
-          className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+          className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
         />
       </label>
       {metadata.dueAt ? (
-        <label className="flex-1 block">
+        <label className="block min-w-0 flex-1">
           <span className="opacity-60">at</span>
           <input
             type="time"
@@ -342,7 +369,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
               const min = e.target.value ? parseTimeInput(e.target.value) : null;
               onPatch({ dueTimeMin: min ?? undefined });
             }}
-            className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
+            className="mt-1 h-8 w-full border border-foreground/40 bg-transparent px-1.5 text-xs focus:border-foreground"
           />
         </label>
       ) : null}

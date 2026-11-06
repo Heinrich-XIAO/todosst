@@ -7,6 +7,7 @@ import type { Id } from "../../../convex/_generated/dataModel";
 import { matchesView, type FieldDef } from "../../../convex/loopLogic";
 import { TREND_MARK, ago, rateLabel, weeklyBuckets, type ItemModel } from "@/lib/loopModel";
 import type { LoopCtx } from "./ctx";
+import { ChevronRight } from "lucide-react";
 import { Bars, Btn, Chip, Label, Tag, inputCls } from "./ui";
 
 // All tracked items: a ranked list (loudest first) and, on tap, the detail
@@ -44,13 +45,13 @@ export function Items({ ctx }: { ctx: LoopCtx }) {
   const usedTypes = [...new Set([...model.items.values()].map((i) => i.item.type))];
 
   return (
-    <div className="pb-6">
+    <div>
       <div className="flex flex-wrap items-center gap-1.5 px-3 pb-1 pt-3">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="search…"
-          className={`${inputCls} max-w-[10rem]`}
+          className="max-w-[12rem] flex-1 border-b border-foreground/20 bg-transparent py-1 text-xs placeholder:text-foreground/60 focus:border-foreground focus:outline-none"
           aria-label="search items"
         />
         {views.length > 0 && (
@@ -107,10 +108,10 @@ export function Items({ ctx }: { ctx: LoopCtx }) {
 
 function Row({ row, ctx }: { row: ItemModel; ctx: LoopCtx }) {
   return (
-    <li>
+    <li className="border-b border-foreground/10 last:border-b-0">
       <button
         onClick={() => ctx.openItem(row.id)}
-        className="flex w-full items-start justify-between gap-3 border-b border-foreground/10 px-3 py-3 text-left hover:bg-foreground/[0.04]"
+        className="group flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-foreground/[0.06]"
       >
         <span className="min-w-0">
           <span className="block break-words text-sm leading-snug">{row.item.title}</span>
@@ -123,10 +124,12 @@ function Row({ row, ctx }: { row: ItemModel; ctx: LoopCtx }) {
         </span>
         <span className="shrink-0 text-right font-mono text-[11px]">
           <span className="block">
-            {rateLabel(row.rate)} {row.rate > 0 || row.trend !== "quiet" ? TREND_MARK[row.trend] : ""}
+            {rateLabel(row.rate)}
+            {row.rate > 0 || row.trend !== "quiet" ? ` · ${TREND_MARK[row.trend]}` : ""}
           </span>
           <span className="block opacity-60">{row.signals.length}×</span>
         </span>
+        <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 self-center opacity-40 group-hover:opacity-100" aria-hidden />
       </button>
     </li>
   );

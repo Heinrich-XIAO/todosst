@@ -379,13 +379,14 @@ export function RruleEditor({
   return (
     <div className="space-y-2 border border-foreground/20 p-2">
       <div className="flex items-center gap-2">
-        <div className="flex gap-1">
+        <div className="flex gap-3">
           {(["build", "text"] as const).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
-              className={`px-2 py-0.5 text-[10px] uppercase ${tab === t ? "bg-foreground text-background" : "border border-foreground/20 opacity-60 hover:opacity-100"}`}
+              aria-pressed={tab === t}
+              className={`py-0.5 font-mono text-xs ${tab === t ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}`}
             >
               {t}
             </button>
@@ -397,7 +398,7 @@ export function RruleEditor({
           rel="noreferrer"
           className="ml-auto text-[11px] opacity-60 underline underline-offset-2 hover:opacity-100"
         >
-          rrule (RFC 5545) ↗
+          rule syntax ↗
         </a>
       </div>
 
@@ -441,7 +442,7 @@ export function RruleEditor({
 
           <div className="flex gap-2">
             <label className={`${labelCls} flex-1`}>
-              <span className="opacity-60">dtstart</span>
+              <span className="opacity-60">starts on</span>
               <input type="date" value={g.dtstart} onChange={(e) => setG({ ...g, dtstart: e.target.value })} className={`mt-1 ${inputCls}`} />
             </label>
             <label className={`${labelCls} w-24`}>
@@ -485,9 +486,9 @@ export function RruleEditor({
                           return { ...prev, weekdayN: next };
                         })
                       }
-                      className={`w-full border px-0 py-1 text-[10px] ${selected ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:bg-foreground/10"}`}
+                      className={`w-full border px-0 py-1 font-mono text-[11px] ${selected ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:bg-foreground/10"}`}
                     >
-                      {label}
+                      {label.toLowerCase()}
                     </button>
                     {selected && (g.freq === 0 || g.freq === 1) ? (
                       <select
@@ -498,7 +499,7 @@ export function RruleEditor({
                             weekdayN: { ...prev.weekdayN, [wd]: e.target.value === "" ? null : Number(e.target.value) },
                           }))
                         }
-                        className="w-full border border-foreground/20 bg-transparent p-0 text-[9px]"
+                        className="w-full border border-foreground/40 bg-transparent p-0 text-[11px]"
                       >
                         {ORDINALS.map((o) => (
                           <option key={o.v} value={o.v}>
@@ -515,7 +516,7 @@ export function RruleEditor({
 
           <div>
             <span className="opacity-60">by month</span>
-            <div className="mt-1 flex flex-wrap gap-1">
+            <div className="mt-1 grid grid-cols-6 gap-1">
               {MONTHS.map((label, m) => {
                 const selected = g.bymonth.includes(m);
                 return (
@@ -528,7 +529,7 @@ export function RruleEditor({
                         bymonth: selected ? prev.bymonth.filter((x) => x !== m) : [...prev.bymonth, m].sort((a, b) => a - b),
                       }))
                     }
-                    className={`border px-1.5 py-0.5 text-[10px] ${selected ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:bg-foreground/10"}`}
+                    className={`border px-1.5 py-0.5 font-mono text-[11px] ${selected ? "border-foreground bg-foreground text-background" : "border-foreground/20 hover:bg-foreground/10"}`}
                   >
                     {label}
                   </button>
@@ -538,7 +539,7 @@ export function RruleEditor({
           </div>
 
           <details className="text-xs">
-            <summary className="cursor-pointer opacity-60 hover:opacity-100">advanced BY* rules</summary>
+            <summary className="cursor-pointer opacity-60 hover:opacity-100">advanced rules</summary>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {(
                 [
@@ -567,12 +568,12 @@ export function RruleEditor({
           </details>
 
           {built?.error ? (
-            <p className="border border-foreground/20 px-2 py-1 text-[10px]">{built.error}</p>
+            <p className="border border-foreground/20 px-2 py-1 text-[11px]">{built.error}</p>
           ) : (
-            <div className="space-y-1 text-[10px]">
+            <div className="space-y-1 text-[11px]">
               {preview && preview.length > 0 && (
                 <p className="opacity-60">
-                  next: {preview.map((d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" })).join(", ")}{built?.rule ? " …" : ""}
+                  next: {preview.map((d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toLowerCase()).join(", ")}{built?.rule ? " …" : ""}
                 </p>
               )}
               {built?.rule && <p className="truncate font-mono opacity-60" title={built.rule.toString()}>{built.rule.toString()}</p>}
@@ -600,7 +601,7 @@ export function RruleEditor({
       )}
 
       {error && (
-        <p className="border border-foreground/20 px-2 py-1 text-[10px]">{error}</p>
+        <p className="border border-foreground/20 px-2 py-1 text-[11px]">{error}</p>
       )}
 
       <div className="flex items-center gap-2 text-xs">

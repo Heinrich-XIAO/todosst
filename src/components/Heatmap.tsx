@@ -10,7 +10,7 @@ import { MONTHS } from "@/lib/months";
 // The column count adapts to the container width (by whole 12px columns) so
 // narrow screens show fewer recent months instead of a clipped full year.
 
-const LEVELS = ["bg-foreground/5", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
+const LEVELS = ["bg-foreground/[0.12]", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
 const CELL_PX = 12; // 10px cell + 2px gap
 
 const DATE_OPTS: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };

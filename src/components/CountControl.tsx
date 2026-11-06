@@ -14,6 +14,28 @@ import { useHoldConfirm } from "./useHoldConfirm";
 // habit is accidental); taking progress back via − is always a plain tap.
 // Plain one-off tasks keep instant taps everywhere.
 
+const CHECK_PATH = "M1.5 5.2 4 7.5 8.5 2.5";
+
+/** The left-column square for rows whose control sits on the right (tally,
+ * time, avoid): it fills with the ✓ once the goal is met, so every title in a
+ * list starts at the same x. Status only — the stepper is the control. */
+export function StatusSquare({ done }: { done: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`flex h-4 w-4 shrink-0 items-center justify-center border ${
+        done ? "border-foreground bg-foreground text-background" : "border-foreground/30"
+      }`}
+    >
+      {done && (
+        <svg viewBox="0 0 10 10" className="h-2.5 w-2.5">
+          <path className="check-draw" pathLength={1} d={CHECK_PATH} fill="none" stroke="currentColor" strokeWidth="1.6" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
 export function CountControl({
   mode,
   count,
@@ -40,17 +62,17 @@ export function CountControl({
   if (mode !== "check") {
     return (
       <>
-        <div className={`flex h-[18px] shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-20" : "w-16"}`}>
+        <div className={`flex h-5 shrink-0 items-stretch border border-foreground ${mode === "time" ? "w-[5.5rem]" : "w-[4.5rem]"}`}>
           <button
             onClick={onCountDown}
             disabled={count <= 0}
-            className="w-4 text-[10px] leading-none disabled:opacity-30"
+            className="relative w-5 text-[11px] leading-none after:absolute after:-inset-2 after:content-[''] disabled:opacity-40"
             aria-label={mode === "time" ? "decrease logged time" : "decrement tally"}
           >
             −
           </button>
           <span
-            className={`flex flex-1 items-center justify-center border-x border-foreground text-[10px] leading-none ${
+            className={`flex flex-1 items-center justify-center border-x border-foreground font-mono text-[11px] tabular-nums leading-none ${
               (mode === "time" || threshold < Infinity ? count >= threshold : count > 0) ? "bg-foreground text-background" : "bg-background"
             }`}
           >
@@ -59,7 +81,7 @@ export function CountControl({
           <button
             {...(holdNeeded ? upHold.holdProps : { onClick: onCountUp })}
             disabled={count >= COUNT_MAX}
-            className="w-4 touch-none select-none text-[10px] leading-none disabled:opacity-30"
+            className="relative w-5 touch-none select-none text-[11px] leading-none after:absolute after:-inset-2 after:content-[''] disabled:opacity-40"
             aria-label={mode === "time" ? "log time" : "increment tally"}
             title={
               mode === "time"
@@ -88,7 +110,7 @@ export function CountControl({
       >
         {checked && (
           <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden>
-            <path className="check-draw" pathLength={1} d="M1.5 5.2 4 7.5 8.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path className="check-draw" pathLength={1} d={CHECK_PATH} fill="none" stroke="currentColor" strokeWidth="1.6" />
           </svg>
         )}
       </button>

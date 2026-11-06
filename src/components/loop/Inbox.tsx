@@ -225,7 +225,7 @@ function AttachPicker({ ctx, onPick }: { ctx: LoopCtx; onPick: (itemId: Id<"item
     <select
       value=""
       onChange={(e) => e.target.value && onPick(e.target.value as Id<"items">)}
-      className="max-w-[9rem] border border-foreground bg-background px-1.5 py-1 font-mono text-xs"
+      className="max-w-[9rem] cursor-pointer bg-transparent py-0.5 font-mono text-[11px] underline underline-offset-4 opacity-80 hover:opacity-100"
       aria-label="same as an existing item"
     >
       <option value="">same as…</option>

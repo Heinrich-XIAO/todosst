@@ -26,7 +26,7 @@ export function Btn({
       title={title}
       disabled={disabled}
       onClick={onClick}
-      className={`border border-foreground px-2.5 py-1 font-mono text-xs disabled:bg-transparent disabled:text-foreground disabled:opacity-40 ${
+      className={`whitespace-nowrap border border-foreground px-2.5 py-1 font-mono text-xs disabled:bg-transparent disabled:text-foreground disabled:opacity-40 ${
         solid ? "bg-foreground text-background hover:opacity-90" : "hover:bg-foreground hover:text-background"
       }`}
     >
