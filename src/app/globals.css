@@ -61,6 +61,14 @@
   background: var(--foreground) var(--check-mark) center / 10px no-repeat;
 }
 
+/* the header spans what the card spans: when the desktop details dock widens
+   the card to 1080px, the logo and icons follow its edges */
+@media (min-width: 768px) {
+  body:has([data-wide]) .header-inner {
+    max-width: 1080px;
+  }
+}
+
 /* the ✓ draws itself in on check — the app's most frequent action gets one
    short beat; reduced motion shows it whole */
 @keyframes check-draw {

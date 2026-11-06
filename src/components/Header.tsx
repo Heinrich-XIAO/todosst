@@ -15,7 +15,7 @@ export function Header() {
 
   return (
     <header className="border-b border-foreground bg-background">
-      <div className="mx-auto flex max-w-[720px] items-center justify-between px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-0">
+      <div className="header-inner mx-auto flex max-w-[720px] items-center justify-between px-4 pb-4 pt-[calc(1rem+env(safe-area-inset-top))] md:px-0">
         <Link href="/" className="flex items-center gap-2 text-[15px] font-medium tracking-tight text-foreground">
           <Logo className="h-[18px] w-[18px]" />
           {/* small screens keep the mark only — the wordmark earns its width there */}

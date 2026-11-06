@@ -119,7 +119,7 @@ export function NudgeSettings() {
   return (
     <div className="pt-3">
       <div className="flex items-center justify-between">
-        <p className="text-xs font-medium">daily nudge</p>
+        <p className="font-mono text-xs">daily nudge</p>
       </div>
       <p className="mt-1 text-pretty text-[11px] leading-snug opacity-60">
         one push a day at this time — skipped on all-clear days. goes to every <span className="whitespace-nowrap">signed-in browser.</span>

@@ -214,7 +214,7 @@ export function LoopView({
       )}
 
       {notice && (
-        <div className="fixed inset-x-0 bottom-16 z-[60] mx-auto w-[min(560px,92vw)] border border-foreground bg-background px-3 py-2 font-mono text-xs shadow-lg md:bottom-4">
+        <div className="fixed inset-x-0 bottom-16 z-[60] mx-auto w-[min(560px,92vw)] border border-foreground bg-background px-3 py-2 font-mono text-xs md:bottom-4">
           <div className="flex items-start justify-between gap-3">
             <span className="break-words">{notice}</span>
             <button onClick={() => setNotice(null)} className="shrink-0 underline underline-offset-4">
@@ -224,7 +224,7 @@ export function LoopView({
         </div>
       )}
       {toast && !notice && (
-        <div className="fixed inset-x-0 bottom-16 z-[60] mx-auto w-[min(560px,92vw)] border border-foreground bg-background px-3 py-2 font-mono text-xs shadow-lg md:bottom-4">
+        <div className="fixed inset-x-0 bottom-16 z-[60] mx-auto w-[min(560px,92vw)] border border-foreground bg-background px-3 py-2 font-mono text-xs md:bottom-4">
           <div className="flex items-center justify-between gap-3">
             <span className="min-w-0 truncate">{toast.text}</span>
             <span className="flex shrink-0 gap-3">

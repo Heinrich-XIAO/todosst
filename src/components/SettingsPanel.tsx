@@ -148,7 +148,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <NudgeSettings />
 
         <div className="mt-3 border-t border-foreground/20 pt-3">
-          <p className="text-xs font-medium">integration key</p>
+          <p className="font-mono text-xs">integration key</p>
           <p className="mt-1 text-pretty text-[11px] leading-snug opacity-60">
             paste one key into the stopscrll android app — finishing a task there unblocks the
             phone. a key can only unlock — nothing else.
@@ -230,7 +230,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="mt-3 border-t border-foreground/20 pt-3">
-          <p className="text-xs font-medium">export / import</p>
+          <p className="font-mono text-xs">export / import</p>
           <p className="mt-1 text-pretty text-[11px] leading-snug opacity-60">
             passphrase-protected backup file, portable to any account. importing adds the backup
             tasks alongside existing ones.

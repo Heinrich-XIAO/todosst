@@ -31,7 +31,7 @@ export function ReminderToast({
 
   if (lines.length === 0) return null;
   return (
-    <div className="fixed bottom-4 left-1/2 z-50 w-[min(560px,92vw)] -translate-x-1/2 border border-foreground bg-background px-3 py-2 text-xs shadow-lg">
+    <div className="fixed bottom-4 left-1/2 z-50 w-[min(560px,92vw)] -translate-x-1/2 border border-foreground bg-background px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
         <span className="font-medium">{title}</span>
         <span className="flex items-center gap-3">

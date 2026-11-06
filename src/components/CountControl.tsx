@@ -66,7 +66,7 @@ export function CountControl({
           <button
             onClick={onCountDown}
             disabled={count <= 0}
-            className="relative w-5 text-[11px] leading-none after:absolute after:-inset-2 after:content-[''] disabled:opacity-40"
+            className="relative w-5 text-[11px] leading-none after:absolute after:-inset-3 after:content-[''] disabled:opacity-40"
             aria-label={mode === "time" ? "decrease logged time" : "decrement tally"}
           >
             −
@@ -81,7 +81,7 @@ export function CountControl({
           <button
             {...(holdNeeded ? upHold.holdProps : { onClick: onCountUp })}
             disabled={count >= COUNT_MAX}
-            className="relative w-5 touch-none select-none text-[11px] leading-none after:absolute after:-inset-2 after:content-[''] disabled:opacity-40"
+            className="relative w-5 touch-none select-none text-[11px] leading-none after:absolute after:-inset-3 after:content-[''] disabled:opacity-40"
             aria-label={mode === "time" ? "log time" : "increment tally"}
             title={
               mode === "time"

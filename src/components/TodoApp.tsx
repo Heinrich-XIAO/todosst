@@ -462,7 +462,12 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
             className={`min-w-0 flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
             title={node.title}
           >
-            {node.children.length ? <span className="mr-1 font-mono text-xs opacity-60">[{node.children.length}]</span> : null}
+            {node.children.length ? (
+              // while searching, the count is what matched — the rows you can see
+              <span className="mr-1 font-mono text-xs opacity-60">
+                [{search.trim() ? node.children.filter(matches).length : node.children.length}]
+              </span>
+            ) : null}
             {node.title}
             {node.metadata.priority ? <span className="ml-2 border border-foreground/40 px-1 text-[11px]">{node.metadata.priority}</span> : null}
             {node.metadata.dueAt ? (
@@ -763,7 +768,7 @@ export const CreateRootForm = memo(function CreateRootForm({
           </span>
         )}
         {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
-          <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background shadow-sm">
+          <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-[200px] overflow-auto border border-foreground bg-background">
             <div className="px-2 py-1 text-[11px] opacity-60 border-b border-foreground/10">
               {slashComplete.mode === "cd" ? "cd " : ""}
               {slashComplete.dirPath || "/"} — {slashComplete.suggestions.length} match{slashComplete.suggestions.length !== 1 ? "es" : ""} • tab/enter • ↑↓
@@ -3134,6 +3139,7 @@ function TodoTask() {
 
   return (
     <div
+      data-wide={selectedNode ? "" : undefined}
       className={`w-full max-w-[720px] bg-background ${selectedNode ? "md:max-w-[1080px]" : ""} ${
         // both mobile views are viewport-locked: the document never scrolls —
         // header bars stay put and each view owns an internal scroll region

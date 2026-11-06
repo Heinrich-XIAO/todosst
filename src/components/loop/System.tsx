@@ -114,6 +114,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
 
       {sysProblems.length > 0 && (
         <>
+          <div className="mt-3 border-t border-foreground/10" />
           <Label strong>app problems not being worked on</Label>
           <ul>
             {sysProblems.map((p) => (
@@ -174,13 +175,13 @@ function DraftCard({ draft, ctx }: { draft: Doc<"defs">; ctx: LoopCtx }) {
       <div className="grid gap-2 md:grid-cols-2">
         <div>
           <p className="font-mono text-[11px] opacity-60">now</p>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border border-foreground/20 p-1.5 font-mono text-[10px]">
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border border-foreground/20 p-1.5 font-mono text-[11px]">
             {before ?? "(new)"}
           </pre>
         </div>
         <div>
           <p className="font-mono text-[11px] opacity-60">draft</p>
-          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border border-foreground/20 p-1.5 font-mono text-[10px]">
+          <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border border-foreground/20 p-1.5 font-mono text-[11px]">
             {pretty(draft.body)}
           </pre>
         </div>

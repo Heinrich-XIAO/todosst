@@ -67,7 +67,7 @@ export function Bars({ values, label }: { values: number[]; label?: string }) {
         <span
           key={i}
           className="w-1.5 bg-foreground"
-          style={{ height: `${n === 0 ? 1 : Math.max(3, Math.round((n / max) * 16))}px`, opacity: n === 0 ? 0.2 : 1 }}
+          style={{ height: `${n === 0 ? 1 : Math.max(3, Math.round((n / max) * 16))}px`, opacity: n === 0 ? 0.35 : 1 }}
         />
       ))}
     </span>

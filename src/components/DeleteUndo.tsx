@@ -87,15 +87,15 @@ export function UndoToast({
   onDismiss: () => void;
 }) {
   return (
-      <div className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 border border-foreground bg-background px-4 py-2 text-xs shadow-sm md:bottom-4">
-      <span>
+      <div className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 border border-foreground bg-background px-4 py-2 text-xs md:bottom-4">
+      <span className="whitespace-nowrap">
         deleted {snap.count} task{snap.count === 1 ? "" : "s"}
       </span>
-      <button onClick={onUndo} className="border border-foreground px-2 py-0.5 hover:bg-foreground hover:text-background">
+      <button onClick={onUndo} className="border border-foreground px-3 py-1.5 hover:bg-foreground hover:text-background">
         undo
       </button>
       <span className="font-mono opacity-60">{ttl}s</span>
-      <button onClick={onDismiss} className="opacity-60 hover:opacity-100" aria-label="dismiss undo">
+      <button onClick={onDismiss} className="-m-2 p-2 opacity-60 hover:opacity-100" aria-label="dismiss undo">
         ×
       </button>
     </div>

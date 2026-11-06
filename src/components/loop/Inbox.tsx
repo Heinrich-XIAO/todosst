@@ -178,7 +178,7 @@ function SignalCard({
                   className="flex items-center justify-between gap-2 border border-foreground/30 px-2 py-1 text-left text-xs hover:bg-foreground hover:text-background"
                 >
                   <span className="min-w-0 truncate">{item.title}</span>
-                  <span className="shrink-0 font-mono text-[10px] opacity-60">same thing · {item.stateLabel}</span>
+                  <span className="shrink-0 font-mono text-[11px] opacity-60">same thing · {item.stateLabel}</span>
                 </button>
               ))}
             </div>

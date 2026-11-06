@@ -23,7 +23,7 @@ export function SlipControl({
   return (
     <>
       <div className="flex h-5 w-[4.5rem] shrink-0 touch-none select-none items-stretch border border-foreground">
-        <button onClick={onUndo} disabled={slips <= 0} className="relative w-5 text-[11px] leading-none after:absolute after:-inset-2 after:content-[''] disabled:opacity-40" aria-label="take back a slip">
+        <button onClick={onUndo} disabled={slips <= 0} className="relative w-5 text-[11px] leading-none after:absolute after:-inset-3 after:content-[''] disabled:opacity-40" aria-label="take back a slip">
           −
         </button>
         <button

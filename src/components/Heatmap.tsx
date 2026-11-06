@@ -10,7 +10,7 @@ import { MONTHS } from "@/lib/months";
 // The column count adapts to the container width (by whole 12px columns) so
 // narrow screens show fewer recent months instead of a clipped full year.
 
-const LEVELS = ["bg-foreground/[0.12]", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
+const LEVELS = ["bg-foreground/[0.18]", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
 const CELL_PX = 12; // 10px cell + 2px gap
 
 const DATE_OPTS: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
@@ -150,7 +150,7 @@ export const Heatmap = memo(function Heatmap({
   }, [counts, nowTs, fitWeeks]);
 
   return (
-    <div className="text-[10px]">
+    <div className="text-[11px]">
       <div className="flex gap-3 overflow-x-auto">
         {/* pt-4 = month-label header height (h-3 12px + mb-1 4px) so rows line up */}
         <div className="flex shrink-0 flex-col gap-[2px] pt-4 pr-1 opacity-60">
@@ -213,7 +213,7 @@ export const Heatmap = memo(function Heatmap({
             {tip && (
               <span
                 ref={tipRef}
-                className={`pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 text-[10px] leading-4 text-background shadow-md ${tip.below ? "translate-y-0" : "-translate-y-full"}`}
+                className={`pointer-events-none absolute z-10 -translate-x-1/2 whitespace-nowrap rounded bg-foreground px-1.5 py-0.5 text-[11px] leading-4 text-background shadow-md ${tip.below ? "translate-y-0" : "-translate-y-full"}`}
                 // centered on the cell, above it by default (below for the top
                 // rows so it doesn't clip past the scroll container's top).
                 // tipW clamps the pill fully inside the grid once measured —

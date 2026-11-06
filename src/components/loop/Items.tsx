@@ -314,7 +314,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
                     <span className="min-w-0 truncate">{m.title}</span>
                     <button
                       onClick={() => void ctx.act(ctx.m.unmergeItem({ id: m._id }))}
-                      className="shrink-0 font-mono text-[10px] underline underline-offset-4 opacity-60 hover:opacity-100"
+                      className="shrink-0 font-mono text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
                     >
                       split back out
                     </button>
@@ -435,7 +435,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
           <Label>history</Label>
           <ul className="pb-6">
             {(events ?? []).map((e) => (
-              <li key={e._id} className="px-3 py-1 font-mono text-[10px] opacity-60">
+              <li key={e._id} className="px-3 py-1 font-mono text-[11px] opacity-60">
                 {ago(e.at, now)} · {e.kind}
                 {e.data ? ` ${summarize(e.data)}` : ""}
               </li>

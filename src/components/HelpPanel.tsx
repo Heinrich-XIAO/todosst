@@ -34,7 +34,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-background/95 p-4" onClick={onClose}>
       <div
-        className="my-16 w-full max-w-lg border border-foreground bg-background shadow-sm"
+        className="my-16 w-full max-w-lg border border-foreground bg-background"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-foreground px-3 py-2">
