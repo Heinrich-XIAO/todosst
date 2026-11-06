@@ -54,8 +54,8 @@ export function Tag({ children }: { children: ReactNode }) {
   return <span className="border border-foreground/40 px-1.5 py-px font-mono text-[11px]">{children}</span>;
 }
 
-export function Label({ children }: { children: ReactNode }) {
-  return <p className="px-3 pb-1 pt-3 font-mono text-[11px] opacity-60">{children}</p>;
+export function Label({ children, strong }: { children: ReactNode; strong?: boolean }) {
+  return <p className={`px-3 pb-1 pt-3 font-mono text-[11px] ${strong ? "" : "opacity-60"}`}>{children}</p>;
 }
 
 /** Tiny weekly bar chart: height = count, the newest week is rightmost. */

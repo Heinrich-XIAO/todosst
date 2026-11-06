@@ -212,7 +212,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
         )
       ) : metadata.recur ? (
         <p className="text-[11px] opacity-60 leading-tight">
-          recurring tasks always show the current window — past windows are frozen history and count toward the heatmap.
+          recurring tasks always show the current window — past windows are frozen history and count toward the heatmap. grace hours keep yesterday&apos;s window open that long into today.
         </p>
       ) : null}
     </>

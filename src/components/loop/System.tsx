@@ -117,7 +117,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
           <Label>app problems not being worked on</Label>
           <ul>
             {sysProblems.map((p) => (
-              <li key={p.id} className="flex items-center justify-between gap-3 border-b border-foreground/10 px-3 py-2">
+              <li key={p.id} className="flex items-center justify-between gap-3 border-b border-foreground/10 px-3 py-2 last:border-b-0">
                 <button onClick={() => ctx.openItem(p.id)} className="min-w-0 truncate text-left text-xs hover:underline">
                   {p.item.title} <span className="font-mono opacity-60">{p.signals.length}×</span>
                 </button>
@@ -262,8 +262,10 @@ function DefSection({
   const record = kind === "workflow" ? workflowRecord(ctx.runs) : {};
 
   return (
-    <>
-      <Label>{KIND_LABEL[kind]}</Label>
+    // each definition kind opens with a rule and a full-strength heading, so
+    // heading and hint separate and the sections read as sections
+    <div className="mt-3 border-t border-foreground/10">
+      <Label strong>{KIND_LABEL[kind]}</Label>
       <p className="px-3 pb-1 text-pretty font-mono text-[11px] opacity-60">{KIND_HINT[kind]}</p>
       <ul>
         {keys.map((key) => {
@@ -335,7 +337,7 @@ function DefSection({
       <div className="px-3 pt-2">
         <Btn onClick={onNew}>+ new {kind}</Btn>
       </div>
-    </>
+    </div>
   );
 }
 
