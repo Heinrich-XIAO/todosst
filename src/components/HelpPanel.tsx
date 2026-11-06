@@ -51,7 +51,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
             ))}
           </div>
         ))}
-        <div className="border-b border-foreground/10 px-3 py-2 text-xs leading-relaxed">
+        <div className="border-b border-foreground/10 px-3 py-2 text-pretty text-xs leading-relaxed">
           <p className="text-[11px] opacity-60">drag &amp; drop</p>
           <p className="mt-0.5 opacity-80">
             drop a task onto the body of another task to nest it inside (it becomes that task&apos;s
@@ -60,7 +60,7 @@ export function HelpPanel({ onClose }: { onClose: () => void }) {
             space to move into the current folder. alt (option) forces nesting on any part of a row.
           </p>
         </div>
-        <div className="border-b border-foreground/10 px-3 py-2 text-xs leading-relaxed">
+        <div className="border-b border-foreground/10 px-3 py-2 text-pretty text-xs leading-relaxed">
           <p className="text-[11px] opacity-60">reminders</p>
           <p className="mt-0.5 opacity-80">
             tasks with a due date or recurrence get &quot;remind me&quot; (15m/5m before) on by default — toggle it

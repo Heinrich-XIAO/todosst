@@ -151,7 +151,7 @@ export function MetadataPanel({
             className="min-w-0 flex-1 border-b border-transparent bg-transparent py-1 text-base font-medium focus:border-foreground/40 focus:outline-none"
           />
         </label>
-        <button onClick={onClose} className="shrink-0 opacity-60 hover:opacity-100">
+        <button onClick={onClose} className="shrink-0 underline underline-offset-4 hover:opacity-60">
           close
         </button>
       </div>

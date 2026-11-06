@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 export const PLACEHOLDER_PHRASES = [
   "/host hackathon/outreach write email template",
+  "!help",
   "!cd host hackathon",
   "/side-quests finally learn how vim exits",
   "/taxes reconcile the horror spreadsheet",
   "/reading if anyone builds it, everyone dies ch. 3",
   "/groceries coffee beans (the good ones)",
-  "!help",
 ];
 
 export function TypewriterPlaceholder({ phrases, active }: { phrases: string[]; active: boolean }) {

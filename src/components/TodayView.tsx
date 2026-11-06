@@ -89,8 +89,14 @@ const GROUP_LABELS = ["overdue", "today", "still open"] as const;
 
 /** One 11px section band — shared by habits / tasks / battles headers and the
  * overdue / still-open sub-labels, so every section reads the same. */
-function SectionHead({ children }: { children: string }) {
-  return <div className="border-b border-foreground/10 bg-foreground/[0.06] px-3 py-1 text-[11px] text-foreground/60">{children}</div>;
+function SectionHead({ children, count }: { children: string; count?: number }) {
+  return (
+    <div className="border-b border-foreground/10 bg-foreground/[0.06] px-3 py-1 text-[11px] text-foreground/60">
+      {children}
+      {/* mono + tabular: the count ticks down in place as rows are checked */}
+      {count !== undefined && <span className="ml-1.5 font-mono tabular-nums">{count}</span>}
+    </div>
+  );
 }
 
 /** Local calendar label for a window day index, e.g. "Mon, Oct 6". Shared by
@@ -785,7 +791,7 @@ export function TodayView({
     if (visible.length === 0 && habitRows.length === 0) return null;
     return (
       <div>
-        <SectionHead>{`${label} ${visible.length + habitRows.length}`}</SectionHead>
+        <SectionHead count={visible.length + habitRows.length}>{label}</SectionHead>
         {habitRows.length > 0 && (
           <ul>
             {habitRows.map((h) => (
@@ -880,7 +886,7 @@ export function TodayView({
               if (overdue.length === 0) return null;
               return (
                 <div>
-                  <SectionHead>{`${GROUP_LABELS[0]} ${overdue.length}`}</SectionHead>
+                  <SectionHead count={overdue.length}>{GROUP_LABELS[0]}</SectionHead>
                   <ul>
                     {overdue.map((i) => (
                       <TodayRow

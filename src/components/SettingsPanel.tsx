@@ -149,7 +149,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="mt-3 border-t border-foreground/20 pt-3">
           <p className="text-xs font-medium">integration key</p>
-          <p className="mt-1 text-[11px] leading-snug opacity-60">
+          <p className="mt-1 text-pretty text-[11px] leading-snug opacity-60">
             paste one key into the stopscrll android app — finishing a task there unblocks the
             phone. a key can only unlock — nothing else.
           </p>
@@ -231,7 +231,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
 
         <div className="mt-3 border-t border-foreground/20 pt-3">
           <p className="text-xs font-medium">export / import</p>
-          <p className="mt-1 text-[11px] leading-snug opacity-60">
+          <p className="mt-1 text-pretty text-[11px] leading-snug opacity-60">
             passphrase-protected backup file, portable to any account. importing adds the backup
             tasks alongside existing ones.
           </p>
@@ -239,7 +239,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           {ioMsg && <p className="mt-2 border border-foreground/30 bg-foreground/5 px-3 py-2 text-xs">{ioMsg}</p>}
           {ioErr && <p className="mt-2 border border-foreground bg-background px-3 py-2 text-xs">{ioErr}</p>}
 
-          <div className="mt-2 border-t border-foreground/10 pt-2">
+          <div className="mt-4">
             <p className="text-[11px] opacity-60">export (choose a passphrase for the file)</p>
             <label className="mt-1 block">
               <span className="text-xs opacity-60">passphrase</span>
@@ -276,7 +276,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
             </button>
           </div>
 
-          <div className="mt-3 border-t border-foreground/10 pt-2">
+          <div className="mt-4">
             <p className="text-[11px] opacity-60">import (restore or merge into this account)</p>
             {/* the native file input speaks Title Case in its own font; hide it
                 behind a label styled like every other button here */}
