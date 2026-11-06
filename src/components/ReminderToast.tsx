@@ -6,6 +6,8 @@ import { useEffect, useRef } from "react";
 // (re)focused. Push handles the closed-tab case; this covers open/backgrounded.
 // Toasts that announce a state change (hold confirm, offline capture, replay
 // sync) pass onUndo and get an undo button alongside close.
+const VISIBLE = 3;
+
 export function ReminderToast({
   title,
   lines,
@@ -33,7 +35,7 @@ export function ReminderToast({
   return (
     <div className="fixed bottom-4 left-1/2 z-50 w-[min(560px,92vw)] -translate-x-1/2 border border-foreground bg-background px-3 py-2 text-xs">
       <div className="flex items-center justify-between">
-        <span className="font-medium">{title}</span>
+        <span className="font-mono">{title}</span>
         <span className="flex items-center gap-3">
           {onUndo ? (
             <button
@@ -46,19 +48,21 @@ export function ReminderToast({
               undo
             </button>
           ) : null}
-          <button onClick={onClose} className="opacity-60 hover:opacity-100" aria-label="dismiss">
+          <button onClick={onClose} className="underline underline-offset-4 hover:opacity-60" aria-label="dismiss">
             close
           </button>
         </span>
       </div>
-      <ul className="mt-1 max-h-40 space-y-0.5 overflow-auto">
-        {lines.slice(0, 12).map((line, i) => (
+      {/* three lines and a count: a toast is a glance, and a tall one lands
+          on top of whatever sheet is open */}
+      <ul className="mt-1 space-y-0.5">
+        {lines.slice(0, VISIBLE).map((line, i) => (
           <li key={i} className="truncate opacity-80">
             {line}
           </li>
         ))}
       </ul>
-      {lines.length > 12 ? <p className="mt-0.5 text-[11px] opacity-60">and {lines.length - 12} more…</p> : null}
+      {lines.length > VISIBLE ? <p className="mt-0.5 font-mono text-[11px] opacity-60">and {lines.length - VISIBLE} more</p> : null}
     </div>
   );
 }
