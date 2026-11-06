@@ -21,6 +21,11 @@ import { encodeNode, parseNode, toPlainNode } from "@/lib/crypto";
 import { usePathname } from "next/navigation";
 import { decodePathToParts, encodePathForUrl, partsToDecodedPath } from "@/lib/cdPath";
 import { runInput, type CommandContext, type InputOutcome } from "@/lib/grammar";
+import { parseCaptureInput } from "../../convex/loopLogic";
+import { loadSigils } from "@/lib/loopModel";
+import { captureSignal, noteUnknownCommand } from "@/lib/loopCapture";
+import { LoopView } from "./loop/LoopView";
+import { LoopStrip } from "./loop/LoopStrip";
 import {
   COUNT_MAX,
   DAY_MS,
@@ -780,10 +785,18 @@ function TodoTask() {
   const updateTodo = useMutation(api.todos.update);
   const removeTodo = useMutation(api.todos.remove);
   const removeMany = useMutation(api.todos.removeMany);
+  const sendSignal = useMutation(api.loop.capture);
+  const dismissSignal = useMutation(api.loop.dismissSignal);
   const pathname = usePathname() ?? "/";
-  // the view lives in the URL: a "/tree" prefix shows the tree view, anything
-  // else is today. Deep links like /tree/host%20hackathon just work.
-  const view = pathname === "/tree" || pathname.startsWith("/tree/") ? "tree" : "today";
+  // the view lives in the URL: a "/tree" prefix shows the tree view, "/loop"
+  // the problem loop, anything else is today. Deep links like
+  // /tree/host%20hackathon just work.
+  const view =
+    pathname === "/tree" || pathname.startsWith("/tree/")
+      ? "tree"
+      : pathname === "/loop" || pathname.startsWith("/loop/")
+        ? "loop"
+        : "today";
   const [filter, setFilter] = useState<Filter>("active");
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<Id<"todos"> | null>(null);
@@ -1275,7 +1288,7 @@ function TodoTask() {
   const decodedPath = useMemo(() => {
     // strip the /tree view prefix (see `view`) so pwd resolution only ever
     // sees the directory part of the URL
-    const p = view === "tree" ? pathname.slice("/tree".length) || "/" : pathname;
+    const p = view === "tree" ? pathname.slice("/tree".length) || "/" : view === "loop" ? "/" : pathname;
     try {
       return decodeURIComponent(p);
     } catch {
@@ -1347,8 +1360,8 @@ function TodoTask() {
   // tab switches push the same URL shape: directories only ever exist under
   // /tree; today is always plain "/" (no dir part, so nothing to carry over)
   const goToView = useCallback(
-    (v: "today" | "tree") => {
-      pushPath(v === "tree" ? partsToDecodedPath(["tree"]) : "/");
+    (v: "today" | "tree" | "loop") => {
+      pushPath(v === "tree" ? partsToDecodedPath(["tree"]) : v === "loop" ? "/loop" : "/");
     },
     [pushPath]
   );
@@ -1930,6 +1943,22 @@ function TodoTask() {
     const cap = await openCapture(entry.payload);
     const todayCapture = parseTodayCaptureInput(cap.input);
     const captureInput = todayCapture?.raw ?? cap.input;
+    // loop captures made offline: replay with their original time and the
+    // entry id as an idempotency key (a send that landed just before the drop
+    // must not count twice)
+    const sig = parseCaptureInput(captureInput, loadSigils());
+    if (sig) {
+      if (!sig.text) return null;
+      await sendSignal({
+        text: sig.text,
+        typeHint: sig.typeKey,
+        ...(sig.system ? { system: true } : {}),
+        source: "typed",
+        at: entry.createdAt,
+        clientId: entry.id,
+      });
+      return { text: captureInput, createdIds: [] };
+    }
     // same NL-date strip as the live submit so offline captures keep due dates
     const capNlp = captureInput.trim().startsWith("!") ? null : parseNlpDate(captureInput.trim());
     const capHeard = capNlp && capNlp.spans.length > 0 ? capNlp : null;
@@ -2000,6 +2029,35 @@ function TodoTask() {
   const submitRootInput = async (rawInput: string): Promise<boolean> => {
       const raw = rawInput.trim();
       if (!raw) return false;
+    // "? slow cold open" / "?? app gripe" / "% idea": straight into the loop's
+    // signal log — no dates, no folders, no decision (works offline too)
+    const sigils = loadSigils();
+    const sig = parseCaptureInput(raw, sigils);
+    if (sig) {
+      if (!sig.text) return true;
+      const res = await captureSignal(
+        (args) => sendSignal(args),
+        { text: sig.text, typeKey: sig.typeKey, system: sig.system, source: "typed" },
+        online,
+        sigils,
+      );
+      if (res.kind === "saved") {
+        const signalId = res.id as Id<"signals">;
+        setRemindToast({
+          title: "captured to the loop inbox",
+          lines: [clippedLine(sig.text)],
+          onUndo: () => void dismissSignal({ signalId }).catch(() => {}),
+        });
+        return true;
+      }
+      if (res.kind === "parked") {
+        refreshPendingCaptures();
+        setRemindToast({ title: "captured offline", lines: [captureToastLine(raw)] });
+        return true;
+      }
+      setNotice(res.message);
+      return false;
+    }
     const todayDefault = view === "today"
       ? { dayStart: dayIndexToStart(dayIndexLocal(nowTs)), dueTimeMin: defaultDueTimeMin(nowTs) }
       : undefined;
@@ -2034,6 +2092,16 @@ function TodoTask() {
     if (todayDefault && !directoryOnly) rawOutcome = withTodayDueDate(rawOutcome, todayDefault.dayStart, todayDefault.dueTimeMin);
     if (rawOutcome.type === "unknown-command") {
       setNotice(`unknown command: !${rawOutcome.name} (try !help)`);
+      // typing the same missing command twice in a week is the app lacking
+      // something you expect — note it as friction about the app itself
+      if (noteUnknownCommand(rawOutcome.name, Date.now())) {
+        void captureSignal(
+          (args) => sendSignal(args),
+          { text: `tried !${rawOutcome.name} again — there is no such command`, system: true, source: "system" },
+          online,
+          sigils,
+        );
+      }
       return false;
     }
     if (rawOutcome.type === "ignored") {
@@ -3068,6 +3136,12 @@ function TodoTask() {
           >
             tree
           </button>
+          <button
+            onClick={() => goToView("loop")}
+            className={view === "loop" ? "underline underline-offset-4" : "opacity-60 hover:opacity-100"}
+          >
+            loop
+          </button>
         </span>
         <span className="flex flex-1 items-center justify-end gap-3" />
       </div>
@@ -3105,7 +3179,7 @@ function TodoTask() {
       )}
 
       {/* top controls — desktop-width only; below md, the nav "+" sheet is the only create affordance */}
-      <div className="hidden flex-wrap gap-2 border-b border-foreground p-3 md:flex">
+      <div className={`${view === "loop" ? "hidden" : "hidden md:flex"} flex-wrap gap-2 border-b border-foreground p-3`}>
       <CreateRootForm
         nodes={nodes}
         roots={tree.roots}
@@ -3141,6 +3215,8 @@ function TodoTask() {
         </div>
       )}
 
+      {view === "today" && nodes && <LoopStrip nowTs={nowTs} onOpen={() => goToView("loop")} />}
+
       {view === "today" ? (
         <TodayView
           items={todayItems}
@@ -3166,6 +3242,8 @@ function TodoTask() {
           onHabitFixConfirm={(node, windowDay, nextCount) => void handleHabitFixConfirm(node, windowDay, nextCount)}
           isTouch={isTouch}
         />
+      ) : view === "loop" ? (
+        <LoopView online={online} nowTs={nowTs} onParked={refreshPendingCaptures} />
       ) : (
       <>
       {/* drag hint */}
@@ -3286,7 +3364,9 @@ function TodoTask() {
         view={view}
         goToView={goToView}
         onAdd={() =>
-          setComposer({
+          view === "loop"
+            ? window.dispatchEvent(new Event("loop:focus-capture"))
+            : setComposer({
             kind: "create",
             initialDirParts: pwdParts,
             // today tab: a fresh capture is a today task — prefill the due
@@ -3307,13 +3387,14 @@ function BottomNav({
   goToView,
   onAdd,
 }: {
-  view: "today" | "tree";
-  goToView: (v: "today" | "tree") => void;
+  view: "today" | "tree" | "loop";
+  goToView: (v: "today" | "tree" | "loop") => void;
   onAdd: () => void;
 }) {
   const tabs = [
     { id: "today" as const, label: "today" },
     { id: "tree" as const, label: "tree" },
+    { id: "loop" as const, label: "loop" },
   ];
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 flex border-t border-foreground bg-background pb-[env(safe-area-inset-bottom)] md:hidden">
@@ -3328,7 +3409,7 @@ function BottomNav({
       ))}
       <button
         onClick={onAdd}
-        aria-label="new task"
+        aria-label={view === "loop" ? "capture" : "new task"}
         className="border-x border-foreground/10 px-8 py-3 text-base leading-none hover:opacity-80"
       >
         +

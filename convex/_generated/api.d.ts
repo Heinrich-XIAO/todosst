@@ -13,6 +13,8 @@ import type * as autoNudge from "../autoNudge.js";
 import type * as crons from "../crons.js";
 import type * as history from "../history.js";
 import type * as http from "../http.js";
+import type * as loop from "../loop.js";
+import type * as loopLogic from "../loopLogic.js";
 import type * as nudge from "../nudge.js";
 import type * as push from "../push.js";
 import type * as pushActions from "../pushActions.js";
@@ -33,6 +35,8 @@ declare const fullApi: ApiFromModules<{
   crons: typeof crons;
   history: typeof history;
   http: typeof http;
+  loop: typeof loop;
+  loopLogic: typeof loopLogic;
   nudge: typeof nudge;
   push: typeof push;
   pushActions: typeof pushActions;

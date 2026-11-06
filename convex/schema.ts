@@ -194,6 +194,114 @@ export default defineSchema({
     count: v.number(),
   }).index("by_key", ["key"]),
 
+  // ---------- loop engine (see convex/loopLogic.ts for the vocabulary) ----------
+
+  // append-only capture log. A signal is one timestamped "this happened";
+  // attaching it to an item is a pointer (itemId), never a destructive move.
+  signals: defineTable({
+    userId: v.string(),
+    text: v.string(),
+    at: v.number(), // when it happened (offline captures keep their original time)
+    source: v.string(), // typed | voice | share | system
+    typeHint: v.optional(v.string()), // type key the sigil asked for
+    system: v.optional(v.boolean()), // about this app itself (`??`)
+    itemId: v.optional(v.id("items")),
+    clientId: v.optional(v.string()), // idempotency key for offline replay
+    dismissedAt: v.optional(v.number()),
+  })
+    .index("by_user_at", ["userId", "at"])
+    .index("by_user_client", ["userId", "clientId"])
+    .index("by_item", ["itemId"]),
+
+  // things you track. Types are data (defs), so `type`/`state` are plain keys.
+  items: defineTable({
+    userId: v.string(),
+    type: v.string(),
+    title: v.string(),
+    note: v.optional(v.string()),
+    state: v.string(),
+    fields: v.optional(v.string()), // JSON map validated against the type def
+    system: v.optional(v.boolean()), // about this app itself
+    mergedInto: v.optional(v.id("items")), // non-destructive merge pointer
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_user", ["userId"]),
+
+  links: defineTable({
+    userId: v.string(),
+    from: v.id("items"),
+    to: v.id("items"),
+    kind: v.string(), // blocks | caused-by | relates | fixes
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_from", ["from"])
+    .index("by_to", ["to"]),
+
+  // one attempt to fix items with a workflow. Done is not fixed: it only
+  // counts as held when the items stay quiet through the verify window.
+  runs: defineTable({
+    userId: v.string(),
+    workflowKey: v.string(),
+    workflowVersion: v.number(), // 0 = built-in
+    title: v.string(),
+    hypothesis: v.optional(v.string()),
+    itemIds: v.array(v.id("items")),
+    steps: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        done: v.boolean(),
+        doneAt: v.optional(v.number()),
+      }),
+    ),
+    status: v.union(
+      v.literal("active"),
+      v.literal("verifying"),
+      v.literal("verified"),
+      v.literal("reopened"),
+      v.literal("cancelled"),
+      v.literal("done"),
+    ),
+    verifyDays: v.number(),
+    tolerance: v.number(),
+    baselineRate: v.number(), // signals/week over the 28 days before the run started
+    startedAt: v.number(),
+    verifyStartedAt: v.optional(v.number()),
+    verifyUntil: v.optional(v.number()),
+    endedAt: v.optional(v.number()),
+    evidence: v.optional(v.array(v.id("signals"))), // recurrences that reopened it
+    resultRate: v.optional(v.number()), // signals/week during the verify window
+  })
+    .index("by_user", ["userId"])
+    .index("by_status_until", ["status", "verifyUntil"]),
+
+  // versioned definitions: type | workflow | view | rule. Append-only; the
+  // newest "active" version of a (kind,key) wins; drafts wait to be applied.
+  defs: defineTable({
+    userId: v.string(),
+    kind: v.string(),
+    key: v.string(),
+    version: v.number(),
+    status: v.union(v.literal("active"), v.literal("draft"), v.literal("retired")),
+    body: v.string(), // JSON validated by loopLogic.validateDefBody
+    runId: v.optional(v.id("runs")), // the system-change run that carries a draft
+    createdAt: v.number(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_kind_key", ["userId", "kind", "key"]),
+
+  // audit trail for items, runs and defs
+  events: defineTable({
+    userId: v.string(),
+    at: v.number(),
+    kind: v.string(),
+    refId: v.string(), // item / run / def id
+    data: v.optional(v.string()),
+  })
+    .index("by_user_ref", ["userId", "refId"])
+    .index("by_user_at", ["userId", "at"]),
+
   // StopScrll unlock keys: long-lived bearer tokens the user copies from
   // settings into the StopScrll Android app. Only the SHA-256 hash is stored;
   // the raw key is shown once at issue time and never again.

@@ -11,6 +11,7 @@ A real-time todo app with **Next.js 16**, **Convex**, and **Convex Auth** — wh
 - 💾 **Export / import** — download a passphrase-protected backup file (tasks, structure, and completion history) from settings; import it into any account to restore or merge.
 - 📴 **Offline capture** — thoughts typed while offline (subway, plane) park in an IndexedDB outbox on the device and replay through the normal create path on the next online open. The service worker caches the app shell so the installed PWA opens without network; captures made at a particular working directory land in that directory on replay.
 - 🏁 **The all-clear moment** — closing the day's last window lands hard: a full-bleed inverted band types out "all clear — …" in the input's typewriter voice, holds with a blinking caret, and counts what you did today (reduced-motion aware).
+- 🔁 **The loop** — capture what goes wrong in one tap (typed, spoken, or shared from any Android app), sort it later, fix it with a workflow, and find out whether the fix actually held. See [The loop](#the-loop).
 - ⚡ Real-time sync with Convex; works on any `*.vercel.app` domain, no custom domain required.
 - 🌗 **Light / dark / auto theme** — follows the system by default; the header toggle overrides it and is remembered per device.
 
@@ -27,10 +28,29 @@ One input, a few grammars (all tab-completable with ↑↓):
 | `!cd ../side-quests` | navigates the working directory (relative/absolute, `..`, `.` supported) |
 | `!help` | shows the input grammar in a panel |
 | `stretch ~daily` | creates a recurring task (recurrence token is stripped from the title) |
+| `? slow cold open` | captures a **problem** into the loop inbox (no folder, no decision) |
+| `?? header toggle is in the way` | captures a problem about **this app itself** |
+| `% try a standing desk` | captures an idea; your own types can claim a sigil too (`& ; $ ^ \| = +`) |
 
 Recurrence tokens: `~daily` `~weekly` `~weekdays` `~monthly` `~yearly`, or `~every 3d`, `~every 2w mon,thu`, `~every 3m`, `~every 1y` (spaces optional). Rules can be edited later in the task's details panel via the graphical + text RRULE editor.
 
 Other keys: typing anywhere focuses the input, `Ctrl/Cmd+F` focuses search, `Esc` cancels edits/dialogs, double-click a folder to descend into it. Drag a task to reorder it among siblings (upper half = above, lower half = below) or hold `Alt` while dropping to nest it as a child. Deleting is undoable for 10 seconds.
+
+## The loop
+
+The tree is for work you have already decided to do. The loop is for everything before that — the thing that annoyed you a minute ago — and for finding out whether fixing it worked. It lives at `/loop` (the **loop** tab).
+
+**Capture is free.** A *signal* is one timestamped "this happened". Type `? text` in the main input, use the capture bar on the loop screen (no sigil needed there), tap the mic, or share text/a link into todosst from any Android app. Signals are append-only; nothing is ever deleted, so every mistake is one tap to undo. Offline captures park in the same outbox as tasks and replay with their original time and an idempotency key, so a capture never counts twice.
+
+**Sort later.** Each inbox signal is either a new thing or one more time an existing thing happened: tap *new problem*, take a *looks like…* suggestion (word-overlap similarity, no AI), pick *same as…*, select several and *combine*, or dismiss. A problem's **rate** (occurrences per week, last 28 days, with a trend arrow) says what is actually loudest. Merging is a pointer, not a destructive edit — split it back out any time. Items link to each other (`blocks`, `caused by`, `relates to`, `fixes`).
+
+**Fixes are experiments.** Start a *run* of a workflow on one or more problems. Ticking the steps is not the end: the run then waits out a *verify window* (default 14 days). Any recurrence inside the window reopens it immediately, with the recurrences attached as evidence; a clean window marks it **held** and resolves the problem. A resolved problem that happens again reopens itself. The runs tab keeps score: *held 3 of 5* per workflow, plus baseline-vs-result rate per run.
+
+**The system is data.** Types (fields, states, sigil), workflows, saved views and rules are versioned definitions you edit in the **system** tab (JSON with live validation and a "what would this do right now" preview). They are changed the way everything else is: friction about the app (`?? …`, or *something about this app is off?*) starts a *change the system* run, the run carries a **draft**, you preview it, apply it, and the same verify window checks whether the annoyance stopped. History is append-only — any version can be restored. Direct save is available when you want to skip the run. Rules are declarative (`3+ in 7 days → move to fixing / start workflow X`), never user code.
+
+**On a phone (Android/Chrome).** Install the PWA; long-press the icon for *Capture a problem* / *Capture by voice*, and todosst shows up in the share sheet. Voice uses the browser's built-in speech recognition (Chrome); where it's missing the mic button hides and your keyboard's mic key still works.
+
+Data model (`convex/schema.ts`): `signals`, `items`, `links`, `runs`, `defs`, `events`. Pure logic (rates, verification verdicts, validation, merge rules, capture grammar) is in `convex/loopLogic.ts` and tested in `src/lib/loopLogic.test.ts`; the client projection is `src/lib/loopModel.ts`; screens are in `src/components/loop/`. An hourly cron (`loop.sweep`) verifies runs whose window ended; opening the app settles anything that came due meanwhile.
 
 ## Recurrence model
 
@@ -104,6 +124,8 @@ convex/
   history.ts       — per-todo completion history (list/put/remove/migrate)
   userScope.ts     — shared auth + ownership helpers (requireUserId, requireOwnTodo)
   users.ts         — viewer query
+  loop.ts          — the loop engine: signals, items, links, runs, versioned defs, events
+  loopLogic.ts     — pure loop logic shared by server + client (rates, verify, validation)
 src/
   app/
     layout.tsx     — ConvexAuthNextjsServerProvider + ConvexClientProvider
@@ -116,6 +138,7 @@ src/
     RruleEditor.tsx — graphical + text RRULE editor
     Heatmap.tsx    — GitHub-style past-year heatmap
     SettingsPanel.tsx — daily nudge settings, export/import
+    loop/            — loop screens: LoopView (shell + capture bar), Inbox, Items, Runs, System, MicButton
     LegacyMigration.tsx — one-time upgrade of pre-plaintext rows
     DeleteUndo.tsx, NoticeDialog.tsx, TypewriterPlaceholder.tsx
     Header.tsx, AuthForm.tsx, Logo.tsx
@@ -130,6 +153,8 @@ src/
     slashComplete.ts — tab-completion intellisense
     vaultFile.ts   — passphrase-protected backup files (export/import)
     outbox.ts      — offline capture outbox (IndexedDB + localStorage fallback)
+    loopCapture.ts — signal capture (online send / offline park) + self-noticed friction
+    loopModel.ts   — projects loop rows into rates, merges, effective definitions
     useOnline.ts   — connectivity signal (navigator.onLine + events)
     months.ts      — shared MONTHS constant
   proxy.ts         — convexAuthNextjsMiddleware

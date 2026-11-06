@@ -14,6 +14,7 @@ import { type ParsedInput } from "./recur";
 import { parseNegInput } from "./negative";
 import { resolveCdPath } from "./cdPath";
 import type { PlainNode } from "./crypto";
+import { DEFAULT_SIGILS, parseCaptureInput } from "../../convex/loopLogic";
 
 // ---------- types ----------
 
@@ -27,6 +28,8 @@ export type CommandContext = {
   pushPath(decodedPath: string): void;
   /** open the help panel */
   showHelp(): void;
+  /** sigil -> type key for loop captures ("? slow open"); defaults to the built-ins */
+  sigils?: Record<string, string>;
 };
 
 export type CommandEntry = {
@@ -108,6 +111,17 @@ export function matchCommand(input: string): { entry: CommandEntry; argv: string
 export const GRAMMAR: GrammarEntry[] = [
   {
     kind: "syntax",
+    id: "capture",
+    docs: [
+      { example: "? slow cold open", note: "capture a problem into the loop inbox — no folder, no decision" },
+      { example: "?? header toggle is in the way", note: "a problem about this app itself" },
+      { example: "% try a standing desk", note: "capture an idea (your own types can claim a sigil too)" },
+    ],
+    // handled before the task forms in runInput (never reaches this parse)
+    parse: () => null,
+  },
+  {
+    kind: "syntax",
     id: "slash-path",
     docs: [
       { example: "/host hackathon/write emails", note: "directories first — the LAST segment is the task" },
@@ -163,6 +177,8 @@ export type InputOutcome =
   | { type: "ignored" }
   | { type: "unknown-command"; name: string }
   | { type: "command"; name: string }
+  // loop capture: the raw text goes to the signal log, not the task tree
+  | { type: "capture"; text: string; typeKey: string; system: boolean }
   // metadata carries extra fields (dueAt, priority, …) composed by structured
   // creators like the mobile composer sheet; grammar-parsed inputs never set it
   | { type: "create-slash"; parts: string[]; recur: string | null; neg?: boolean; metadata?: PlainNode["metadata"] }
@@ -186,6 +202,12 @@ export function runInput(raw: string, ctx: CommandContext): InputOutcome {
     }
     cmd.entry.run(cmd.argv, ctx);
     return { type: "command", name: cmd.entry.name };
+  }
+
+  // sigil captures ("? …", "?? …", "% …") bypass dates, recurrence and paths
+  const capture = parseCaptureInput(trimmed, ctx.sigils ?? DEFAULT_SIGILS);
+  if (capture) {
+    return capture.text === "" ? { type: "ignored" } : { type: "capture", ...capture };
   }
 
   const recurEntry = GRAMMAR.find((e): e is ModifierEntry => e.kind === "modifier" && e.id === "recur");
