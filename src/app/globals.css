@@ -135,6 +135,23 @@ body {
   font-family: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
 }
 
+/* the filled progress line opens into the inverted all-clear band — same
+   slot, one continuous motion; typing starts after (AllClearMoment's beat) */
+@keyframes all-clear-open {
+  from {
+    transform: scaleY(0.02);
+  }
+}
+.all-clear-open {
+  transform-origin: top;
+  animation: all-clear-open 200ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .all-clear-open {
+    animation: none;
+  }
+}
+
 /* all-clear caret — the input's typewriter voice, once the day is closed */
 @keyframes all-clear-caret {
   0%,

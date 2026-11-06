@@ -60,7 +60,7 @@ function AllClearMoment({ doneToday, nothingDue }: { doneToday: number; nothingD
     return () => window.clearTimeout(timer);
   }, []);
   return (
-    <div className="border-y border-foreground bg-foreground text-background">
+    <div className="all-clear-open border-y border-foreground bg-foreground text-background">
       <div className="flex flex-col items-center gap-1.5 px-3 py-10 text-center">
         <p className="font-mono text-base">
           <span aria-hidden>
@@ -881,7 +881,6 @@ export function TodayView({
           aria-hidden
           className={`pointer-events-none sticky top-0 z-10 -mb-6 h-6 bg-gradient-to-b from-background to-transparent transition-opacity duration-150 md:hidden ${scrolled ? "opacity-100" : "opacity-0"}`}
         />
-        {open > 0 && <DayProgress items={items} />}
         {showHabitOffer && (
           <div className="border-b border-foreground/10 px-3 py-2 text-xs">
             <p className="opacity-80">
@@ -898,6 +897,9 @@ export function TodayView({
             </div>
           </div>
         )}
+        {/* the progress line heads the list; at zero open rows the all-clear
+            band opens out of this same slot (.all-clear-open) */}
+        {open > 0 && <DayProgress items={items} />}
         {open === 0 ? (
           <>
             {/* the all-clear moment — full-bleed, typed, held. Negative tasks
