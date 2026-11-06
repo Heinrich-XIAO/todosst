@@ -115,7 +115,7 @@ export function parseNlpDate(input: string, now: number = Date.now()): NlpResult
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(input))) {
-      let end = m.index + m[0].length;
+      const end = m.index + m[0].length;
       const t = tryTimeSuffix(input, end);
       push({ start: m.index, end: t?.end ?? end, kind: "date", dueAt: fn(now), recur: null, timeMin: t?.min ?? (/\btonight\b/i.test(m[0]) ? 19 * 60 : null) });
     }
@@ -202,7 +202,7 @@ export function parseNlpDate(input: string, now: number = Date.now()): NlpResult
       if (day < 1 || day > 31) continue;
       const year = m[3] ? Number(m[3]) : undefined;
       const nowD = new Date(now);
-      let y = year ?? nowD.getFullYear();
+      const y = year ?? nowD.getFullYear();
       let ts = new Date(y, mi, day).getTime();
       const probe = new Date(ts);
       if (probe.getMonth() !== mi || probe.getDate() !== day) continue; // feb 30

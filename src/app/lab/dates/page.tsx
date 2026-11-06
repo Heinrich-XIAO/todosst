@@ -26,7 +26,7 @@ export default function DatesLabPage() {
   );
   const [extra, setExtra] = useState<BenchCase[]>([]);
 
-  const now = useMemo(() => Date.now(), []);
+  const [now] = useState(() => Date.now());
   const normal = useMemo(() => parseNlpDate(input, now), [input, now]);
   const jev = useMemo(() => jevFixture(input, new Date(now)), [input, now]);
 
