@@ -227,9 +227,10 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
                 {!row.typeDef?.states.some((s) => s.key === item.state) && <option value={item.state}>{item.state}</option>}
               </select>
               <span>
-                {rateLabel(row.rate)} {TREND_MARK[row.trend]}
+                {rateLabel(row.rate)} · {TREND_MARK[row.trend]}
               </span>
               <Bars values={weeklyBuckets(row.signals.map((s) => s.at), now)} label="occurrences per week, last 8 weeks" />
+              <span className="opacity-60">8 wk</span>
               <span className="opacity-60">{row.signals.length} total</span>
             </div>
           </div>

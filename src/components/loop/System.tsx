@@ -130,10 +130,10 @@ export function System({ ctx }: { ctx: LoopCtx }) {
       )}
 
       {sysRuns.length > 0 && (
-        <>
+        <div>
           <Label strong>changes in progress</Label>
           {sysRuns.map((run) => (
-            <div key={run._id} className="border-b border-foreground/10 px-3 py-3">
+            <div key={run._id} className="border-b border-foreground/10 px-3 py-3 last:border-b-0">
               <p className="text-sm">{run.title}</p>
               <p className="font-mono text-[11px] opacity-60">
                 {run.steps.filter((s) => s.done).length}/{run.steps.length} steps · applying a draft finishes them and starts the verify window
@@ -150,7 +150,7 @@ export function System({ ctx }: { ctx: LoopCtx }) {
                 ))}
             </div>
           ))}
-        </>
+        </div>
       )}
 
       {(["type", "workflow", "view", "rule"] as DefKind[]).map((kind) => (

@@ -110,8 +110,11 @@ export const Heatmap = memo(function Heatmap({
     return () => ro.disconnect();
   }, []);
 
-  // whole columns only — before the first measurement fall back to the full span
-  const fitWeeks = gridWidth === null ? weeks : Math.max(4, Math.min(weeks, Math.floor(gridWidth / CELL_PX)));
+  // whole columns only — before a real measurement fall back to the full span.
+  // A width under 8 columns is a mid-layout reading (the details dock opening
+  // measures near zero for a frame), never a real container, so it doesn't count.
+  const measured = gridWidth !== null && gridWidth >= 8 * CELL_PX;
+  const fitWeeks = measured ? Math.max(4, Math.min(weeks, Math.floor(gridWidth / CELL_PX))) : weeks;
 
   const grid = useMemo(() => {
     const endIdx = dayIndexLocal(nowTs);

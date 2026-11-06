@@ -166,6 +166,7 @@ type RowCtx = {
   recurStates: Map<string, RecurState> | null;
   collapsed: Set<string>;
   search: string;
+  filter: Filter;
   editingId: Id<"todos"> | null;
   editValue: string;
   setEditValue: Dispatch<SetStateAction<string>>;
@@ -255,6 +256,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
     recurStates,
     collapsed,
     search,
+    filter,
     editingId,
     editValue,
     setEditValue,
@@ -388,7 +390,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
         setDropHint(null);
       }}
       className={`transition-opacity ${isFading ? "duration-[3000ms] ease-out" : "duration-1000"} ${isFading && fadeToZero ? "fade-away" : ""} ${dragId === node._id ? "opacity-40" : ""} ${isSelected ? "bg-foreground/5" : ""} ${
-        isFading ? (fadeToZero ? "opacity-0" : "opacity-20") : node.isCompleted ? "opacity-20" : "opacity-100"
+        isFading ? (fadeToZero ? "opacity-0" : "opacity-20") : node.isCompleted ? "opacity-60" : "opacity-100"
       }`}
     >
       <div
@@ -459,13 +461,14 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
                 startEdit(node);
               }
             }}
-            className={`min-w-0 flex-1 text-left truncate ${node.isCompleted ? "line-through opacity-40" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
+            className={`min-w-0 flex-1 text-left truncate ${node.isCompleted ? "line-through" : ""} ${isSelected ? "underline underline-offset-4" : ""}`}
             title={node.title}
           >
             {node.children.length ? (
-              // while searching, the count is what matched — the rows you can see
+              // the count is the rows you can see: under a search or a status
+              // filter it counts what matched, not every child
               <span className="mr-1 font-mono text-xs opacity-60">
-                [{search.trim() ? node.children.filter(matches).length : node.children.length}]
+                [{search.trim() || filter !== "all" ? node.children.filter(matches).length : node.children.length}]
               </span>
             ) : null}
             {node.title}
@@ -3100,6 +3103,7 @@ function TodoTask() {
     recurStates,
     collapsed,
     search,
+    filter,
     editingId,
     editValue,
     setEditValue,
