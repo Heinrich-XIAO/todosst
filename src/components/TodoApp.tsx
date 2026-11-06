@@ -95,7 +95,7 @@ import { MetadataPanel } from "./MetadataPanel";
 import { PLACEHOLDER_PHRASES, TypewriterPlaceholder } from "./TypewriterPlaceholder";
 import { DeleteConfirmDialog, UndoToast, UNDO_TTL_SECONDS, type UndoSnapshot } from "./DeleteUndo";
 import { NoticeDialog } from "./NoticeDialog";
-import { ChevronRight, Plus, X } from "lucide-react";
+import { ChevronRight, Plus, Trash2 } from "lucide-react";
 
 // "today" / "tomorrow" / "nov 6" — short enough that a due date never
 // truncates a title on a phone, lowercase like the rest of the voice.
@@ -516,7 +516,7 @@ function RenderNode({ node, ctx }: { node: TreeNode; ctx: RowCtx }) {
               className="-my-2 flex h-8 w-8 items-center justify-center opacity-60 hover:opacity-100 md:my-0 md:h-auto md:w-auto"
               aria-label={`delete ${node.title}`}
             >
-              <X className="h-4 w-4 md:hidden" aria-hidden />
+              <Trash2 className="h-4 w-4 md:hidden" aria-hidden />
               <span className="hidden md:inline">delete</span>
             </button>
           )}
@@ -800,7 +800,7 @@ export const CreateRootForm = memo(function CreateRootForm({
           {nlpLabel}
         </span>
       )}
-      <button type="submit" disabled={!value.trim()} className="shrink-0 text-sm underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-40">
+      <button type="submit" disabled={!value.trim()} className="shrink-0 font-mono text-xs underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-30">
         add task
       </button>
     </form>

@@ -134,7 +134,7 @@ export function NudgeSettings() {
             setEdit(e.target.value);
             if (e.target.value) void applyTime(e.target.value);
           }}
-          className="border-b border-foreground bg-transparent py-1 text-sm focus:outline-none disabled:opacity-40"
+          className="border border-foreground/40 bg-transparent px-2 py-1.5 text-xs focus:border-foreground focus:outline-none disabled:opacity-40"
           aria-label="daily nudge time"
         />
         {pref?.enabled ? (

@@ -87,10 +87,10 @@ export type TodayItem = {
 
 const GROUP_LABELS = ["overdue", "today", "still open"] as const;
 
-/** One 10px section band — shared by habits / tasks / battles headers and the
+/** One 11px section band — shared by habits / tasks / battles headers and the
  * overdue / still-open sub-labels, so every section reads the same. */
 function SectionHead({ children }: { children: string }) {
-  return <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[10px] opacity-60">{children}</div>;
+  return <div className="border-b border-foreground/10 bg-foreground/[0.03] px-3 py-1 text-[11px] opacity-60">{children}</div>;
 }
 
 /** Local calendar label for a window day index, e.g. "Mon, Oct 6". Shared by
@@ -785,7 +785,7 @@ export function TodayView({
     if (visible.length === 0 && habitRows.length === 0) return null;
     return (
       <div>
-        <SectionHead>{label}</SectionHead>
+        <SectionHead>{`${label} ${visible.length + habitRows.length}`}</SectionHead>
         {habitRows.length > 0 && (
           <ul>
             {habitRows.map((h) => (
@@ -880,7 +880,7 @@ export function TodayView({
               if (overdue.length === 0) return null;
               return (
                 <div>
-                  <SectionHead>{GROUP_LABELS[0]}</SectionHead>
+                  <SectionHead>{`${GROUP_LABELS[0]} ${overdue.length}`}</SectionHead>
                   <ul>
                     {overdue.map((i) => (
                       <TodayRow

@@ -135,10 +135,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         aria-modal="true"
         aria-label="settings"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md border border-foreground bg-background p-4"
+        className="w-full max-w-md border border-foreground bg-background p-3"
       >
         {/* same header bar as the help panel: mono title, ruled, underlined close */}
-        <div className="-mx-4 -mt-4 flex items-center justify-between border-b border-foreground px-3 py-2">
+        <div className="-mx-3 -mt-3 flex items-center justify-between border-b border-foreground px-3 py-2">
           <p className="font-mono text-xs">settings</p>
           <button onClick={onClose} className="text-xs underline underline-offset-4 hover:opacity-60">
             close
@@ -151,7 +151,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
           <p className="text-xs font-medium">integration key</p>
           <p className="mt-1 text-[11px] leading-snug opacity-60">
             paste one key into the stopscrll android app — finishing a task there unblocks the
-            phone. keys act as your account for the unlock api only.
+            phone. a key can only unlock — nothing else.
           </p>
 
           {freshKey && (
@@ -181,7 +181,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
               onChange={(e) => setKeyName(e.target.value)}
               placeholder="label, e.g. pixel (optional)"
               maxLength={40}
-              className="w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
+              className="w-full border border-foreground/40 bg-transparent px-2 py-1.5 text-xs focus:border-foreground focus:outline-none"
             />
             <button
               onClick={async () => {
@@ -251,7 +251,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 value={exportPass}
                 onChange={(e) => setExportPass(e.target.value)}
                 placeholder="at least 8 characters"
-                className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
+                className="mt-1 w-full border border-foreground/40 bg-transparent px-2 py-1.5 text-xs focus:border-foreground focus:outline-none"
               />
             </label>
             <label className="mt-2 block">
@@ -264,7 +264,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 value={exportPass2}
                 onChange={(e) => setExportPass2(e.target.value)}
                 placeholder="repeat it"
-                className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
+                className="mt-1 w-full border border-foreground/40 bg-transparent px-2 py-1.5 text-xs focus:border-foreground focus:outline-none"
               />
             </label>
             <button
@@ -300,7 +300,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 value={importPass}
                 onChange={(e) => setImportPass(e.target.value)}
                 placeholder="the passphrase the file was made with"
-                className="mt-1 w-full border-b border-foreground bg-transparent py-1 text-sm focus:outline-none"
+                className="mt-1 w-full border border-foreground/40 bg-transparent px-2 py-1.5 text-xs focus:border-foreground focus:outline-none"
               />
             </label>
             <button

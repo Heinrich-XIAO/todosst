@@ -35,7 +35,7 @@ export function Inbox({ ctx }: { ctx: LoopCtx }) {
   const pickedSignals = model.inbox.filter((s) => picked.has(s._id as string));
 
   return (
-    <div className="pb-6">
+    <div className={pickedSignals.length >= 2 ? "pb-6" : ""}>
       {model.inbox.length === 0 ? (
         <p className="px-3 py-10 text-center font-mono text-xs opacity-60">
           inbox empty. when something annoys you, type <code>? what happened</code> or tap the mic.
@@ -126,7 +126,7 @@ function SignalCard({
   };
 
   return (
-    <li className="border-b border-foreground/10 px-3 py-3">
+    <li className="group border-b border-foreground/10 px-3 py-3 last:border-b-0">
       <div className="flex items-start gap-3">
         <input
           type="checkbox"
@@ -150,7 +150,7 @@ function SignalCard({
               </p>
             </div>
             {!editing && (
-              <div className="flex shrink-0 flex-wrap items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 transition-opacity md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
                 <Btn onClick={() => setEditing(true)}>new {type}</Btn>
                 <AttachPicker ctx={ctx} onPick={(itemId) => void ctx.act(ctx.m.attach({ signalId: signal._id, itemId }))} />
                 <button

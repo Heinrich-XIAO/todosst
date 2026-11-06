@@ -105,7 +105,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
         )}
         {!negRaw && mode === "check" && (
           <label className="flex-1 block">
-            <span className="opacity-60">checkbox threshold</span>
+            <span className="opacity-60">checks to finish</span>
             <input
               type="number"
               min={1}

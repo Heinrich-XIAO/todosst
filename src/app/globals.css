@@ -5,6 +5,7 @@
   --foreground: #000000;
   /* the ✓ inside a checked box is drawn in the background color */
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23fff' stroke-width='1.6'/%3E%3C/svg%3E");
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E");
   color-scheme: light;
 }
 
@@ -12,6 +13,7 @@
   --background: #000000;
   --foreground: #ffffff;
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3C/svg%3E");
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E");
   color-scheme: dark;
 }
 
@@ -21,6 +23,7 @@
     --background: #000000;
     --foreground: #ffffff;
     --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23000' stroke-width='1.6'/%3E%3C/svg%3E");
+    --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E");
     color-scheme: dark;
   }
 }
@@ -56,6 +59,48 @@
 }
 .check:checked {
   background: var(--foreground) var(--check-mark) center / 10px no-repeat;
+}
+
+/* the ✓ draws itself in on check — the app's most frequent action gets one
+   short beat; reduced motion shows it whole */
+@keyframes check-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.check-draw {
+  stroke-dasharray: 1;
+  animation: check-draw 140ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .check-draw {
+    animation: none;
+  }
+}
+
+/* OS-drawn control chrome in the house style: selects get a hairline
+   chevron in the foreground color, date/time pickers a muted glyph */
+/* unlayered on purpose: it must beat a select's own padding utility so the
+   text never runs under the chevron */
+select {
+  appearance: none;
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 10px;
+  padding-right: 22px !important;
+}
+@layer base {
+  ::-webkit-calendar-picker-indicator {
+    opacity: 0.6;
+    cursor: pointer;
+  }
+  ::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
 }
 
 * {

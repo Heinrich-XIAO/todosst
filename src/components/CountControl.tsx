@@ -88,7 +88,7 @@ export function CountControl({
       >
         {checked && (
           <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden>
-            <path d="M1.5 5.2 4 7.5 8.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+            <path className="check-draw" pathLength={1} d="M1.5 5.2 4 7.5 8.5 2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
           </svg>
         )}
       </button>
