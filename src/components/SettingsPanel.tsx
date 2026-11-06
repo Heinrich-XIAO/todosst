@@ -137,9 +137,10 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-md border border-foreground bg-background p-4"
       >
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">settings</p>
-          <button onClick={onClose} className="text-xs opacity-60 hover:opacity-100">
+        {/* same header bar as the help panel: mono title, ruled, underlined close */}
+        <div className="-mx-4 -mt-4 flex items-center justify-between border-b border-foreground px-3 py-2">
+          <p className="font-mono text-xs">settings</p>
+          <button onClick={onClose} className="text-xs underline underline-offset-4 hover:opacity-60">
             close
           </button>
         </div>

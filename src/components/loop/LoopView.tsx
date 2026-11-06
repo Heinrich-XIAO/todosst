@@ -309,7 +309,7 @@ function CaptureBar({
           enterKeyHint="send"
           autoComplete="off"
           aria-label="capture"
-          className="h-9 min-w-0 flex-1 border border-foreground bg-transparent px-2 font-mono text-sm placeholder:text-foreground/40 focus:outline-none"
+          className="h-9 min-w-0 flex-1 border border-foreground bg-transparent px-2 text-sm placeholder:text-foreground/60 focus:outline-none"
         />
         <MicButton
           autoStart={autoVoice}

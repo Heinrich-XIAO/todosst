@@ -587,7 +587,7 @@ export function RruleEditor({
             rows={5}
             spellCheck={false}
             placeholder={"DTSTART:20260101T000000\nFREQ=WEEKLY;INTERVAL=2;BYDAY=MO,TH"}
-            className="w-full border border-foreground/20 bg-transparent p-2 font-mono text-xs focus:outline-none"
+            className="w-full resize-none border border-foreground/20 bg-transparent p-2 font-mono text-xs [field-sizing:content] focus:border-foreground focus:outline-none"
           />
           <p className="text-[11px] opacity-60">
             {normalizeRruleString(text).trim() === ""

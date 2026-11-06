@@ -850,8 +850,8 @@ export function TodayView({
         {showHabitOffer && (
           <div className="border-b border-foreground/10 px-3 py-2 text-xs">
             <p className="opacity-80">
-              keep a streak without another box? add <code className="whitespace-nowrap border border-foreground/30 px-1 font-mono">open todosst ~daily</code> — it checks
-              itself whenever you reach all clear.
+              streak for showing up? add <code className="whitespace-nowrap border border-foreground/30 px-1 font-mono">open todosst ~daily</code> — it
+              checks itself on all clear.
             </p>
             <div className="mt-1 flex gap-3">
               <button onClick={onCreateHabit} className="underline underline-offset-4">

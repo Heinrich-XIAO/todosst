@@ -42,6 +42,11 @@ export function Inbox({ ctx }: { ctx: LoopCtx }) {
         </p>
       ) : (
         <ul>
+          {model.inbox.length >= 2 && pickedSignals.length < 2 && (
+            <li className="border-b border-foreground/10 px-3 py-1.5 font-mono text-[11px] opacity-60">
+              tick two or more to combine them into one problem
+            </li>
+          )}
           {model.inbox.map((s) => (
             <SignalCard
               key={s._id}
@@ -128,16 +133,35 @@ function SignalCard({
           checked={picked}
           onChange={onPick}
           aria-label="select to combine"
-          className="check mt-1"
+          title="select to combine"
+          className="check mt-0.5"
         />
         <div className="min-w-0 flex-1">
-          <p className="break-words text-sm leading-snug">{signal.text}</p>
-          <p className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] opacity-60">
-            <span>{ago(signal.at, now)}</span>
-            {signal.source !== "typed" && <Tag>{signal.source}</Tag>}
-            {signal.system && <Tag>app</Tag>}
-            {signal.typeHint && signal.typeHint !== "problem" && <Tag>{signal.typeHint}</Tag>}
-          </p>
+          {/* the capture is the headline; its actions sit beside it (and wrap
+              under it on a phone) instead of taking a line of their own */}
+          <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            <div className="min-w-[12rem] flex-1">
+              <p className="break-words text-sm leading-snug">{signal.text}</p>
+              <p className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[11px] opacity-60">
+                <span>{ago(signal.at, now)}</span>
+                {signal.source !== "typed" && <Tag>{signal.source}</Tag>}
+                {signal.system && <Tag>app</Tag>}
+                {signal.typeHint && signal.typeHint !== "problem" && <Tag>{signal.typeHint}</Tag>}
+              </p>
+            </div>
+            {!editing && (
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <Btn onClick={() => setEditing(true)}>new {type}</Btn>
+                <AttachPicker ctx={ctx} onPick={(itemId) => void ctx.act(ctx.m.attach({ signalId: signal._id, itemId }))} />
+                <button
+                  onClick={() => void ctx.act(ctx.m.dismissSignal({ signalId: signal._id }))}
+                  className="font-mono text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
+                >
+                  dismiss
+                </button>
+              </div>
+            )}
+          </div>
 
           {suggestions.length > 0 && !editing && (
             <div className="mt-2 flex flex-col gap-1">
@@ -179,18 +203,7 @@ function SignalCard({
                 <Btn onClick={() => setEditing(false)}>cancel</Btn>
               </div>
             </div>
-          ) : (
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <Btn onClick={() => setEditing(true)}>new {type}</Btn>
-              <AttachPicker ctx={ctx} onPick={(itemId) => void ctx.act(ctx.m.attach({ signalId: signal._id, itemId }))} />
-              <button
-                onClick={() => void ctx.act(ctx.m.dismissSignal({ signalId: signal._id }))}
-                className="font-mono text-[11px] underline underline-offset-4 opacity-60 hover:opacity-100"
-              >
-                dismiss
-              </button>
-            </div>
-          )}
+          ) : null}
         </div>
       </div>
     </li>

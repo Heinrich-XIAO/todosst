@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useSyncExternalStore } from "react";
-import { Moon, Sun, SunMoon } from "lucide-react";
+import { Monitor, Moon, Sun } from "lucide-react";
 
 type Theme = "auto" | "light" | "dark";
 
@@ -63,7 +63,7 @@ export function ThemeToggle() {
   }, []);
 
   // icon, not text — the state lives in the glyph (auto/light/dark)
-  const Icon = theme === "auto" ? SunMoon : theme === "light" ? Sun : Moon;
+  const Icon = theme === "auto" ? Monitor : theme === "light" ? Sun : Moon;
   return (
     <button
       onClick={cycle}

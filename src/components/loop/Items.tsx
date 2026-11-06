@@ -239,7 +239,7 @@ function DetailBody({ row, ctx, onClose }: { row: ItemModel; ctx: LoopCtx; onClo
               placeholder="notes — what you know, what you've tried"
               rows={3}
               maxLength={4000}
-              className={`${inputCls} resize-y`}
+              className={`${inputCls} resize-none [field-sizing:content]`}
               aria-label="notes"
             />
           </div>

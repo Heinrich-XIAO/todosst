@@ -430,7 +430,7 @@ function DefEditor({
             onChange={(e) => setBody(e.target.value)}
             rows={14}
             spellCheck={false}
-            className={`${inputCls} mt-2 resize-y leading-relaxed`}
+            className={`${inputCls} mt-2 resize-none leading-relaxed [field-sizing:content]`}
             aria-label="definition JSON"
           />
           {!keyOk && <p className="mt-1 font-mono text-[11px]">key: lowercase letters, digits and dashes</p>}

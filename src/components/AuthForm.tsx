@@ -85,7 +85,8 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   ];
 
   return (
-    <div className="w-full max-w-[420px] border border-foreground bg-background">
+    <div className="w-full max-w-[420px]">
+    <div className="border border-foreground bg-background">
       <div className="flex border-b border-foreground text-sm">
         {tabs.map((t, i) => (
           <button
@@ -116,8 +117,8 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
               maxLength={64}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="username"
-              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+              placeholder="e.g. ada"
+              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/60 focus:outline-none"
             />
           </label>
           <label className="block">
@@ -132,7 +133,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="at least 8 characters"
-              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+              className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/60 focus:outline-none"
             />
           </label>
           {mode === "signUp" && (
@@ -147,7 +148,7 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="repeat your password"
-                className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/40 focus:outline-none"
+                className="mt-1 w-full border-b border-foreground bg-transparent py-2 text-sm placeholder:text-foreground/60 focus:outline-none"
               />
             </label>
           )}
@@ -166,6 +167,10 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
 
       {/* submission target for captureCredentials() */}
       <iframe ref={captureFrameRef} name="password-capture" title="password capture" hidden />
+    </div>
+    <p className="mt-3 text-center font-mono text-[11px] opacity-60">
+      a todo tree. type to add — <span className="whitespace-nowrap">!help</span> for the grammar.
+    </p>
     </div>
   );
 }

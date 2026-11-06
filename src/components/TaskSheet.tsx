@@ -157,7 +157,7 @@ export function TaskSheet({
                 onChange={(e) => setTitle(e.target.value)}
                 maxLength={200}
                 placeholder="what needs doing?"
-                className="w-full border-b border-foreground bg-transparent py-1 text-base placeholder:text-foreground/40 focus:outline-none"
+                className="w-full border-b border-foreground bg-transparent py-1 text-base placeholder:text-foreground/60 focus:outline-none"
               />
             </label>
             <button onClick={onClose} className="shrink-0 p-1 opacity-60 hover:opacity-100" aria-label="close">

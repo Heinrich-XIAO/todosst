@@ -747,7 +747,7 @@ export const CreateRootForm = memo(function CreateRootForm({
             }
           }}
           maxLength={500}
-          className={`w-full bg-transparent py-1 text-sm placeholder:text-foreground/40 focus:outline-none ${nlp.spans.length > 0 ? "text-transparent caret-foreground selection:bg-foreground/20" : ""}`}
+          className={`w-full bg-transparent py-1 text-sm placeholder:text-foreground/60 focus:outline-none ${nlp.spans.length > 0 ? "text-transparent caret-foreground selection:bg-foreground/20" : ""}`}
         />
         {value === "" && (
           <span
@@ -3190,7 +3190,7 @@ function TodoTask() {
           <button onClick={() => navigateToPwd([])} className="hover:underline hover:opacity-100" title="go to root">
             /
           </button>
-          {pwdParts.length === 0 && <span className="opacity-60">root</span>}
+          {pwdParts.length === 0 && <span className="opacity-60">(root)</span>}
           {pwdParts.map((part, idx) => (
             <span key={`${part}-${idx}`} className="flex items-center gap-1">
               {idx > 0 && <span className="opacity-20">/</span>}
@@ -3233,7 +3233,7 @@ function TodoTask() {
               }
             }}
             placeholder="search titles/tags…"
-            className="flex-1 min-w-[140px] bg-transparent py-1 placeholder:text-foreground/40 focus:outline-none"
+            className="min-w-[140px] flex-1 border-b border-foreground/20 bg-transparent py-1 placeholder:text-foreground/60 focus:border-foreground focus:outline-none"
           />
           <span className="flex gap-2 items-center">
             {(["all", "active", "completed"] as Filter[]).map((f) => (

@@ -82,7 +82,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                 onPatch({ neg: undefined, mode: v === "count" || v === "time" ? v : "check" });
               }
             }}
-            className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+            className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
           >
             <option value="check">checkbox</option>
             <option value="count">tally count</option>
@@ -99,7 +99,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
               max={999}
               value={toleranceOf(metadata)}
               onChange={(e) => onPatch({ tol: Math.min(999, Math.max(0, Math.floor(Number(e.target.value) || 0))) })}
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
             />
           </label>
         )}
@@ -112,7 +112,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
               max={999}
               value={thresholdOf(metadata)}
               onChange={(e) => onPatch({ threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
             />
           </label>
         )}
@@ -130,7 +130,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                   threshold: e.target.value === "" ? undefined : Math.min(999, Math.max(1, Math.floor(Number(e.target.value) || 1))),
                 })
               }
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
             />
           </label>
         )}
@@ -144,7 +144,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                 max={999}
                 value={thresholdOf(metadata)}
                 onChange={(e) => onPatch({ threshold: Math.min(999, Math.max(1, Number(e.target.value) || 1)) })}
-                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+                className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
               />
             </label>
             <label className="flex-1 block">
@@ -155,7 +155,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
                 max={TIME_STEP_MAX}
                 value={stepOf(metadata)}
                 onChange={(e) => onPatch({ stepMin: Math.min(TIME_STEP_MAX, Math.max(1, Number(e.target.value) || 1)) })}
-                className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+                className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
               />
             </label>
           </>
@@ -169,7 +169,7 @@ export function CompletionStyleField({ metadata, onPatch }: { metadata: Metadata
               max={48}
               value={metadata.graceHours ?? DEFAULT_GRACE_HOURS}
               onChange={(e) => onPatch({ graceHours: Math.min(48, Math.max(0, Number(e.target.value) || 0)) })}
-              className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+              className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
             />
           </label>
         )}
@@ -226,7 +226,7 @@ export function DescriptionField({
             e.currentTarget.blur();
           }
         }}
-        className="mt-1 w-full border border-foreground/20 bg-transparent p-2 text-xs focus:outline-none disabled:opacity-40"
+        className="mt-1 min-h-[3.25rem] w-full resize-none border border-foreground/40 bg-transparent p-2 text-xs [field-sizing:content] focus:border-foreground focus:outline-none disabled:opacity-40"
       />
     </label>
   );
@@ -263,7 +263,7 @@ export function TagsField({
             e.currentTarget.blur();
           }
         }}
-        className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs focus:outline-none disabled:opacity-40"
+        className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground focus:outline-none disabled:opacity-40"
       />
     </label>
   );
@@ -300,7 +300,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
             const v = e.target.value as Metadata["priority"];
             onPatch({ priority: v || null });
           }}
-          className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+          className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
         >
           <option value="">none</option>
           <option value="low">low</option>
@@ -329,7 +329,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
               dueTimeMin: metadata.dueAt ? metadata.dueTimeMin : defaultDueTimeMin(Date.now()),
             });
           }}
-          className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+          className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
         />
       </label>
       {metadata.dueAt ? (
@@ -342,7 +342,7 @@ export function PriorityDueField({ metadata, onPatch }: { metadata: Metadata; on
               const min = e.target.value ? parseTimeInput(e.target.value) : null;
               onPatch({ dueTimeMin: min ?? undefined });
             }}
-            className="mt-1 w-full border border-foreground/20 bg-transparent p-1 text-xs"
+            className="mt-1 w-full border border-foreground/40 bg-transparent p-1 text-xs focus:border-foreground"
           />
         </label>
       ) : null}

@@ -75,4 +75,4 @@ export function Bars({ values, label }: { values: number[]; label?: string }) {
 }
 
 export const inputCls =
-  "w-full border border-foreground/40 bg-transparent px-2 py-1.5 font-mono text-xs placeholder:text-foreground/40 focus:border-foreground focus:outline-none";
+  "w-full border border-foreground/40 bg-transparent px-2 py-1.5 font-mono text-xs placeholder:text-foreground/60 focus:border-foreground focus:outline-none";
