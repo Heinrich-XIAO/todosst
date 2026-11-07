@@ -63,7 +63,7 @@ export function RecurrenceField({
       <div className="flex items-center justify-between">
         <span className="opacity-60">recurrence</span>
         {!showRuleEditor && (
-          <button onClick={() => setShowRuleEditor(true)} className="underline underline-offset-2 opacity-60 hover:opacity-100">
+          <button type="button" onClick={() => setShowRuleEditor(true)} className="underline underline-offset-2 opacity-60 hover:opacity-100">
             {metadata.recur ? "edit rule" : "+ make recurring"}
           </button>
         )}
@@ -393,6 +393,7 @@ export function RemindersField({ metadata, onPatch }: { metadata: Metadata; onPa
       <div className="flex items-center justify-between">
         <span className="opacity-60">remind me</span>
         <button
+          type="button"
           onClick={() => onPatch({ reminder: cfg.enabled ? { enabled: false, offsetsMin: cfg.offsetsMin } : { enabled: true, offsetsMin: DEFAULT_OFFSETS_MIN } })}
           className="underline underline-offset-2 opacity-60 hover:opacity-100"
         >

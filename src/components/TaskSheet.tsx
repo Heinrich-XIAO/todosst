@@ -160,7 +160,7 @@ export function TaskSheet({
                 className="w-full border-b border-foreground bg-transparent py-1 text-base placeholder:text-foreground/60 focus:outline-none"
               />
             </label>
-            <button onClick={onClose} className="shrink-0 text-xs underline underline-offset-4 hover:opacity-60">
+            <button type="button" onClick={onClose} className="shrink-0 text-xs underline underline-offset-4 hover:opacity-60">
               close
             </button>
           </div>

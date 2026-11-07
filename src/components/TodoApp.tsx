@@ -2115,9 +2115,15 @@ function TodoTask() {
     // Todoist-style NL dates: strip heard spans ("tmrw") before the grammar
     // sees the text, then reattach the resolution as metadata. Bang commands
     // bypass NLP entirely (a directory can be named "tomorrow").
-    const nlp = raw.startsWith("!") ? null : parseNlpDate(raw);
+    // Only the text before the first "~" is searched: an explicit recurrence
+    // token ("~every 2w mon,thu") owns its words, so "mon" there is a weekday,
+    // not a due date. The token is re-attached after the NL pass.
+    const tildeAt = raw.indexOf("~");
+    const naturalPart = tildeAt > 0 ? raw.slice(0, tildeAt) : raw;
+    const ruleTail = tildeAt > 0 ? raw.slice(tildeAt) : "";
+    const nlp = raw.startsWith("!") ? null : parseNlpDate(naturalPart);
     const heard = nlp && nlp.spans.length > 0 ? nlp : null;
-    const grammarRaw = heard && heard.cleanTitle ? heard.cleanTitle : raw;
+    const grammarRaw = (heard && heard.cleanTitle ? heard.cleanTitle : naturalPart) + ruleTail;
     const nlpMeta: PlainNode["metadata"] =
       heard && (heard.dueAt !== null || heard.recur)
         ? {
