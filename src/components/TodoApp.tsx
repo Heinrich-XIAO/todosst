@@ -146,6 +146,15 @@ function cacheKeyFor(t: { _id: Id<"todos">; node?: string }): string {
   return t.node ?? `row:${t._id}`;
 }
 
+// The parse cache is keyed by payload text, which doesn't carry the row id. Two
+// rows with identical payloads (an undo-restored task, or two identical tasks in
+// one folder) share a cache entry, so each row's id is re-stamped from the live
+// query. Without this a restored parent kept its deleted id, and its children
+// were orphaned to the root.
+function withRowId(cached: DecryptedNode, t: { _id: Id<"todos">; _creationTime: number }): DecryptedNode {
+  return { ...cached, _id: t._id, _creationTime: t._creationTime };
+}
+
 // Shallow identity compare for the derived maps handed to memos and children:
 // rebuilding an identical map on a data change invalidates every consumer
 // (today rows, holds, habit rows, the heatmap carousel) for nothing.
@@ -885,7 +894,7 @@ function TodoTask() {
       // fully cached — synchronous state update, no loading flash
       setIsParsing(false);
       setReadError(null);
-      setNodes(todos.map((t) => parseCacheRef.current.get(cacheKeyFor(t))!));
+      setNodes(todos.map((t) => withRowId(parseCacheRef.current.get(cacheKeyFor(t))!, t)));
       return;
     }
     setIsParsing(true);
@@ -922,7 +931,7 @@ function TodoTask() {
         }
         if (cancelled) return;
         setReadError(null);
-        setNodes(todos.map((t) => parseCacheRef.current.get(cacheKeyFor(t))!));
+        setNodes(todos.map((t) => withRowId(parseCacheRef.current.get(cacheKeyFor(t))!, t)));
       } finally {
         if (!cancelled) setIsParsing(false);
       }
