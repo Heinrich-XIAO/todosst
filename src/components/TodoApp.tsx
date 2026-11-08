@@ -26,6 +26,7 @@ import { loadSigils } from "@/lib/loopModel";
 import { captureSignal, noteUnknownCommand } from "@/lib/loopCapture";
 import { LoopView } from "./loop/LoopView";
 import { LoopStrip } from "./loop/LoopStrip";
+import { MicButton } from "./loop/MicButton";
 import {
   COUNT_MAX,
   DAY_MS,
@@ -599,6 +600,7 @@ export const CreateRootForm = memo(function CreateRootForm({
   isTouch,
   stealDisabled,
   onSubmit,
+  onProblem,
 }: {
   nodes: DecryptedNode[] | null;
   roots: TreeNode[];
@@ -608,8 +610,13 @@ export const CreateRootForm = memo(function CreateRootForm({
   stealDisabled: boolean;
   // raw input value; resolves true when the form should clear
   onSubmit: (raw: string) => Promise<boolean>;
+  onProblem: (message: string) => void;
 }) {
   const [value, setValue] = useState("");
+  // live partial transcript while the mic is open; shown as if typed, but only
+  // committed to `value` once the user taps stop
+  const [heard, setHeard] = useState("");
+  const shown = heard ? [value, heard].filter(Boolean).join(" ") : value;
   const [isSlashFocused, setIsSlashFocused] = useState(false);
   const [activeSuggestIdx, setActiveSuggestIdx] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -623,18 +630,18 @@ export const CreateRootForm = memo(function CreateRootForm({
   // Todoist-style inline date highlight: the same deterministic parse the
   // submit path uses, run per keystroke (µs-scale regex, no model). Segments
   // render in a backdrop div behind a transparent-text input.
-  const nlp = useMemo(() => parseNlpDate(value), [value]);
+  const nlp = useMemo(() => parseNlpDate(shown), [shown]);
   const nlpSegs = useMemo(() => {
     const segs: { text: string; hot: boolean }[] = [];
     let pos = 0;
     for (const s of nlp.spans) {
-      if (s.start > pos) segs.push({ text: value.slice(pos, s.start), hot: false });
-      segs.push({ text: value.slice(s.start, s.end), hot: true });
+      if (s.start > pos) segs.push({ text: shown.slice(pos, s.start), hot: false });
+      segs.push({ text: shown.slice(s.start, s.end), hot: true });
       pos = s.end;
     }
-    if (pos < value.length) segs.push({ text: value.slice(pos), hot: false });
+    if (pos < shown.length) segs.push({ text: shown.slice(pos), hot: false });
     return segs;
-  }, [value, nlp]);
+  }, [shown, nlp]);
   const nlpLabel = useMemo(() => {
     if (nlp.spans.length === 0) return null;
     const bits: string[] = [];
@@ -744,7 +751,7 @@ export const CreateRootForm = memo(function CreateRootForm({
         <input
           ref={inputRef}
           autoFocus={!isTouch}
-          value={value}
+          value={shown}
           onChange={(e) => setValue(e.target.value)}
           onFocus={() => setIsSlashFocused(true)}
           onBlur={() => setTimeout(() => setIsSlashFocused(false), 150)}
@@ -771,12 +778,12 @@ export const CreateRootForm = memo(function CreateRootForm({
           maxLength={500}
           className={`w-full bg-transparent py-1 text-sm placeholder:text-foreground/60 focus:outline-none ${nlp.spans.length > 0 ? "text-transparent caret-foreground selection:bg-foreground/20" : ""}`}
         />
-        {value === "" && (
+        {shown === "" && (
           <span
             aria-hidden
             className="pointer-events-none absolute inset-0 select-none overflow-hidden whitespace-nowrap py-1 text-sm text-foreground/40"
           >
-            <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={value === ""} />
+            <TypewriterPlaceholder phrases={PLACEHOLDER_PHRASES} active={shown === ""} />
           </span>
         )}
         {isSlashFocused && slashComplete.suggestions.length > 0 && slashComplete.mode !== "none" && (
@@ -822,6 +829,14 @@ export const CreateRootForm = memo(function CreateRootForm({
           {nlpLabel}
         </span>
       )}
+      <MicButton
+        onInterim={setHeard}
+        onProblem={onProblem}
+        onFinal={(spoken) => {
+          setValue((prev) => [prev.trim(), spoken].filter(Boolean).join(" ").slice(0, 500));
+          if (!isTouch) requestAnimationFrame(() => inputRef.current?.focus());
+        }}
+      />
       <button type="submit" disabled={!value.trim()} className="shrink-0 font-mono text-xs underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-40">
         add task
       </button>
@@ -3248,6 +3263,7 @@ function TodoTask() {
         isTouch={isTouch}
         stealDisabled={!!(notice || helpOpen || confirmDeleteId || selectedId)}
         onSubmit={submitRootInput}
+        onProblem={setNotice}
       />
       </div>
 
