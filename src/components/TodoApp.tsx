@@ -3180,8 +3180,8 @@ function TodoTask() {
         // (today: pinned carousel above the list; tree: the task list itself).
         // Desktop keeps the plain document flow (md: reverts).
         view === "today"
-          ? "relative flex h-full min-h-0 flex-col overflow-hidden pb-[calc(3rem+env(safe-area-inset-bottom))] md:block md:h-auto md:flex-none md:overflow-visible md:border md:border-foreground md:pb-0"
-          : "flex flex-1 flex-col pb-[calc(3rem+env(safe-area-inset-bottom))] md:block md:h-auto md:flex-none md:border md:border-foreground md:pb-0"
+          ? "relative flex h-full min-h-0 flex-col overflow-hidden pb-[var(--tabbar-clear)] md:block md:h-auto md:flex-none md:overflow-visible md:border md:border-foreground md:pb-0"
+          : "flex flex-1 flex-col pb-[var(--tabbar-clear)] md:block md:h-auto md:flex-none md:border md:border-foreground md:pb-0"
       }`}
     >
       {/* status bar — below md the only content is the offline/queue indicators,

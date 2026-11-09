@@ -7,6 +7,11 @@
   --check-mark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.5 5.2 4 7.5 8.5 2.5' fill='none' stroke='%23fff' stroke-width='1.6'/%3E%3C/svg%3E");
   --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5' fill='none' stroke='%23000' stroke-width='1.2'/%3E%3C/svg%3E");
   color-scheme: light;
+  /* the mobile bottom nav: 3rem of tabs plus its 1px top rule */
+  --tabbar-h: calc(3rem + 1px);
+  /* what anything pinned to the viewport bottom (or a scroll region's end)
+     must clear: the nav plus the home-indicator inset */
+  --tabbar-clear: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
 }
 
 .dark {

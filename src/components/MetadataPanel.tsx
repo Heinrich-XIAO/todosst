@@ -118,10 +118,11 @@ export function MetadataPanel({
     <div
       className={`flex max-h-[70dvh] shrink-0 md:max-h-none flex-col border-t border-foreground bg-background p-3 text-xs ${
         overlay
-          ? // mobile today view: pin to the container's bottom padding (above
-            // the fixed nav) with its own stacking context so it always paints
-            // whole above the list
-            "max-md:absolute max-md:inset-x-0 max-md:bottom-0 max-md:z-20 max-md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]"
+          ? // mobile today view: rise to the nav's top edge (--tabbar-clear),
+            // not the container's padding box — bottom-0 sat under the fixed
+            // nav and hid the panel's last fields. Own stacking context so it
+            // always paints whole above the list.
+            "max-md:absolute max-md:inset-x-0 max-md:bottom-[var(--tabbar-clear)] max-md:z-20 max-md:shadow-[0_-8px_24px_rgba(0,0,0,0.5)]"
           : ""
         // desktop (md+): side-docked in the row layout owned by TodoApp
         // (main list left, this panel right). Stacked in-flow rendering left

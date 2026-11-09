@@ -243,7 +243,7 @@ function Combine({ signals, ctx, onDone }: { signals: Doc<"signals">[]; ctx: Loo
   const [type, setType] = useState(signals[0].typeHint && ctx.types[signals[0].typeHint] ? signals[0].typeHint : "problem");
   const system = signals.some((s) => s.system);
   return (
-    <div className="sticky bottom-14 z-10 mx-3 mt-3 border border-foreground bg-background p-3 md:bottom-3">
+    <div className="sticky bottom-[var(--tabbar-clear)] z-10 mx-3 mt-3 border border-foreground bg-background p-3 md:bottom-3">
       <Label>combine {signals.length} into one</Label>
       <div className="flex flex-col gap-2 px-3 pb-1">
         <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} className={inputCls} aria-label="title" />

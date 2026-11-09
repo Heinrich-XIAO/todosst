@@ -87,7 +87,7 @@ export function UndoToast({
   onDismiss: () => void;
 }) {
   return (
-      <div className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 border border-foreground bg-background px-4 py-2 text-xs md:bottom-4">
+      <div className="fixed bottom-[calc(var(--tabbar-clear)+2rem)] left-1/2 z-40 flex -translate-x-1/2 items-center gap-3 border border-foreground bg-background px-4 py-2 text-xs md:bottom-4">
       <span className="whitespace-nowrap">
         deleted {snap.count} task{snap.count === 1 ? "" : "s"}
       </span>
