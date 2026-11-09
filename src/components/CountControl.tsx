@@ -7,12 +7,12 @@ import { useHoldConfirm } from "./useHoldConfirm";
 // The count/checkbox widget shared by tree rows and the today view. Storage is
 // always counts; check vs tally vs time is rendering only.
 //
-// Recurring rows (habits — meta.recur) log through the shared press-and-hold
-// gesture (useHoldConfirm), the same deliberate friction as battles: on touch
-// a plain tap does nothing and a ~500ms hold commits, mouse clicks stay
-// instant. Checkbox habits need the hold in both directions (nothing on a
-// habit is accidental); taking progress back via − is always a plain tap.
-// Plain one-off tasks keep instant taps everywhere.
+// Recurring rows (habits — meta.recur) log tally and time progress through the
+// shared press-and-hold gesture (useHoldConfirm), the same deliberate friction
+// as battles: on touch a plain tap does nothing and a ~500ms hold commits,
+// mouse clicks stay instant. Checkboxes are a single tap everywhere, habits
+// included — checking off a box is the one-click action on mobile. Taking
+// progress back via − is always a plain tap.
 
 const CHECK_PATH = "M1.5 5.2 4 7.5 8.5 2.5";
 
@@ -57,7 +57,6 @@ export function CountControl({
 }) {
   const holdNeeded = !!meta.recur;
   const upHold = useHoldConfirm(onCountUp);
-  const toggleHold = useHoldConfirm(onToggle);
 
   if (mode !== "check") {
     return (
@@ -103,10 +102,9 @@ export function CountControl({
   return (
     <>
       <button
-        {...(holdNeeded ? toggleHold.holdProps : { onClick: onToggle })}
-        className={`relative h-4 w-4 shrink-0 border flex items-center justify-center after:absolute after:-inset-3 after:content-[''] ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"} ${holdNeeded ? "touch-none select-none" : ""}`}
-        aria-label={holdNeeded ? (checked ? "hold to un-check" : "hold to check") : "toggle"}
-        title={holdNeeded ? `press and hold (or click) to ${checked ? "un-check" : "check"}` : undefined}
+        onClick={onToggle}
+        className={`relative h-4 w-4 shrink-0 border flex items-center justify-center after:absolute after:-inset-3 after:content-[''] ${checked ? "border-foreground bg-foreground text-background" : "border-foreground bg-background"}`}
+        aria-label={checked ? "un-check" : "check"}
       >
         {checked && (
           <svg viewBox="0 0 10 10" className="h-2.5 w-2.5" aria-hidden>
@@ -114,7 +112,6 @@ export function CountControl({
           </svg>
         )}
       </button>
-      {holdNeeded && toggleHold.pill}
     </>
   );
 }
