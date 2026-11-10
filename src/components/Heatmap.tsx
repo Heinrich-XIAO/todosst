@@ -11,6 +11,7 @@ import { MONTHS } from "@/lib/months";
 // narrow screens show fewer recent months instead of a clipped full year.
 
 const LEVELS = ["bg-foreground/[0.18]", "bg-foreground/25", "bg-foreground/45", "bg-foreground/70", "bg-foreground"];
+const TOP = LEVELS.length - 1;
 const CELL_PX = 12; // 10px cell + 2px gap
 
 const DATE_OPTS: Intl.DateTimeFormatOptions = { weekday: "short", month: "short", day: "numeric" };
@@ -75,6 +76,7 @@ export const Heatmap = memo(function Heatmap({
   weeks = 53,
   mode = "check",
   negative = false,
+  binary = false,
 }: {
   counts: Map<number, number>;
   nowTs: number;
@@ -83,6 +85,8 @@ export const Heatmap = memo(function Heatmap({
   mode?: CompletionMode;
   /** negative task — a day's level is its slip count (more = worse) */
   negative?: boolean;
+  /** yes/no task — a done day is the brightest level, never a dim "1" */
+  binary?: boolean;
 }) {
   const gridWrapRef = useRef<HTMLDivElement>(null);
   const [gridWidth, setGridWidth] = useState<number | null>(null);
@@ -207,7 +211,7 @@ export const Heatmap = memo(function Heatmap({
                           setTip((t) => (t?.c === c && t?.r === r ? null : { c, r, text, below: r < 2 }));
                         }
                       }}
-                      className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
+                      className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[binary ? (cell.count > 0 ? TOP : 0) : mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
                     />
                   );
                 })}
@@ -236,11 +240,11 @@ export const Heatmap = memo(function Heatmap({
         </div>
       </div>
       <div className="mt-1 flex items-center justify-end gap-1 opacity-60">
-        <span>{negative ? "clean" : "less"}</span>
-        {LEVELS.map((l, i) => (
+        <span>{binary ? "no" : negative ? "clean" : "less"}</span>
+        {(binary ? [LEVELS[0], LEVELS[TOP]] : LEVELS).map((l, i) => (
           <span key={i} className={`h-[8px] w-[8px] ${l}`} />
         ))}
-        <span>{negative ? "slips" : "more"}</span>
+        <span>{binary ? "yes" : negative ? "slips" : "more"}</span>
       </div>
     </div>
   );

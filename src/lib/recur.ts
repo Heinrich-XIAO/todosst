@@ -163,6 +163,12 @@ export function thresholdOf(meta: RecurMetadata): number {
   return modeOf(meta) === "count" ? Infinity : 1;
 }
 
+/** A plain yes/no task: one check per window, nothing to count. A day is
+ * either done or not, so its heatmap has two states instead of a scale. */
+export function isYesNo(meta: RecurMetadata): boolean {
+  return modeOf(meta) === "check" && thresholdOf(meta) <= 1;
+}
+
 export const TIME_STEP_DEFAULT = 15;
 export const TIME_STEP_MAX = 240;
 

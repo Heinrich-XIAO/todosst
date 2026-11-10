@@ -35,6 +35,7 @@ import {
   decodeHistoryPayload,
   encodeHistoryPayload,
   formatMinutes,
+  isYesNo,
   modeOf,
   nextCountOnClick,
   normalizeRruleString,
@@ -1488,7 +1489,7 @@ function TodoTask() {
       }
       if (negative) badCount += 1;
       else goodCount += 1;
-      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest, negative });
+      per.push({ id, title: n.title, mode: modeOf(meta), counts: m, latest, negative, binary: isYesNo(meta) && !negative });
     }
     // most recently active task first; aggregate slides always lead
     per.sort((a, b) => b.latest - a.latest || a.title.localeCompare(b.title));

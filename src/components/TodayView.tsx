@@ -322,6 +322,8 @@ export type PastYearSlide = {
   counts: Map<number, number>;
   /** negative task — heatmap levels are slips (more = worse) */
   negative?: boolean;
+  /** yes/no task — done days render at the brightest level */
+  binary?: boolean;
 };
 
 function holdDayLabel(windowDay: number): string {
@@ -685,7 +687,7 @@ function PastYearCarousel({ slides, nowTs }: { slides: PastYearSlide[]; nowTs: n
                 The wrappers stay mounted so the scroll geometry (and therefore
                 every snap position) is identical. */}
             {Math.abs(i - shown) <= 1 ? (
-              <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} negative={s.negative} />
+              <Heatmap counts={s.counts} nowTs={nowTs} mode={s.mode} negative={s.negative} binary={s.binary} />
             ) : null}
           </div>
         ))}

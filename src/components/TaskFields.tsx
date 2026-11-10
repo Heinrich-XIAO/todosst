@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PlainNode } from "@/lib/crypto";
-import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, loadRrule, modeOf, stepOf, thresholdOf } from "@/lib/recur";
+import { DEFAULT_GRACE_HOURS, TIME_STEP_MAX, isYesNo, loadRrule, modeOf, stepOf, thresholdOf } from "@/lib/recur";
 import { isNegative, toleranceOf } from "@/lib/negative";
 import {
   defaultDueTimeMin,
@@ -456,7 +456,7 @@ export function HeatmapField({
     <div>
       <span className="opacity-60">past year</span>
       <div className="mt-1">
-        <Heatmap counts={counts} nowTs={nowTs} mode={modeOf(metadata)} negative={isNegative(metadata)} />
+        <Heatmap counts={counts} nowTs={nowTs} mode={modeOf(metadata)} negative={isNegative(metadata)} binary={isYesNo(metadata) && !isNegative(metadata)} />
       </div>
     </div>
   );
