@@ -23,16 +23,25 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
           if (typeof secret !== "string" || secret.length < 8 || secret.length > 128) {
             throw new ConvexError("invalid password");
           }
-          const created = await createAccount(ctx, {
-            provider: "password",
-            account: { id: username, secret },
-            profile: { name: username },
-            shouldLinkViaPhone: false,
-          });
+          // null is the only failure channel that survives production: the
+          // Next.js auth proxy forwards error.message alone, which Convex
+          // redacts to "[Request ID: …] Server Error". A thrown error here
+          // means the username is taken.
+          let created: Awaited<ReturnType<typeof createAccount>>;
+          try {
+            created = await createAccount(ctx, {
+              provider: "password",
+              account: { id: username, secret },
+              profile: { name: username },
+              shouldLinkViaPhone: false,
+            });
+          } catch {
+            return null;
+          }
           return { userId: created.user._id };
         }
         if (flow === "signIn") {
-          if (typeof secret !== "string" || !secret) throw new ConvexError("Invalid credentials");
+          if (typeof secret !== "string" || !secret) return null;
           let retrieved: Awaited<ReturnType<typeof retrieveAccount>> | null = null;
           try {
             retrieved = await retrieveAccount(ctx, {
@@ -40,11 +49,10 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
               account: { id: username, secret },
             });
           } catch {
-            // "InvalidAccountId" / "InvalidSecret" / "TooManyFailedAttempts" —
-            // plain Errors would be redacted to an opaque server error in prod
-            throw new ConvexError("Invalid credentials");
+            // "InvalidAccountId" / "InvalidSecret" / "TooManyFailedAttempts"
+            return null;
           }
-          if (!retrieved || !retrieved.user) throw new ConvexError("Invalid credentials");
+          if (!retrieved || !retrieved.user) return null;
           return { userId: retrieved.user._id };
         }
         throw new ConvexError("Missing `flow` param, it must be one of \"signUp\" or \"signIn\"");

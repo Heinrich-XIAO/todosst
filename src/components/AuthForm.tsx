@@ -9,6 +9,21 @@ type Mode = "signIn" | "signUp";
 // server-side username check in convex/auth.ts.
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,64}$/;
 
+// Must match SHELL_CACHE in public/sw.js.
+const SHELL_CACHE = "todosst-shell-v1";
+
+// The service worker can paint a cached shell whose JS predates the current
+// deploy. Sign-in then succeeds (cookies and token are stored) but the auth
+// library's follow-up server action no longer exists on the server, so it
+// throws before the UI flips to signed in. Dropping the cached shell makes the
+// reload wait for the network, which returns current JS and the new session.
+async function reloadOntoCurrentDeploy() {
+  try {
+    await caches.delete(SHELL_CACHE);
+  } catch {}
+  window.location.reload();
+}
+
 export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
   const { signIn } = useAuthActions();
   const [mode, setMode] = useState<Mode>(defaultMode);
@@ -62,18 +77,18 @@ export function AuthForm({ defaultMode = "signIn" }: { defaultMode?: Mode }) {
       formData.set("username", name);
       formData.set("password", password);
       formData.set("flow", mode);
-      await signIn("password", formData);
+      const { signingIn } = await signIn("password", formData);
+      if (!signingIn) {
+        setError(mode === "signIn" ? "user doesn't exist or password is incorrect." : "that username is taken. try signing in.");
+        return;
+      }
       captureCredentials();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "authentication failed";
-      const lower = msg.toLowerCase();
-      if (lower.includes("already")) {
-        setError("account already exists. try signing in.");
-      } else if (lower.includes("invalid") || lower.includes("not found")) {
-        setError(mode === "signIn" ? "user doesn't exist or password is incorrect." : "could not create that account.");
-      } else {
-        setError(lower);
+      if (err instanceof Error && err.name === "UnrecognizedActionError") {
+        await reloadOntoCurrentDeploy();
+        return;
       }
+      setError(err instanceof Error ? err.message.toLowerCase() : "authentication failed");
     } finally {
       setLoading(false);
     }
