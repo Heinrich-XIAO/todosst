@@ -830,6 +830,9 @@ export const CreateRootForm = memo(function CreateRootForm({
           {nlpLabel}
         </span>
       )}
+      <button type="submit" disabled={!value.trim()} className="shrink-0 font-mono text-xs underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-40">
+        add task
+      </button>
       <MicButton
         onInterim={setHeard}
         onProblem={onProblem}
@@ -838,9 +841,6 @@ export const CreateRootForm = memo(function CreateRootForm({
           if (!isTouch) requestAnimationFrame(() => inputRef.current?.focus());
         }}
       />
-      <button type="submit" disabled={!value.trim()} className="shrink-0 font-mono text-xs underline underline-offset-4 hover:opacity-60 disabled:no-underline disabled:opacity-40">
-        add task
-      </button>
     </form>
   );
 });
