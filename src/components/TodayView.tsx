@@ -87,28 +87,29 @@ export type TodayItem = {
 const GROUP_LABELS = ["overdue", "today", "still open"] as const;
 
 /** A hairline that fills as today's rows close — the day's progress at a
- * glance, so every check moves something toward all clear. Overdue rows
- * (group 0) count too; "still open" rows from earlier windows (group 2) don't. */
+ * glance, so every check moves something toward all clear. Counts today's
+ * rows plus overdue rows that are still open: finished overdue rows are
+ * hidden, so they don't count. "Still open" rows from earlier windows never do. */
 function DayProgress({ items }: { items: TodayItem[] }) {
-  const today = items.filter((i) => i.group !== 2);
-  if (today.length === 0) return null;
-  const done = today.filter((i) => !rowIsOpen(i)).length;
+  const counted = items.filter((i) => i.group === 1 || (i.group === 0 && rowIsOpen(i)));
+  if (counted.length === 0) return null;
+  const done = counted.filter((i) => !rowIsOpen(i)).length;
   return (
     <div className="flex items-center gap-3 border-b border-foreground/10 px-3 py-2 font-mono text-[11px]">
       <span className="shrink-0 tabular-nums opacity-60">
-        {done}/{today.length} done
+        {done}/{counted.length} done
       </span>
       <div
         role="progressbar"
         aria-label="done today"
         aria-valuemin={0}
-        aria-valuemax={today.length}
+        aria-valuemax={counted.length}
         aria-valuenow={done}
         className="h-px flex-1 bg-foreground/20"
       >
         <div
           className="h-full bg-foreground transition-[width] duration-300 ease-out motion-reduce:transition-none"
-          style={{ width: `${(done / today.length) * 100}%` }}
+          style={{ width: `${(done / counted.length) * 100}%` }}
         />
       </div>
     </div>
