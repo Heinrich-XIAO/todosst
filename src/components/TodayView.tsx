@@ -87,9 +87,10 @@ export type TodayItem = {
 const GROUP_LABELS = ["overdue", "today", "still open"] as const;
 
 /** A hairline that fills as today's rows close — the day's progress at a
- * glance, so every check moves something toward all clear. */
+ * glance, so every check moves something toward all clear. Overdue rows
+ * (group 0) count too; "still open" rows from earlier windows (group 2) don't. */
 function DayProgress({ items }: { items: TodayItem[] }) {
-  const today = items.filter((i) => i.group === 1);
+  const today = items.filter((i) => i.group !== 2);
   if (today.length === 0) return null;
   const done = today.filter((i) => !rowIsOpen(i)).length;
   return (
