@@ -34,6 +34,7 @@ export function MicButton({
   onInterim,
   onProblem,
   autoStart,
+  className = "h-9 w-9 shrink-0 border border-foreground",
 }: {
   /** everything heard, once the user taps stop */
   onFinal: (text: string) => void;
@@ -42,6 +43,8 @@ export function MicButton({
   onProblem?: (message: string) => void;
   /** start listening as soon as it mounts (the home-screen "voice capture" shortcut) */
   autoStart?: boolean;
+  /** box styling; the default is the boxed button used on the loop screen */
+  className?: string;
 }) {
   // false on the server and during hydration, then the real answer
   const supported = useSyncExternalStore(
@@ -159,7 +162,7 @@ export function MicButton({
       onClick={() => (listening ? stop() : start())}
       aria-label={listening ? "stop listening" : "capture by voice"}
       title={listening ? "stop — what you said is captured" : "capture by voice"}
-      className={`flex h-9 w-9 shrink-0 items-center justify-center border border-foreground ${
+      className={`flex items-center justify-center p-0 ${className} ${
         listening ? "animate-pulse bg-foreground text-background" : "hover:bg-foreground hover:text-background"
       }`}
     >

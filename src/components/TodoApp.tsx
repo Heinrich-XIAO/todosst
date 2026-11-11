@@ -834,6 +834,7 @@ export const CreateRootForm = memo(function CreateRootForm({
         add task
       </button>
       <MicButton
+        className="h-9 w-9 shrink-0 border-l border-foreground"
         onInterim={setHeard}
         onProblem={onProblem}
         onFinal={(spoken) => {
