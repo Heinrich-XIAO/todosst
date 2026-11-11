@@ -7,6 +7,7 @@ import { useEffect, useRef } from "react";
 // Toasts that announce a state change (hold confirm, offline capture, replay
 // sync) pass onUndo and get an undo button alongside close.
 const VISIBLE = 3;
+const TOAST_MS = 6000;
 
 export function ReminderToast({
   title,
@@ -20,14 +21,14 @@ export function ReminderToast({
   onClose: () => void;
 }) {
   // read onClose through a ref: callers pass an inline closure recreated on
-  // every parent render, and keying the timer on it would restart the 20s
+  // every parent render, and keying the timer on it would restart the
   // auto-dismiss on every render — effectively never dismissing
   const onCloseRef = useRef(onClose);
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
   useEffect(() => {
-    const t = window.setTimeout(() => onCloseRef.current(), 20_000);
+    const t = window.setTimeout(() => onCloseRef.current(), TOAST_MS);
     return () => window.clearTimeout(t);
   }, [lines]);
 

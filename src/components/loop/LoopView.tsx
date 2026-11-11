@@ -131,7 +131,7 @@ export function LoopView({
   // toasts clear themselves
   useEffect(() => {
     if (!toast) return;
-    const t = window.setTimeout(() => setToast(null), 7000);
+    const t = window.setTimeout(() => setToast(null), 6000);
     return () => window.clearTimeout(t);
   }, [toast]);
 
