@@ -5,8 +5,10 @@ import { Mic, Square } from "lucide-react";
 
 // Voice capture through the browser's built-in speech recognition (Chrome on
 // Android has it; nothing is uploaded by us — the browser's speech service
-// handles the audio). Hidden when the browser has none, so the keyboard
-// dictation key remains the fallback there.
+// handles the audio). iOS home-screen apps and Firefox have none: the button
+// still shows there, and a tap points at the keyboard's dictation key.
+
+const NO_SPEECH = "voice input isn't available in this browser — tap the mic on your keyboard instead";
 
 type RecognitionResult = { isFinal: boolean; 0: { transcript: string } };
 type RecognitionEvent = { resultIndex: number; results: ArrayLike<RecognitionResult> };
@@ -155,11 +157,14 @@ export function MicButton({
     }
   }, [autoStart, supported, start]);
 
-  if (!supported) return null;
   return (
     <button
       type="button"
-      onClick={() => (listening ? stop() : start())}
+      onClick={() => {
+        if (!supported) cb.current.onProblem?.(NO_SPEECH);
+        else if (listening) stop();
+        else start();
+      }}
       aria-label={listening ? "stop listening" : "capture by voice"}
       title={listening ? "stop — what you said is captured" : "capture by voice"}
       className={`flex items-center justify-center p-0 ${className} ${

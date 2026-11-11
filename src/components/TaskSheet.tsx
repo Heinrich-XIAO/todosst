@@ -90,6 +90,8 @@ export function TaskSheet({
   const metaRef = useRef<PlainNode["metadata"]>(initialMetadata);
   const keyboardInset = useKeyboardInset();
   const dirLabelRef = useRef<HTMLButtonElement>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+  const [micNote, setMicNote] = useState<string | null>(null);
 
   const onPatch = (patch: Partial<PlainNode["metadata"]>) => {
     if (Object.prototype.hasOwnProperty.call(patch, "dueAt")) dueDateEditedRef.current = true;
@@ -153,6 +155,7 @@ export function TaskSheet({
             <label className="min-w-0 flex-1">
               <span className="sr-only">task</span>
               <input
+                ref={titleRef}
                 autoFocus
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
@@ -228,6 +231,7 @@ export function TaskSheet({
             )}
           </div>
 
+          {micNote && <p className="border-t border-foreground/10 px-4 py-1 font-mono text-[11px] opacity-60">{micNote}</p>}
           <div className="flex items-stretch gap-2 border-t border-foreground p-3">
             <button
               type="submit"
@@ -238,7 +242,15 @@ export function TaskSheet({
             </button>
             <MicButton
               className="w-10 shrink-0 border-l border-foreground"
-              onFinal={(spoken) => setTitle((prev) => [prev.trim(), spoken].filter(Boolean).join(" ").slice(0, 500))}
+              onFinal={(spoken) => {
+                setMicNote(null);
+                setTitle((prev) => [prev.trim(), spoken].filter(Boolean).join(" ").slice(0, 200));
+              }}
+              onProblem={(message) => {
+                setMicNote(message);
+                // focusing inside the tap opens the keyboard, dictation key included
+                titleRef.current?.focus();
+              }}
             />
           </div>
         </form>
