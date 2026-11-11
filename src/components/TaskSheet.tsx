@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import type { PlainNode } from "@/lib/crypto";
 import { withReminderDefault } from "@/lib/reminders";
 import { defaultDueTimeMin } from "@/lib/due";
+import { MicButton } from "./loop/MicButton";
 import {
   CompletionStyleField,
   DescriptionField,
@@ -227,14 +228,18 @@ export function TaskSheet({
             )}
           </div>
 
-          <div className="border-t border-foreground p-3">
+          <div className="flex items-stretch gap-2 border-t border-foreground p-3">
             <button
               type="submit"
               disabled={!title.trim() || busy}
-              className="w-full border border-foreground bg-foreground py-2 text-sm text-background hover:opacity-90 disabled:bg-transparent disabled:text-foreground disabled:opacity-40"
+              className="flex-1 border border-foreground bg-foreground py-2 text-sm text-background hover:opacity-90 disabled:bg-transparent disabled:text-foreground disabled:opacity-40"
             >
               {busy ? "adding…" : mode.kind === "create-child" ? "add sub-task" : "add task"}
             </button>
+            <MicButton
+              className="w-10 shrink-0 border-l border-foreground"
+              onFinal={(spoken) => setTitle((prev) => [prev.trim(), spoken].filter(Boolean).join(" ").slice(0, 500))}
+            />
           </div>
         </form>
       </div>
