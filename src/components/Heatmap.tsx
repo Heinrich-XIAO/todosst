@@ -6,7 +6,7 @@ import { MONTHS } from "@/lib/months";
 
 // GitHub-style heatmap of counts per local day.
 // Columns run oldest -> newest, rows Sun..Sat, ending at the current week.
-// Time mode interprets counts as minutes with minute-sized buckets.
+// Time mode interprets counts as minutes.
 // The column count adapts to the container width (by whole 12px columns) so
 // narrow screens show fewer recent months instead of a clipped full year.
 
@@ -31,20 +31,12 @@ function dayLabel(idx: number): string {
   return label;
 }
 
-function levelFor(count: number): number {
-  if (count <= 0) return 0;
-  if (count === 1) return 1;
-  if (count <= 3) return 2;
-  if (count <= 6) return 3;
-  return 4;
-}
-
-function levelForMinutes(min: number): number {
-  if (min <= 0) return 0;
-  if (min < 15) return 1;
-  if (min < 30) return 2;
-  if (min < 60) return 3;
-  return 4;
+// The scale is relative to the busiest day on show: that day is the brightest
+// level and the rest are even steps below it. Tallies, minutes and aggregates
+// have no natural ceiling, so fixed buckets would either saturate or stay dim.
+function levelFor(count: number, max: number): number {
+  if (count <= 0 || max <= 0) return 0;
+  return Math.min(TOP, Math.max(1, Math.ceil((count / max) * TOP)));
 }
 
 const DOW_LABELS: Record<number, string> = { 1: "mon", 3: "wed", 5: "fri" };
@@ -129,6 +121,13 @@ export const Heatmap = memo(function Heatmap({
     const startDow = new Date(dayIndexToStart(startIdx)).getDay(); // 0 = Sun
     const aligned = startIdx - startDow;
     const colCount = Math.ceil((alignedEnd - aligned + 1) / 7);
+    // busiest day in the full span, not just the columns that fit — the
+    // shades must not shift when the grid narrows
+    const spanStart = alignedEnd - weeks * 7 + 1;
+    let max = 0;
+    for (const [day, c] of counts) {
+      if (day >= spanStart && day <= endIdx && c > max) max = c;
+    }
     const cols: { idx: number; count: number; future: boolean }[][] = [];
     for (let c = 0; c < colCount; c++) {
       const col: { idx: number; count: number; future: boolean }[] = [];
@@ -153,8 +152,8 @@ export const Heatmap = memo(function Heatmap({
         }
       }
     });
-    return { cols, monthLabels, aligned };
-  }, [counts, nowTs, fitWeeks]);
+    return { cols, monthLabels, aligned, max };
+  }, [counts, nowTs, fitWeeks, weeks]);
 
   return (
     <div className="text-[11px]">
@@ -211,7 +210,7 @@ export const Heatmap = memo(function Heatmap({
                           setTip((t) => (t?.c === c && t?.r === r ? null : { c, r, text, below: r < 2 }));
                         }
                       }}
-                      className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[binary ? (cell.count > 0 ? TOP : 0) : mode === "time" ? levelForMinutes(cell.count) : levelFor(cell.count)]}`}
+                      className={`h-[10px] w-[10px] ${cell.future ? "bg-transparent" : LEVELS[binary ? (cell.count > 0 ? TOP : 0) : levelFor(cell.count, grid.max)]}`}
                     />
                   );
                 })}

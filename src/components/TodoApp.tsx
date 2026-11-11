@@ -1461,7 +1461,7 @@ function TodoTask() {
     const per: Slide[] = [];
     // "all tasks" is net: completions count up, battle slips count back
     // down — a day that lands at or below zero renders blank, as if nothing
-    // happened (levelFor clamps count <= 0 to the empty cell). "all battles"
+    // happened (the heatmap clamps count <= 0 to the empty cell). "all battles"
     // still sums slips on their own so bad days stay visible somewhere.
     const bad = new Map<number, number>();
     const net = new Map<number, number>();
