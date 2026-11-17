@@ -16,6 +16,8 @@ const eslintConfig = defineConfig([
     "convex/_generated/**",
     // bun:test files run via `bun test` (bun types not installed)
     "src/lib/**/*.test.ts",
+    // the agent app has its own eslint config and CI job
+    "agent/**",
   ]),
 ]);
 
