@@ -6,12 +6,12 @@ import { assembleAiRecur, parseAiRecurAnswer } from "../src/lib/aiRecur";
 // Reads a free-form recurring task ("journal every day", "I want to meditate
 // every other morning") into {title, RRULE} via Hack Club AI (OpenAI-compatible
 // proxy, https://docs.ai.hackclub.com). The model answers a fixed JSON shape;
-// parseAiRecurAnswer validates it and assembleAiRecur builds the rule. Returns
+// parseAiRecurAnswer validates it (the proxy enforces no schema) and assembleAiRecur builds the rule. Returns
 // null when unconfigured, when the model hears no recurrence, or on any
 // failure — the caller then creates the task exactly as typed.
 
 const ENDPOINT = "https://ai.hackclub.com/proxy/v1/chat/completions";
-const MODEL = "qwen/qwen3-32b";
+const MODEL = "anthropic/claude-opus-5.5";
 
 const SYSTEM = `You turn a to-do list entry into a recurring task. Reply with ONLY a JSON object, no prose:
 {"title": string, "freq": "none"|"daily"|"weekly"|"monthly"|"yearly", "interval": integer, "weekdays": ("MO"|"TU"|"WE"|"TH"|"FR"|"SA"|"SU")[]}
@@ -32,12 +32,10 @@ export const parseRecurringTask = action({
         headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
         body: JSON.stringify({
           model: MODEL,
-          temperature: 0,
           max_tokens: 1024,
           messages: [
             { role: "system", content: SYSTEM },
-            // "/no_think" turns off qwen3's reasoning preamble — this is a lookup, not a puzzle
-            { role: "user", content: `${text} /no_think` },
+            { role: "user", content: text },
           ],
         }),
         signal: AbortSignal.timeout(15_000),
