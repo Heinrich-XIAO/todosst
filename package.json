@@ -11,6 +11,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.10.0",
     "@auth/core": "0.37.0",
     "@convex-dev/auth": "^0.0.95",
     "@oslojs/crypto": "^1.0.1",

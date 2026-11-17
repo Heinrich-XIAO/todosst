@@ -7,7 +7,7 @@ import { memo, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRe
 // layout effect that is safe during SSR ("use client" components still
 // server-render, and useLayoutEffect warns there)
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { AuthLoading, Unauthenticated, Authenticated, useConvexAuth } from "convex/react";
@@ -81,6 +81,7 @@ import {
 } from "@/lib/reminders";
 import { resolveSlashSuggest } from "@/lib/slashComplete";
 import { parseNlpDate } from "@/lib/nlpDate";
+import { looksRecurring } from "@/lib/aiRecur";
 import { encodeTodayCaptureInput, isDirectoryOnlyInput, parseTodayCaptureInput, withTodayDueDate } from "@/lib/todayCapture";
 import { registerServiceWorker } from "@/lib/push";
 import { useOnline } from "@/lib/useOnline";
@@ -854,6 +855,7 @@ function TodoTask() {
   const removeTodo = useMutation(api.todos.remove);
   const removeMany = useMutation(api.todos.removeMany);
   const sendSignal = useMutation(api.loop.capture);
+  const parseRecurringTask = useAction(api.ai.parseRecurringTask);
   const dismissSignal = useMutation(api.loop.dismissSignal);
   const pathname = usePathname() ?? "/";
   // the view lives in the URL: a "/tree" prefix shows the tree view, "/loop"
@@ -2139,7 +2141,14 @@ function TodoTask() {
     const naturalPart = tildeAt > 0 ? raw.slice(0, tildeAt) : raw;
     const ruleTail = tildeAt > 0 ? raw.slice(tildeAt) : "";
     const nlp = raw.startsWith("!") ? null : parseNlpDate(naturalPart);
-    const heard = nlp && nlp.spans.length > 0 ? nlp : null;
+    const regexHeard = nlp && nlp.spans.length > 0 ? nlp : null;
+    // phrasings the regex can't read ("journal daily", "each morning") go to
+    // Claude — only plain tasks that sound recurring, so most input stays local
+    const ai =
+      online && !ruleTail && !regexHeard?.recur && !/^[!/]/.test(raw) && looksRecurring(raw)
+        ? await parseRecurringTask({ text: raw }).catch(() => null)
+        : null;
+    const heard = ai ? { ...(regexHeard ?? { dueAt: null, dueTimeMin: null }), recur: ai.recur, cleanTitle: ai.title } : regexHeard;
     const grammarRaw = (heard && heard.cleanTitle ? heard.cleanTitle : naturalPart) + ruleTail;
     const nlpMeta: PlainNode["metadata"] =
       heard && (heard.dueAt !== null || heard.recur)
