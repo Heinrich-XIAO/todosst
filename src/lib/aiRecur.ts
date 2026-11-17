@@ -4,7 +4,7 @@
 // structured answer; code builds the RRULE, so a bad answer can't produce a
 // malformed rule.
 //
-// Tasks are end-to-end encrypted, so the AI only sees input that already
+// Provider: Hack Club AI (convex/ai.ts). Tasks are end-to-end encrypted, so the AI only sees input that already
 // sounds recurring (looksRecurring) and that the regex parser couldn't read.
 
 export const AI_FREQS = ["none", "daily", "weekly", "monthly", "yearly"] as const;
@@ -23,6 +23,32 @@ const CUE_RE =
 /** Cheap gate: only text that sounds recurring is worth an AI call. */
 export function looksRecurring(text: string): boolean {
   return CUE_RE.test(text);
+}
+
+/** Parse and validate the model's raw reply (the provider doesn't enforce a
+ * schema). Tolerates <think> blocks and ```json fences; null on any mismatch. */
+export function parseAiRecurAnswer(raw: string): AiRecurAnswer | null {
+  const text = raw.replace(/<think>[\s\S]*?<\/think>/g, "");
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+  if (!obj || typeof obj !== "object") return null;
+  const o = obj as Record<string, unknown>;
+  if (typeof o.title !== "string" || !AI_FREQS.includes(o.freq as AiRecurAnswer["freq"])) return null;
+  return {
+    title: o.title,
+    freq: o.freq as AiRecurAnswer["freq"],
+    interval: typeof o.interval === "number" ? o.interval : 1,
+    weekdays: Array.isArray(o.weekdays)
+      ? o.weekdays.filter((d): d is AiRecurAnswer["weekdays"][number] => AI_WEEKDAYS.includes(d))
+      : [],
+  };
 }
 
 /** Turn the model's answer into {title, RRULE}; null when it heard no recurrence. */

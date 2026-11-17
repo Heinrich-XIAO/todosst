@@ -1,6 +1,6 @@
 // @ts-nocheck — runs under `bun test` (bun:test types not installed)
 import { test, expect } from "bun:test";
-import { assembleAiRecur, looksRecurring } from "./aiRecur";
+import { assembleAiRecur, looksRecurring, parseAiRecurAnswer } from "./aiRecur";
 
 test("looksRecurring gates on recurrence cues only", () => {
   for (const s of ["journal daily", "I want to journal each day", "journal every morning", "meditate every other day", "run 3 times a week", "stretch everyday"])
@@ -20,4 +20,12 @@ test("assembleAiRecur builds RRULEs in code", () => {
 test("assembleAiRecur rejects no-recurrence and empty titles", () => {
   expect(assembleAiRecur({ title: "journal", freq: "none", interval: 1, weekdays: [] })).toBeNull();
   expect(assembleAiRecur({ title: "  ", freq: "daily", interval: 1, weekdays: [] })).toBeNull();
+});
+
+test("parseAiRecurAnswer validates loose model replies", () => {
+  const ok = parseAiRecurAnswer('<think>\n\n</think>\n```json\n{"title":"journal","freq":"daily","interval":1,"weekdays":[]}\n```');
+  expect(ok).toEqual({ title: "journal", freq: "daily", interval: 1, weekdays: [] });
+  expect(parseAiRecurAnswer('{"title":"gym","freq":"weekly","interval":1,"weekdays":["MO","XX"]}')?.weekdays).toEqual(["MO"]);
+  expect(parseAiRecurAnswer('{"title":"x","freq":"hourly"}')).toBeNull();
+  expect(parseAiRecurAnswer("sure! here you go")).toBeNull();
 });
