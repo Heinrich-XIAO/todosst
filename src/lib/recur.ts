@@ -258,6 +258,20 @@ export async function recurState(meta: RecurMetadata, anchorTs: number, nowTs: n
   return { isRecurring: true, windowDay, count: countFor(meta, windowDay), nextTs, summary: summarize(rule), expired };
 }
 
+/**
+ * Day index of the window that local day `day` falls in: the rule's last
+ * occurrence on or before it (the day itself when there is none). Plain tasks
+ * have one window, their creation day. Used to land imported counts, which
+ * were keyed by another account's (or app's) windows, on this node's own.
+ */
+export async function windowDayFor(meta: RecurMetadata, anchorTs: number, day: number): Promise<number> {
+  const ruleStr = meta.recur ? String(meta.recur) : "";
+  const rule = normalizeRruleString(ruleStr) ? await getRule(ruleStr, anchorTs) : null;
+  if (!rule) return dayIndexLocal(anchorTs);
+  const occ = rule.before(naiveStartOfNextDay(day), false);
+  return occ ? naiveDayIndex(occ) : day;
+}
+
 // ---------- compact counts codec ----------
 // "d1240:3;d1241:1" — day-index:count pairs, ascending, zero counts omitted.
 

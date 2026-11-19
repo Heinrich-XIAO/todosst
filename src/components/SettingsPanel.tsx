@@ -4,16 +4,16 @@ import { useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { decodeHistoryPayload, encodeHistoryPayload } from "@/lib/recur";
-import { parseNode, encodeNode, toPlainNode } from "@/lib/crypto";
+import { parseNode, encodeNode } from "@/lib/crypto";
+import { importSnapshot, type ExistingHistory, type ExistingTodo } from "@/lib/importMerge";
+import type { Id } from "../../convex/_generated/dataModel";
 import { NudgeSettings } from "./DailyNudge";
 import {
   buildExportFile,
   countsToRecord,
   downloadExportFile,
   exportFilename,
-  importOrder,
   openExportFile,
-  recordToCounts,
 } from "@/lib/vaultFile";
 
 // Settings — daily nudge plus export / import of a passphrase-protected backup
@@ -25,6 +25,7 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const historyRecords = useQuery(api.history.list);
   const createTodoMut = useMutation(api.todos.create);
   const historyPutMut = useMutation(api.history.put);
+  const updateTodoMut = useMutation(api.todos.update);
   const unlockKeys = useQuery(api.unlockKeys.list);
   const issueKeyMut = useMutation(api.unlockKeys.issue);
   const revokeKeyMut = useMutation(api.unlockKeys.revoke);
@@ -41,6 +42,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPass, setImportPass] = useState("");
   const [importBusy, setImportBusy] = useState(false);
+  // match incoming tasks to existing ones by folder path + title (see importMerge.ts)
+  const [importMerge, setImportMerge] = useState(true);
   const [ioMsg, setIoMsg] = useState<string | null>(null);
   const [ioErr, setIoErr] = useState<string | null>(null);
 
@@ -93,32 +96,37 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
     }
     setImportBusy(true);
     try {
+      if (!todoRecords || !historyRecords) throw new Error("still loading your tasks, try again in a moment.");
       const snapshotData = await openExportFile(await importFile.text(), importPass);
-      const order = importOrder(snapshotData.todos);
-      if (!order) throw new Error("backup contains a cycle, duplicate ids, or a missing parent.");
-      const byId = new Map(snapshotData.todos.map((t) => [t.id, t]));
-      const idMap = new Map<string, string>();
-      for (const oldId of order) {
-        const src = byId.get(oldId)!;
-        const node = toPlainNode({
-          title: src.node.title,
-          isCompleted: src.node.isCompleted,
-          parentId: src.node.parentId ? (idMap.get(src.node.parentId) ?? null) : null,
-          order: src.node.order,
-          metadata: src.node.metadata,
-        });
-        const newId = await createTodoMut({ node: encodeNode(node) });
-        idMap.set(oldId, newId as string);
+      const existing: ExistingTodo[] = [];
+      for (const r of todoRecords) {
+        if (!r.node) continue;
+        existing.push({ id: r._id as string, creationTime: r._creationTime, node: parseNode(r.node) });
       }
-      let historyCount = 0;
-      for (const h of snapshotData.history) {
-        const newId = idMap.get(h.todoId);
-        if (!newId) continue;
-        const payload = encodeHistoryPayload({ todoId: newId, counts: recordToCounts(h.counts) });
-        await historyPutMut({ payload });
-        historyCount++;
+      const existingHistory: ExistingHistory[] = [];
+      for (const r of historyRecords) {
+        const data = r.payload ? decodeHistoryPayload(r.payload) : null;
+        if (data) existingHistory.push({ rowId: r._id as string, todoId: data.todoId, counts: data.counts });
       }
-      setIoMsg(`imported ${idMap.size} tasks and ${historyCount} history records.`);
+      const res = await importSnapshot(
+        snapshotData,
+        existing,
+        existingHistory,
+        {
+          create: async (node) => (await createTodoMut({ node: encodeNode(node) })) as string,
+          update: async (id, node) => {
+            await updateTodoMut({ id: id as Id<"todos">, node: encodeNode(node) });
+          },
+          putHistory: async (rowId, todoId, counts) => {
+            const payload = encodeHistoryPayload({ todoId, counts });
+            await historyPutMut(rowId ? { id: rowId as Id<"todoHistory">, payload } : { payload });
+          },
+        },
+        { merge: importMerge, now: Date.now() }
+      );
+      const parts = [`${res.created} added`];
+      if (importMerge) parts.push(`${res.updated} updated`, `${res.unchanged} already up to date`);
+      setIoMsg(`imported: ${parts.join(", ")}; ${res.history} histories written.`);
       setImportPass("");
       setImportFile(null);
     } catch (e) {
@@ -232,8 +240,8 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
         <div className="mt-3 border-t border-foreground/20 pt-3">
           <p className="font-mono text-xs">export / import</p>
           <p className="mt-1 text-pretty text-[11px] leading-snug opacity-60">
-            passphrase-protected backup file, portable to any account. importing adds the backup
-            tasks alongside existing ones.
+            passphrase-protected backup file, portable to any account. also how you move to and from
+            todosst agent: import its &ldquo;download for todosst&rdquo; file here.
           </p>
 
           {ioMsg && <p className="mt-2 border border-foreground/30 bg-foreground/5 px-3 py-2 text-xs">{ioMsg}</p>}
@@ -302,6 +310,16 @@ export function SettingsPanel({ onClose }: { onClose: () => void }) {
                 placeholder="the passphrase the file was made with"
                 className="mt-1 w-full border border-foreground/40 bg-transparent px-2 py-1.5 text-xs focus:border-foreground focus:outline-none"
               />
+            </label>
+            <label className="mt-2 flex items-start gap-2 text-[11px]">
+              <input type="checkbox" checked={importMerge} onChange={(e) => setImportMerge(e.target.checked)} className="mt-0.5" />
+              <span>
+                merge by path
+                <span className="block opacity-60">
+                  a task with the same folder path and title is updated instead of copied, and its history is combined.
+                  importing the same file twice changes nothing.
+                </span>
+              </span>
             </label>
             <button
               onClick={doImport}
